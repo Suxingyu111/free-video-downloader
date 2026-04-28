@@ -268,15 +268,16 @@ def test_friendly_error_message_explains_youtube_bot_cookie_requirement():
     assert "cookies.txt" in message
 
 
-def test_friendly_error_message_explains_douyin_fresh_cookie_requirement():
+def test_friendly_error_message_explains_douyin_public_video_boundary_without_cookie_prompt():
     message = friendly_error_message(
         "ERROR: [Douyin] 7601048622565821747: Fresh cookies "
         "(not necessarily logged in) are needed"
     )
 
-    assert "抖音需要新的浏览器 cookie" in message
-    assert "不一定需要登录" in message
-    assert "cookies.txt" in message
+    assert "抖音公开视频" in message
+    assert "私密" in message
+    assert "风控" in message
+    assert "cookies.txt" not in message
 
 
 def test_friendly_error_message_explains_expired_douyin_short_link():

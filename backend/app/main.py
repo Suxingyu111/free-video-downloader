@@ -110,7 +110,7 @@ async def analyze(
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                result = service.analyze(url, cookie_path)
+                result = await asyncio.to_thread(service.analyze, url, cookie_path)
                 break
             except Exception as exc:
                 last_error = exc

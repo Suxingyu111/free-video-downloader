@@ -18,6 +18,8 @@ Form request:
 - `url`: required string.
 - `cookies_file`: optional `cookies.txt` upload.
 
+For Douyin URLs, the backend defaults to public-only resolution and does not require or request Douyin cookies. Private, login-gated, CAPTCHA-blocked, region-limited, expired, or risk-controlled Douyin links return a 400 with a public-video boundary message.
+
 Response:
 
 ```json

@@ -12,7 +12,7 @@ const features = [
   ["本地部署更安心", "解析与下载任务在自己的服务中完成，减少广告跳转、弹窗劫持和不透明的第三方中转。"]
 ];
 
-const quickLinks = ["YouTube", "Bilibili", "Twitter/X"];
+const quickLinks = ["YouTube", "Bilibili", "抖音"];
 
 const state = reactive({
   url: "",
@@ -326,7 +326,7 @@ onBeforeUnmount(() => {
       <div class="platform-grid">
         <span v-for="platform in platforms" :key="platform">{{ platform }}</span>
       </div>
-      <p class="section-copy">兼容能力基于 yt-dlp 的站点解析器，未列出的站点也可能通过通用解析器支持；遇到登录态、地区限制或平台风控时，可能需要 cookies 或稍后重试。</p>
+      <p class="section-copy">抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。其他平台兼容能力基于 yt-dlp 的站点解析器，遇到登录态、地区限制或平台风控时，可能需要 cookies 或稍后重试。</p>
     </section>
 
     <section id="features" class="section">

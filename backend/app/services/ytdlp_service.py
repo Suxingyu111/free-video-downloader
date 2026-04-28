@@ -9,6 +9,11 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from yt_dlp import YoutubeDL
 
+from app.services.douyin_browser_service import is_douyin_url
+from app.services.douyin_public_resolver import DOUYIN_PUBLIC_FAILURE_MESSAGE
+from app.services.douyin_public_resolver import DouyinPublicResolver
+from app.services.douyin_public_resolver import is_douyin_public_only_enabled
+
 
 ProgressHook = Callable[[dict[str, Any]], None]
 
@@ -99,11 +104,7 @@ def friendly_error_message(error: Exception | str) -> str:
             "或者稍后更换网络环境后重试。"
         )
     if "[Douyin]" in text and "Fresh cookies" in text:
-        return (
-            "抖音需要新的浏览器 cookie 才能解析当前视频，不一定需要登录。"
-            "请先在浏览器打开抖音视频页，让页面完成加载后导出 Netscape 格式 cookies.txt，"
-            "再在解析时上传；如果仍失败，通常是该视频、账号、IP 或地区触发了平台风控。"
-        )
+        return DOUYIN_PUBLIC_FAILURE_MESSAGE
     if "Unsupported URL: https://www.douyin.com/" in text:
         return (
             "抖音短链已失效或被重定向到首页，无法从首页还原视频。"
@@ -367,8 +368,14 @@ def validate_media_file(path: Path) -> None:
 
 
 class YtDlpService:
+    def __init__(self, douyin_service: DouyinPublicResolver | None = None) -> None:
+        self.douyin_service = douyin_service or DouyinPublicResolver()
+
     def analyze(self, url: str, cookie_file: Path | None = None) -> dict[str, Any]:
         prepared_url = prepare_url(url)
+        if is_douyin_url(prepared_url) and (not cookie_file or is_douyin_public_only_enabled()):
+            return self.douyin_service.analyze(prepared_url)
+
         options: dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
@@ -395,6 +402,16 @@ class YtDlpService:
         entry_ids: list[str] | None = None,
     ) -> Path:
         prepared_url = prepare_url(url)
+        if is_douyin_url(prepared_url) and (not cookie_file or is_douyin_public_only_enabled()):
+            artifact = self.douyin_service.download(
+                url=prepared_url,
+                output_dir=output_dir,
+                format_id=format_id,
+                progress_hook=progress_hook,
+            )
+            validate_media_file(artifact)
+            return artifact
+
         output_dir.mkdir(parents=True, exist_ok=True)
         options = build_download_options(
             url=prepared_url,

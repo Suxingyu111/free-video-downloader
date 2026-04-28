@@ -1,6 +1,6 @@
 # Free Video Downloader
 
-A local/self-hosted video download console built with Vue 3, Vite, Tailwind CSS, FastAPI, and yt-dlp.
+A local/self-hosted video download console built with Vue 3, Vite, Tailwind CSS, FastAPI, yt-dlp, and a public Douyin resolver chain.
 
 ## Features
 
@@ -10,10 +10,19 @@ A local/self-hosted video download console built with Vue 3, Vite, Tailwind CSS,
 - Stream progress with server-sent events.
 - Download completed files through temporary tokens.
 - Optionally use an uploaded `cookies.txt` for a task.
+- Download public Douyin videos without asking users for Douyin cookies.
 
 ## Safety Notes
 
-Respect copyright, platform terms, and account risk. This project does not bypass DRM, paywalls, or platform safety protections. Uploaded cookies are sensitive and are intended for local/self-hosted usage only.
+Respect copyright, platform terms, and account risk. This project does not bypass DRM, paywalls, login-only content, or platform safety protections. Douyin support is limited to public videos and may fail when a video is private, login-gated, region-limited, expired, or blocked by platform risk controls. Uploaded cookies are sensitive and are intended for local/self-hosted usage only; Douyin cookies are not required or requested by the public Douyin resolver chain.
+
+## Douyin Resolver Configuration
+
+- `DOUYIN_RESOLVER_CHAIN`: comma-separated resolver order, default `f2,douyinvd,browser`.
+- `DOUYINVD_BASE_URL`: optional self-hosted douyinVd sidecar URL.
+- `DOUYIN_PUBLIC_ONLY`: defaults to `true`; keeps Douyin on the public-video resolver path even if a cookie file is uploaded for other platforms.
+
+The F2 resolver is loaded dynamically when the `f2` Python package is available. On Python versions where F2's pinned dependencies cannot install, the chain falls back to douyinVd and browser-based public-page extraction.
 
 ## Development
 
@@ -40,4 +49,3 @@ Open `http://localhost:5173`.
 ## Documentation
 
 Start with `docs/01-requirements.md` and `docs/03-technical-architecture.md` before extending the project.
-

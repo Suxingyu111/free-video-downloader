@@ -33,3 +33,10 @@ test("download console exposes cookies txt upload for restricted platforms", () 
     assert.match(appSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
+
+test("douyin copy promises public video support without asking for cookies", () => {
+  assert.match(appSource, /抖音公开视频免登录下载/);
+  assert.match(appSource, /受平台风控影响，少数链接可能失败/);
+  assert.doesNotMatch(appSource, /抖音[^。；\n]*cookies/i);
+  assert.doesNotMatch(appSource, /抖音[^。；\n]*登录态/);
+});

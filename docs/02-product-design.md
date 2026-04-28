@@ -8,7 +8,7 @@ The product is a professional self-hosted media console for saving videos and su
 
 1. User opens the console.
 2. User pastes a video or playlist URL.
-3. User optionally uploads `cookies.txt` for access-restricted content.
+3. User optionally uploads `cookies.txt` for non-Douyin access-restricted content.
 4. User clicks Analyze.
 5. The console displays video metadata, playlist entries, formats, and subtitle tracks.
 6. User selects entries, a format, and subtitle preferences.
@@ -23,7 +23,7 @@ The product is a professional self-hosted media console for saving videos and su
 - Format selector: recommended format, available quality choices, container notes.
 - Subtitle selector: original subtitles, automatic subtitles, SRT preference.
 - Task queue: progress, current state, download link, failure recovery.
-- Risk notice: copyright, platform terms, account and cookie privacy warnings.
+- Risk notice: copyright, platform terms, account and cookie privacy warnings, plus a Douyin-specific note that only public videos are supported without cookies.
 
 ## Conversion and Future Paid Ability Placeholders
 
@@ -43,4 +43,3 @@ These must remain non-functional labels or "coming soon" affordances in v1.
 - The primary action is clear on every step.
 - Failed states explain how to recover.
 - The UI feels like a professional download console, not a generic AI landing page.
-

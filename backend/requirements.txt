@@ -4,4 +4,5 @@ yt-dlp>=2025.12.8
 python-multipart>=0.0.20
 pytest>=9.0.0
 httpx>=0.28.0
-
+playwright>=1.56.0
+# Optional: install f2 separately on Python versions it supports to enable the primary Douyin resolver.

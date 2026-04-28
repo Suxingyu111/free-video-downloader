@@ -21,16 +21,17 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
   assert.doesNotMatch(appSource, /Free Video Downloader|Paste link|Video download platform/);
 });
 
-test("download console exposes cookies txt upload for restricted platforms", () => {
-  const requiredPhrases = [
+test("download console does not expose manual cookie input", () => {
+  const forbiddenPhrases = [
     "cookies.txt",
     "handleCookieFileChange",
-    "cookiesFile: state.cookiesFile",
-    "accept=\".txt,text/plain\""
+    "cookiesFile",
+    "accept=\".txt,text/plain\"",
+    "type=\"file\""
   ];
 
-  for (const phrase of requiredPhrases) {
-    assert.match(appSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  for (const phrase of forbiddenPhrases) {
+    assert.doesNotMatch(appSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
 

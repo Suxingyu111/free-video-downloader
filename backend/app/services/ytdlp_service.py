@@ -94,14 +94,13 @@ def friendly_error_message(error: Exception | str) -> str:
     if "[BiliBili]" in text and "HTTP Error 412" in text:
         return (
             "Bilibili 返回 412 Precondition Failed，通常表示当前无登录态或请求被 B 站风控拦截。"
-            "请在浏览器登录 B 站后导出 Netscape 格式 cookies.txt，并在解析时上传；"
-            "如果仍失败，可能是 IP/地区/账号风控限制，需要稍后重试。"
+            "当前仅支持可直接访问的公开视频；如果仍失败，可能是 IP/地区/账号风控限制，"
+            "请稍后重试或改用公开视频链接。"
         )
     if "[youtube]" in text and "Sign in to confirm" in text:
         return (
             "YouTube 要求登录验证，当前访客会话被判定需要确认不是机器人。"
-            "请在浏览器登录 YouTube 后导出 Netscape 格式 cookies.txt，并在解析时上传；"
-            "或者稍后更换网络环境后重试。"
+            "当前仅支持可直接访问的公开视频；请稍后更换网络环境后重试，或改用公开视频链接。"
         )
     if "[Douyin]" in text and "Fresh cookies" in text:
         return DOUYIN_PUBLIC_FAILURE_MESSAGE
@@ -208,7 +207,6 @@ def build_download_options(
     subtitle_langs: list[str] | None,
     write_auto_subs: bool,
     prefer_srt: bool,
-    cookie_file: Path | None,
     progress_hook: ProgressHook | None,
     entry_ids: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -235,8 +233,6 @@ def build_download_options(
     }
     if not is_youtube_url(prepared_url):
         options["http_chunk_size"] = 1024 * 1024
-    if cookie_file:
-        options["cookiefile"] = str(cookie_file)
     if selected_ids:
         options["match_filter"] = _build_entry_match_filter(selected_ids)
     if subtitle_langs:
@@ -371,9 +367,9 @@ class YtDlpService:
     def __init__(self, douyin_service: DouyinPublicResolver | None = None) -> None:
         self.douyin_service = douyin_service or DouyinPublicResolver()
 
-    def analyze(self, url: str, cookie_file: Path | None = None) -> dict[str, Any]:
+    def analyze(self, url: str) -> dict[str, Any]:
         prepared_url = prepare_url(url)
-        if is_douyin_url(prepared_url) and (not cookie_file or is_douyin_public_only_enabled()):
+        if is_douyin_url(prepared_url) and is_douyin_public_only_enabled():
             return self.douyin_service.analyze(prepared_url)
 
         options: dict[str, Any] = {
@@ -382,8 +378,6 @@ class YtDlpService:
             "extract_flat": "in_playlist",
             "http_headers": build_http_headers(prepared_url),
         }
-        if cookie_file:
-            options["cookiefile"] = str(cookie_file)
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(prepared_url, download=False)
             return normalize_info(ydl.sanitize_info(info))
@@ -397,12 +391,11 @@ class YtDlpService:
         subtitle_langs: list[str] | None = None,
         write_auto_subs: bool = False,
         prefer_srt: bool = True,
-        cookie_file: Path | None = None,
         progress_hook: ProgressHook | None = None,
         entry_ids: list[str] | None = None,
     ) -> Path:
         prepared_url = prepare_url(url)
-        if is_douyin_url(prepared_url) and (not cookie_file or is_douyin_public_only_enabled()):
+        if is_douyin_url(prepared_url) and is_douyin_public_only_enabled():
             artifact = self.douyin_service.download(
                 url=prepared_url,
                 output_dir=output_dir,
@@ -420,7 +413,6 @@ class YtDlpService:
             subtitle_langs=subtitle_langs,
             write_auto_subs=write_auto_subs,
             prefer_srt=prefer_srt,
-            cookie_file=cookie_file,
             progress_hook=progress_hook,
             entry_ids=entry_ids,
         )

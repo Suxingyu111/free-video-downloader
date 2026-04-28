@@ -9,14 +9,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.services.asset_store import asset_store
-from app.services.cookie_store import CookieStore
 from app.services.runtime_cleanup import cleanup_failed_download
 from app.services.runtime_cleanup import prune_download_directories
 from app.services.task_store import task_store
@@ -53,7 +52,6 @@ if (FRONTEND_DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
 service = YtDlpService()
-cookie_store = CookieStore(RUNTIME_DIR / "tmp" / "cookies")
 
 
 def _is_transient_youtube_bot_check(exc: Exception) -> bool:
@@ -68,7 +66,6 @@ class DownloadRequest(BaseModel):
     subtitle_langs: list[str] = Field(default_factory=list)
     write_auto_subs: bool = False
     prefer_srt: bool = True
-    cookie_ref: str | None = None
 
 
 def _asset_proxy_url(url: str | None, referer: str | None) -> str | None:
@@ -100,17 +97,12 @@ def health() -> dict[str, str]:
 @app.post("/api/analyze")
 async def analyze(
     url: str = Form(...),
-    cookies_file: UploadFile | None = File(default=None),
 ) -> dict:
-    cookie_path: Path | None = None
     try:
-        if cookies_file is not None:
-            cookie_ref = cookie_store.save(await cookies_file.read())
-            cookie_path = cookie_store.pop(cookie_ref)
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                result = await asyncio.to_thread(service.analyze, url, cookie_path)
+                result = await asyncio.to_thread(service.analyze, url)
                 break
             except Exception as exc:
                 last_error = exc
@@ -120,19 +112,13 @@ async def analyze(
         else:
             raise last_error or RuntimeError("Analyze failed")
         result = proxy_media_assets(result)
-        if cookies_file is not None and cookie_path is not None:
-            result["cookie_ref"] = cookie_store.save(cookie_path.read_bytes())
         return result
     except Exception as exc:  # yt-dlp raises many extractor-specific errors.
         raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
-    finally:
-        if cookie_path:
-            cookie_path.unlink(missing_ok=True)
 
 
 def _run_download(task_id: str, payload: DownloadRequest) -> None:
     task_dir = DOWNLOAD_DIR / task_id
-    cookie_path = cookie_store.pop(payload.cookie_ref)
 
     def progress_hook(status: dict) -> None:
         if status.get("status") == "downloading":
@@ -164,7 +150,6 @@ def _run_download(task_id: str, payload: DownloadRequest) -> None:
             subtitle_langs=payload.subtitle_langs,
             write_auto_subs=payload.write_auto_subs,
             prefer_srt=payload.prefer_srt,
-            cookie_file=cookie_path,
             progress_hook=progress_hook,
             entry_ids=payload.entry_ids,
         )
@@ -190,9 +175,6 @@ def _run_download(task_id: str, payload: DownloadRequest) -> None:
             error=friendly_error_message(exc),
         )
         cleanup_failed_download(task_dir)
-    finally:
-        if cookie_path:
-            cookie_path.unlink(missing_ok=True)
 
 
 @app.post("/api/download")

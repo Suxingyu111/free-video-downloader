@@ -8,7 +8,7 @@ sequenceDiagram
   participant Y as yt-dlp
   participant Store as Task Store
 
-  User->>Vue: 粘贴 URL / 上传 cookies.txt
+  User->>Vue: 粘贴 URL
   Vue->>API: POST /api/analyze
   API->>Y: extract_info(download=false)
   Y-->>API: 元数据 / 格式 / 字幕 / 播放列表
@@ -28,4 +28,3 @@ sequenceDiagram
   API-->>Vue: 完成，返回 file token
   User->>API: GET /files/{token}
 ```
-

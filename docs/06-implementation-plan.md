@@ -26,11 +26,10 @@
 - Add SSE progress streaming.
 - Add file token download.
 
-## Phase 4: Subtitles and cookies.txt
+## Phase 4: Subtitles
 
 - Enable original and automatic subtitle options.
 - Prefer SRT output where yt-dlp/ffmpeg can provide it.
-- Add temporary `cookies.txt` handling and cleanup.
 
 ## Phase 5: Verification and Delivery
 
@@ -38,4 +37,3 @@
 - Run frontend build.
 - Run browser smoke test.
 - Update README with setup, usage, and risk notes.
-

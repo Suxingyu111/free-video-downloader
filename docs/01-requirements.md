@@ -11,7 +11,7 @@ This project builds a self-hosted video download website that wraps mature open-
 - Frontend stack: Vue 3, Vite, Tailwind CSS.
 - Backend stack: Python, FastAPI, yt-dlp.
 - Deployment target: local or self-hosted usage.
-- MVP scope: video parsing, playlist expansion, format selection, download tasks, subtitle download, temporary `cookies.txt` support, task progress.
+- MVP scope: video parsing, playlist expansion, format selection, download tasks, subtitle download, task progress.
 - Storage: local temporary directory; no database in v1.
 - UI style: Industrial Media Console, not blue/purple AI SaaS styling.
 - UI quality process: use `ui-ux-pro-max` and `frontend-design` guidance for design system and polish.
@@ -24,7 +24,7 @@ This project builds a self-hosted video download website that wraps mature open-
 - Create download tasks from selected entries.
 - Stream task progress to the frontend.
 - Provide temporary file download links.
-- Accept `cookies.txt` uploads for a task and clean them up after use.
+- Support public video links without requiring users to provide cookies.
 - Show copyright, platform account, and privacy risk notices.
 
 ## Out of Scope for MVP
@@ -39,9 +39,6 @@ This project builds a self-hosted video download website that wraps mature open-
 
 ## Safety Requirements
 
-- Do not log cookie file contents.
-- Do not persist uploaded `cookies.txt` beyond task execution.
 - Do not expose real filesystem paths to the browser.
 - Show clear warnings about copyright, platform terms, and account risk.
 - Make failures understandable without exposing sensitive internal data.
-

@@ -315,43 +315,6 @@ select:focus-visible {
   color: #bdc4cf;
 }
 
-.cookie-chip {
-  display: inline-flex;
-  overflow: hidden;
-  max-width: min(100%, 260px);
-  min-height: 34px;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid #dbe7f7;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.84);
-  padding: 0 14px;
-  color: #718095;
-  cursor: pointer;
-  transition: border-color 180ms ease, color 180ms ease, background-color 180ms ease;
-}
-
-.cookie-chip:hover,
-.cookie-chip.selected {
-  border-color: rgba(47, 125, 244, 0.34);
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-
-.cookie-chip span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cookie-chip input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .trust-strip {
   display: flex;
   flex-wrap: wrap;

@@ -1,9 +1,6 @@
-export async function analyzeUrl({ url, cookiesFile }) {
+export async function analyzeUrl({ url }) {
   const form = new FormData();
   form.append("url", url);
-  if (cookiesFile) {
-    form.append("cookies_file", cookiesFile);
-  }
 
   const response = await fetch("/api/analyze", {
     method: "POST",

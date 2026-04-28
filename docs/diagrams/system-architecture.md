@@ -12,7 +12,6 @@ flowchart LR
   API --> DL["Download Service"]
   DL --> YTDLP["yt-dlp Python API"]
   DL --> TMP["临时下载目录"]
-  DL --> CK["临时 cookies.txt<br/>任务结束清理"]
   DL --> FF["ffmpeg 可选<br/>音视频合并 / 字幕转换"]
 
   YTDLP --> WEB["目标视频平台"]

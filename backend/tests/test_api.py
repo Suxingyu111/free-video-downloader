@@ -1,6 +1,9 @@
+import inspect
+
 from fastapi.testclient import TestClient
 
 from app import main
+from app.main import DownloadRequest
 from app.main import app
 from app.main import proxy_media_assets
 
@@ -32,12 +35,19 @@ def test_proxy_media_assets_rewrites_video_and_playlist_thumbnails():
     assert rewritten["entries"][0]["thumbnail"].startswith("/api/proxy/assets/")
 
 
+def test_api_contract_has_no_manual_cookie_fields():
+    analyze_signature = inspect.signature(main.analyze)
+
+    assert "cookies_file" not in analyze_signature.parameters
+    assert "cookie_ref" not in DownloadRequest.model_fields
+
+
 def test_analyze_retries_transient_youtube_bot_check(monkeypatch):
     class FlakyService:
         def __init__(self):
             self.calls = 0
 
-        def analyze(self, url, cookie_path=None):
+        def analyze(self, url):
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("ERROR: [youtube] abc: Sign in to confirm you’re not a bot.")

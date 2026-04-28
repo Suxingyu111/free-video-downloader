@@ -103,14 +103,15 @@ def test_prepare_url_removes_tracking_query_but_keeps_playlist_part():
     assert prepare_url(url) == "https://www.bilibili.com/video/BV1aFoyBnE4D/?p=2"
 
 
-def test_friendly_error_message_explains_bilibili_412_cookie_requirement():
+def test_friendly_error_message_explains_bilibili_412_public_boundary_without_cookie_prompt():
     message = friendly_error_message(
         "ERROR: [BiliBili] 1aFoyBnE4D: Unable to download JSON metadata: "
         "HTTP Error 412: Precondition Failed"
     )
 
     assert "Bilibili 返回 412" in message
-    assert "cookies.txt" in message
+    assert "公开视频" in message
+    assert "cookies.txt" not in message
 
 
 def test_build_download_options_uses_resilient_network_defaults(tmp_path):
@@ -121,7 +122,6 @@ def test_build_download_options_uses_resilient_network_defaults(tmp_path):
         subtitle_langs=[],
         write_auto_subs=False,
         prefer_srt=True,
-        cookie_file=None,
         progress_hook=None,
     )
 
@@ -142,7 +142,6 @@ def test_build_download_options_avoids_chunked_youtube_media_requests(tmp_path):
         subtitle_langs=[],
         write_auto_subs=False,
         prefer_srt=True,
-        cookie_file=None,
         progress_hook=None,
     )
 
@@ -250,7 +249,6 @@ def test_build_download_options_adds_bilibili_origin_header(tmp_path):
         subtitle_langs=[],
         write_auto_subs=False,
         prefer_srt=True,
-        cookie_file=None,
         progress_hook=None,
     )
 
@@ -258,14 +256,15 @@ def test_build_download_options_adds_bilibili_origin_header(tmp_path):
     assert options["http_headers"]["Origin"] == "https://www.bilibili.com"
 
 
-def test_friendly_error_message_explains_youtube_bot_cookie_requirement():
+def test_friendly_error_message_explains_youtube_bot_boundary_without_cookie_prompt():
     message = friendly_error_message(
         "ERROR: [youtube] zRtGL0-5rg4: Sign in to confirm you’re not a bot. "
         "Use --cookies-from-browser or --cookies for the authentication."
     )
 
     assert "YouTube 要求登录验证" in message
-    assert "cookies.txt" in message
+    assert "公开视频" in message
+    assert "cookies.txt" not in message
 
 
 def test_friendly_error_message_explains_douyin_public_video_boundary_without_cookie_prompt():
@@ -295,7 +294,6 @@ def test_build_download_options_filters_playlist_entries_by_selected_ids(tmp_pat
         subtitle_langs=[],
         write_auto_subs=False,
         prefer_srt=True,
-        cookie_file=None,
         progress_hook=None,
         entry_ids=["video-1", "video-3"],
     )

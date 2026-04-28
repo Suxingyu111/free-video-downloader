@@ -16,9 +16,8 @@ Returns service health.
 Form request:
 
 - `url`: required string.
-- `cookies_file`: optional `cookies.txt` upload.
 
-For Douyin URLs, the backend defaults to public-only resolution and does not require or request Douyin cookies. Private, login-gated, CAPTCHA-blocked, region-limited, expired, or risk-controlled Douyin links return a 400 with a public-video boundary message.
+The backend does not accept manual cookie uploads. Private, login-gated, CAPTCHA-blocked, region-limited, expired, or risk-controlled links return a 400 with a public-video boundary message.
 
 Response:
 
@@ -51,8 +50,7 @@ JSON request:
   "format_id": "best",
   "subtitle_langs": ["en"],
   "write_auto_subs": false,
-  "prefer_srt": true,
-  "cookie_ref": "optional-task-cookie-ref"
+  "prefer_srt": true
 }
 ```
 

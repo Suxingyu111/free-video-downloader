@@ -1,5 +1,5 @@
 <script setup>
-import { CheckCircle2, Download, FileKey2, FileVideo2, Link2, Loader2, Play, Search, ShieldCheck, Sparkles, Star, XCircle, Zap } from "lucide-vue-next";
+import { CheckCircle2, Download, FileVideo2, Link2, Loader2, Play, Search, ShieldCheck, Sparkles, Star, XCircle, Zap } from "lucide-vue-next";
 import { computed, onBeforeUnmount, reactive } from "vue";
 import { analyzeUrl, connectTaskEvents, createDownloadTask, getTask } from "./services/api";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT } from "./services/formats";
@@ -20,7 +20,6 @@ const state = reactive({
   selectedFormatId: RELIABLE_MP4_FORMAT,
   analyzing: false,
   downloading: false,
-  cookiesFile: null,
   error: "",
   result: null,
   currentTaskId: null,
@@ -73,7 +72,7 @@ async function handleAnalyze() {
   state.currentTaskId = null;
   state.analyzing = true;
   try {
-    const result = await analyzeUrl({ url: state.url.trim(), cookiesFile: state.cookiesFile });
+    const result = await analyzeUrl({ url: state.url.trim() });
     state.result = result;
     state.analyzedUrl = state.url.trim();
     state.selectedFormatId = RELIABLE_MP4_FORMAT;
@@ -82,11 +81,6 @@ async function handleAnalyze() {
   } finally {
     state.analyzing = false;
   }
-}
-
-function handleCookieFileChange(event) {
-  const [file] = event.target.files || [];
-  state.cookiesFile = file || null;
 }
 
 async function handleDownload() {
@@ -106,8 +100,7 @@ async function handleDownload() {
       format_id: state.selectedFormatId,
       subtitle_langs: [],
       write_auto_subs: false,
-      prefer_srt: true,
-      cookie_ref: state.result.cookie_ref || null
+      prefer_srt: true
     });
     registerTask(taskId);
   } catch (error) {
@@ -257,11 +250,6 @@ onBeforeUnmount(() => {
           <div class="quick-row" aria-label="平台示例">
             <span>试试:</span>
             <span v-for="link in quickLinks" :key="link" class="quick-chip">{{ link }}</span>
-            <label class="cookie-chip" :class="{ selected: state.cookiesFile }">
-              <FileKey2 :size="16" aria-hidden="true" />
-              <span>{{ state.cookiesFile?.name || "cookies.txt" }}</span>
-              <input type="file" accept=".txt,text/plain" @change="handleCookieFileChange" />
-            </label>
           </div>
         </form>
 
@@ -326,7 +314,7 @@ onBeforeUnmount(() => {
       <div class="platform-grid">
         <span v-for="platform in platforms" :key="platform">{{ platform }}</span>
       </div>
-      <p class="section-copy">抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。其他平台兼容能力基于 yt-dlp 的站点解析器，遇到登录态、地区限制或平台风控时，可能需要 cookies 或稍后重试。</p>
+      <p class="section-copy">抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。其他平台兼容能力基于 yt-dlp 的站点解析器，遇到登录态、地区限制或平台风控时，请稍后重试或改用公开视频链接。</p>
     </section>
 
     <section id="features" class="section">

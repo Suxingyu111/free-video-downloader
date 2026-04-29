@@ -105,7 +105,7 @@ def test_summary_service_uses_subtitle_transcript_before_speech_to_text(tmp_path
     assert result["transcript_segments"] == [
         {"start": 1, "end": 4, "time": "00:01", "text": "字幕内容"}
     ]
-    assert result["mind_map"]["title"] == "课程概览"
+    assert result["mind_map"]["title"] == "AI 课程"
     assert result["qa_pairs"][0]["answer"] == "先复盘章节，再选择重点回看。"
     assert markdown_path.exists()
 
@@ -193,3 +193,46 @@ def test_summary_service_answers_questions_from_existing_summary(tmp_path: Path)
     )
 
     assert answer == "基于《AI 课程》回答：如何学习？"
+
+
+def test_summary_service_enriches_sparse_ai_summary_with_transcript(tmp_path: Path):
+    class SparseAIProvider(FakeAIProvider):
+        def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
+            self.summarized.append((title, transcript, language))
+            return {
+                "overview": "本视频介绍核心内容。",
+                "outline": [],
+                "key_points": ["核心内容"],
+                "highlights": [],
+                "terms": [],
+                "questions": [],
+                "mind_map": {"title": "核心内容", "children": []},
+                "qa_pairs": [],
+            }
+
+    transcript = Transcript(
+        source="subtitle",
+        language="zh-CN",
+        segments=[
+            TranscriptSegment(start=0, end=20, text="主讲人复盘 YouTube 频道增长，指出完播率连续两周下滑。"),
+            TranscriptSegment(start=80, end=120, text="团队把选题从泛娱乐调整为 AI 工具教程，并记录标题点击率。"),
+            TranscriptSegment(start=160, end=210, text="关键风险是样本量太小，不能只看单条视频的数据。"),
+        ],
+    )
+    service = SummaryService(
+        transcript_service=FakeTranscriptService(transcript),
+        ai_provider=SparseAIProvider(),
+    )
+
+    result, _ = service.generate_summary(
+        url="https://example.com/video",
+        title="YouTube 增长复盘",
+        language="zh-CN",
+        output_dir=tmp_path,
+    )
+
+    assert "YouTube 增长复盘" in result["overview"]
+    assert len(result["outline"]) >= 3
+    assert all(point != "核心内容" for point in result["key_points"])
+    assert any("点击率" in point or "完播率" in point for point in result["key_points"])
+    assert len(result["mind_map"]["children"]) >= 4

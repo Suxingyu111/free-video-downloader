@@ -4,6 +4,9 @@ import { test } from "node:test";
 
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
 const mainCss = readFileSync(new URL("../src/assets/main.css", import.meta.url), "utf8");
+const summaryPanelSource = readFileSync(new URL("../src/components/summary/SummaryPanel.vue", import.meta.url), "utf8");
+const summaryOverviewSource = readFileSync(new URL("../src/components/summary/SummaryOverview.vue", import.meta.url), "utf8");
+const summaryCss = readFileSync(new URL("../src/assets/summary.css", import.meta.url), "utf8");
 
 test("analyzing a video automatically starts the AI summary task", () => {
   assert.match(appSource, /startSummaryForResult\(result,\s*\{\s*mode:\s*"auto"\s*\}\)/);
@@ -20,4 +23,41 @@ test("video details and AI summary use a left-narrow right-wide workbench layout
   assert.match(mainCss, /\.analysis-workbench\s*\{/);
   assert.match(mainCss, /grid-template-columns:\s*minmax\(280px,\s*0\.78fr\)\s+minmax\(0,\s*1\.42fr\)/);
   assert.match(mainCss, /@media \(max-width:\s*920px\)[\s\S]*\.analysis-workbench[\s\S]*grid-template-columns:\s*1fr/);
+});
+
+test("summary workbench shows module cards before final result and loads selected content", () => {
+  assert.match(summaryPanelSource, /class="summary-module-grid"/);
+  assert.match(summaryPanelSource, /class="\{ active: summaryView === card\.id \}"/);
+  assert.match(summaryPanelSource, /moduleStatus\(card\.id\)/);
+  assert.match(summaryPanelSource, /summary-loading-state/);
+  assert.doesNotMatch(summaryPanelSource, /<nav v-if="summaryResult" class="summary-tabs"/);
+  assert.doesNotMatch(summaryPanelSource, /<div v-if="summaryResult" class="summary-content"/);
+  assert.match(summaryOverviewSource, /summary-line-reveal/);
+  assert.match(summaryCss, /\.summary-module-grid\s*\{/);
+  assert.match(summaryCss, /@keyframes summaryLineReveal/);
+});
+
+test("summary workbench does not render progress bars or percentage counters", () => {
+  assert.doesNotMatch(summaryPanelSource, /summary-progress/);
+  assert.doesNotMatch(summaryPanelSource, /summaryProgressValue/);
+  assert.doesNotMatch(summaryPanelSource, /progress-fill/);
+  assert.doesNotMatch(summaryPanelSource, /progressWidth/);
+  assert.doesNotMatch(summaryPanelSource, /Math\.round\(summaryProgressValue\)/);
+  assert.doesNotMatch(summaryCss, /\.summary-progress\s*\{/);
+  assert.doesNotMatch(summaryCss, /\.summary-tabs\s*\{/);
+  assert.doesNotMatch(appSource, /summary-progress-value/);
+});
+
+test("summary module cards and loading state use compact professional controls", () => {
+  assert.match(summaryPanelSource, /class="summary-module-card"/);
+  assert.match(summaryPanelSource, /class="summary-module-icon"/);
+  assert.match(summaryPanelSource, /class="summary-status-pill"/);
+  assert.match(summaryPanelSource, /class="summary-loading-shell"/);
+  assert.match(summaryPanelSource, /summary-loading-bars/);
+  assert.match(summaryCss, /\.summary-module-grid\s*\{[\s\S]*gap:\s*10px/);
+  assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*min-height:\s*88px/);
+  assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*padding:\s*12px/);
+  assert.match(summaryCss, /\.summary-status-pill\s*\{/);
+  assert.match(summaryCss, /\.summary-loading-shell\s*\{/);
+  assert.match(summaryCss, /@media \(max-width:\s*760px\)[\s\S]*\.summary-module-grid[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
 });

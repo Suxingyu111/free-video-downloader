@@ -34,6 +34,10 @@ function formatTerm(item) {
   return `${item?.term || item?.name || "术语"}：${item?.explanation || item?.definition || item?.summary || ""}`;
 }
 
+function lineRevealStyle(sectionIndex, itemIndex = 0) {
+  return { "--line-delay": `${sectionIndex * 150 + itemIndex * 80}ms` };
+}
+
 function handleDownloadSummary() {
   const markdown = buildSummaryMarkdown(props.summaryResult || {});
   const filename = buildSafeSummaryFilename(title.value, "summary", "md");
@@ -57,13 +61,13 @@ function handleDownloadSummary() {
     <div v-if="summaryResult" class="summary-overview-body">
       <section class="summary-section">
         <h5>一句话概览</h5>
-        <p>{{ summaryResult.overview || "当前总结结果没有返回概览。" }}</p>
+        <p class="summary-line-reveal" :style="lineRevealStyle(0)">{{ summaryResult.overview || "当前总结结果没有返回概览。" }}</p>
       </section>
 
       <section v-if="summaryResult.outline?.length" class="summary-section">
         <h5>章节大纲</h5>
         <ul class="summary-list">
-          <li v-for="(item, index) in summaryResult.outline" :key="`${formatOutlineItem(item)}-${index}`">
+          <li v-for="(item, index) in summaryResult.outline" :key="`${formatOutlineItem(item)}-${index}`" class="summary-line-reveal" :style="lineRevealStyle(1, index)">
             {{ formatOutlineItem(item) }}
           </li>
         </ul>
@@ -72,14 +76,14 @@ function handleDownloadSummary() {
       <section v-if="summaryResult.key_points?.length" class="summary-section">
         <h5>核心知识点</h5>
         <ul class="summary-list">
-          <li v-for="(point, index) in summaryResult.key_points" :key="`${point}-${index}`">{{ point }}</li>
+          <li v-for="(point, index) in summaryResult.key_points" :key="`${point}-${index}`" class="summary-line-reveal" :style="lineRevealStyle(2, index)">{{ point }}</li>
         </ul>
       </section>
 
       <section v-if="summaryResult.highlights?.length" class="summary-section">
         <h5>时间轴要点</h5>
         <ul class="summary-list">
-          <li v-for="(item, index) in summaryResult.highlights" :key="`${formatHighlight(item)}-${index}`">
+          <li v-for="(item, index) in summaryResult.highlights" :key="`${formatHighlight(item)}-${index}`" class="summary-line-reveal" :style="lineRevealStyle(3, index)">
             {{ formatHighlight(item) }}
           </li>
         </ul>
@@ -88,7 +92,7 @@ function handleDownloadSummary() {
       <section v-if="summaryResult.terms?.length" class="summary-section">
         <h5>术语解释</h5>
         <ul class="summary-list">
-          <li v-for="(item, index) in summaryResult.terms" :key="`${formatTerm(item)}-${index}`">
+          <li v-for="(item, index) in summaryResult.terms" :key="`${formatTerm(item)}-${index}`" class="summary-line-reveal" :style="lineRevealStyle(4, index)">
             {{ formatTerm(item) }}
           </li>
         </ul>
@@ -98,9 +102,10 @@ function handleDownloadSummary() {
         <h5>可以继续追问</h5>
         <div class="question-chips">
           <button
-            v-for="question in summaryResult.questions"
+            v-for="(question, index) in summaryResult.questions"
             :key="typeof question === 'string' ? question : question.question"
-            class="question-chip"
+            class="question-chip summary-line-reveal"
+            :style="lineRevealStyle(5, index)"
             type="button"
             @click="emit('use-question', typeof question === 'string' ? question : question.question)"
           >

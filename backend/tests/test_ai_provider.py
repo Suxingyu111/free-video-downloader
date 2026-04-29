@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.services.ai_provider import (
@@ -25,8 +26,11 @@ class FakeResponse:
 
 
 class FakeClient:
-    def __init__(self):
+    def __init__(self, *, summary_content=None):
         self.calls = []
+        self.summary_content = summary_content or (
+            '{"overview":"概览","outline":[],"key_points":["A"],"highlights":[],"terms":[],"questions":[],"mind_map":{"title":"概览","children":[]},"qa_pairs":[{"question":"Q","answer":"A"}]}'
+        )
 
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
@@ -36,7 +40,7 @@ class FakeClient:
                     "choices": [
                         {
                             "message": {
-                                "content": '{"overview":"概览","outline":[],"key_points":["A"],"highlights":[],"terms":[],"questions":[],"mind_map":{"title":"概览","children":[]},"qa_pairs":[{"question":"Q","answer":"A"}]}'
+                                "content": self.summary_content
                             }
                         }
                     ]
@@ -54,6 +58,15 @@ class FakeClient:
                 }
             )
         return FakeResponse({"text": "转写文本"})
+
+
+class TimeoutClient:
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        raise httpx.TimeoutException("too slow")
 
 
 def test_openai_provider_requires_api_key_for_real_provider():
@@ -82,10 +95,130 @@ def test_openai_provider_shapes_chat_completion_request():
     assert kwargs["headers"]["Authorization"] == "Bearer secret"
     assert kwargs["json"]["model"] == "summary-model"
     assert kwargs["json"]["response_format"] == {"type": "json_object"}
+    assert kwargs["json"]["max_tokens"] >= 3200
     assert result["overview"] == "概览"
     assert result["key_points"] == ["A"]
-    assert result["mind_map"]["title"] == "概览"
+    assert result["mind_map"]["title"] == "Demo"
     assert result["qa_pairs"] == [{"question": "Q", "answer": "A"}]
+
+
+def test_openai_provider_repairs_literal_newlines_inside_json_strings():
+    client = FakeClient(
+        summary_content='{"overview":"第一行\n第二行","outline":[],"key_points":["A"],"highlights":[],"terms":[],"questions":[],"mind_map":{"title":"概览","children":[]},"qa_pairs":[]}'
+    )
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+
+    result = provider.summarize_transcript(title="Demo", transcript="[00:01] hello", language="zh-CN")
+
+    assert result["overview"] == "第一行\n第二行"
+    assert result["key_points"] == ["A"]
+
+
+def test_openai_provider_falls_back_when_summary_json_is_truncated():
+    client = FakeClient(summary_content='{"overview":"还没写完')
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+
+    result = provider.summarize_transcript(
+        title="Demo",
+        transcript="[00:00] 开场介绍主题\n[01:00] 解释关键步骤\n[02:00] 总结行动建议",
+        language="zh-CN",
+    )
+
+    assert "快速摘要" in result["overview"]
+    assert result["outline"]
+    assert result["key_points"]
+
+
+def test_openai_provider_uses_fast_fallback_when_summary_request_times_out():
+    client = TimeoutClient()
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+            timeout_seconds=120,
+        ),
+        client=client,
+    )
+
+    result = provider.summarize_transcript(
+        title="Demo",
+        transcript="[00:00] 开场介绍主题\n[01:00] 解释关键步骤\n[02:00] 总结行动建议",
+        language="zh-CN",
+    )
+
+    _, kwargs = client.calls[0]
+    assert kwargs["timeout"] <= 45
+    assert "超过 45 秒" in result["overview"]
+    assert result["outline"]
+
+
+def test_provider_enriches_sparse_generic_summary_from_transcript():
+    client = FakeClient(
+        summary_content=(
+            '{"overview":"这个视频讲了核心内容。",'
+            '"outline":[],'
+            '"key_points":["核心内容"],'
+            '"highlights":[],'
+            '"terms":[],'
+            '"questions":["讲了什么？"],'
+            '"mind_map":{"title":"核心内容","children":[]},'
+            '"qa_pairs":[]}'
+        )
+    )
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+
+    result = provider.summarize_transcript(
+        title="Notion AI 自动化复盘",
+        transcript=(
+            "[00:00] 主讲人说明这期视频复盘 Notion AI 数据库自动化流程。\n"
+            "[01:10] 首先创建客户线索表，添加状态、来源、负责人三个字段。\n"
+            "[03:20] 接着用 Zapier 监听表单提交，把邮箱和需求同步到 Notion。\n"
+            "[05:40] 风险是重复线索会覆盖负责人，需要先用邮箱做去重校验。\n"
+            "[07:00] 最后建议每周检查失败任务并记录修复动作。"
+        ),
+        language="zh-CN",
+    )
+
+    assert "Notion AI" in result["overview"]
+    assert "核心内容" not in result["overview"]
+    assert len(result["outline"]) >= 4
+    assert result["outline"][0]["time"] == "00:00"
+    assert any("Zapier" in point or "邮箱" in point for point in result["key_points"])
+    assert len(result["key_points"]) >= 4
+    assert len(result["highlights"]) >= 4
+    assert any(item["time"] == "05:40" and "去重" in item["text"] for item in result["highlights"])
+    assert len(result["terms"]) >= 2
+    assert any(item["term"] == "Zapier" for item in result["terms"])
+    assert len(result["questions"]) >= 3
+    assert len(result["qa_pairs"]) >= 3
+    assert all("继续追问" not in item["answer"] for item in result["qa_pairs"])
+    assert len(result["mind_map"]["children"]) >= 4
 
 
 def test_openai_provider_shapes_audio_transcription_request(tmp_path: Path):
@@ -130,11 +263,11 @@ def test_anthropic_provider_shapes_messages_request():
     assert kwargs["headers"]["x-api-key"] == "secret"
     assert kwargs["headers"]["anthropic-version"]
     assert kwargs["json"]["model"] == "deepseek-v4-pro"
-    assert kwargs["json"]["max_tokens"] == 4096
+    assert kwargs["json"]["max_tokens"] >= 3200
     assert kwargs["json"]["messages"][0]["content"][0]["type"] == "text"
     assert result["overview"] == "概览"
     assert result["key_points"] == ["A"]
-    assert result["mind_map"]["title"] == "概览"
+    assert result["mind_map"]["title"] == "Demo"
     assert result["qa_pairs"] == [{"question": "Q", "answer": "A"}]
 
 
@@ -229,6 +362,39 @@ def test_summary_prompt_requests_detailed_differentiated_mind_map():
     assert "避免使用“核心内容”“要点总结”这类泛化标题" in prompt
 
 
+def test_summary_prompt_requires_grounded_complete_transcript_summary():
+    prompt = build_summary_prompt(
+        title="Notion AI 自动化复盘",
+        transcript="[00:00] 先创建客户线索表\n[01:00] 再用 Zapier 同步表单",
+        language="zh-CN",
+    )
+
+    assert "Notion AI 自动化复盘" in prompt
+    assert "先创建客户线索表" in prompt
+    assert "只能基于视频标题和转写稿" in prompt
+    assert "不得编造" in prompt
+    assert "字幕没有依据" in prompt
+    assert "逐段提取字幕事实" in prompt
+    assert "overview 120-220 字" in prompt
+    assert "outline 4-8 项" in prompt
+    assert "key_points 6-10 项" in prompt
+    assert "highlights 4-8 项" in prompt
+    assert "terms 3-6 项" in prompt
+    assert "questions 4-6 项" in prompt
+    assert "qa_pairs 3-5 项" in prompt
+
+
+def test_summary_prompt_compacts_long_transcript_for_fast_ai_calls():
+    transcript = "\n".join(f"[{index:02d}:00] 这是第 {index} 段非常详细的视频字幕内容。" for index in range(500))
+
+    prompt = build_summary_prompt(title="长视频", transcript=transcript, language="zh-CN")
+
+    assert len(prompt) <= 15000
+    assert "字幕已压缩" in prompt
+    assert "这是第 0 段" in prompt
+    assert "这是第 499 段" in prompt
+
+
 def test_normalize_summary_payload_enriches_sparse_mind_map():
     payload = {
         "overview": "视频讲解如何规划出海项目。",
@@ -250,6 +416,60 @@ def test_normalize_summary_payload_enriches_sparse_mind_map():
     assert len(branches) >= 4
     assert {branch["title"] for branch in branches} >= {"内容脉络", "核心知识点", "关键证据", "术语概念"}
     assert all(branch["children"] for branch in branches[:4])
+
+
+def test_normalize_summary_payload_uses_transcript_to_replace_generic_sections():
+    result = normalize_summary_payload(
+        {
+            "overview": "本视频介绍核心内容。",
+            "outline": [],
+            "key_points": ["核心内容", "要点总结"],
+            "highlights": [],
+            "terms": [],
+            "questions": ["讲了什么？"],
+            "mind_map": {"title": "核心内容", "children": []},
+            "qa_pairs": [],
+        },
+        title="跨境独立站投放复盘",
+        transcript=(
+            "[00:00] 主讲人复盘跨境独立站广告投放结果，指出 ROAS 连续三天下滑。\n"
+            "[02:15] 团队把预算从泛兴趣广告组转到复购人群，并暂停低转化素材。\n"
+            "[04:30] 关键风险是样本量太小，不能只看单日点击成本做判断。\n"
+            "[06:10] 后续动作是每周导出 Shopify 订单，和广告平台转化数据交叉核对。"
+        ),
+    )
+
+    assert "跨境独立站" in result["overview"]
+    assert len(result["outline"]) >= 4
+    assert len(result["key_points"]) >= 4
+    assert all(point not in {"核心内容", "要点总结"} for point in result["key_points"])
+    assert any("ROAS" in item["text"] for item in result["highlights"])
+    assert any(item["term"] in {"ROAS", "Shopify"} for item in result["terms"])
+    assert len(result["qa_pairs"]) >= 3
+
+
+def test_normalize_summary_payload_extracts_chinese_terms_from_transcript():
+    result = normalize_summary_payload(
+        {
+            "overview": "本视频介绍核心内容。",
+            "outline": [],
+            "key_points": [],
+            "highlights": [],
+            "terms": [],
+            "questions": [],
+            "mind_map": {"title": "核心内容", "children": []},
+            "qa_pairs": [],
+        },
+        title="私域运营自动化",
+        transcript=(
+            "[00:00] 主讲人介绍私域运营流程，先创建用户标签体系。\n"
+            "[01:20] 接着使用自动化工具同步会员状态，避免人工漏记。\n"
+            "[03:00] 关键风险是活动指标样本太少，不能只看单日转化率。"
+        ),
+    )
+
+    terms = {item["term"] for item in result["terms"]}
+    assert terms & {"私域运营流程", "自动化工具", "活动指标", "用户标签体系"}
 
 
 def test_mock_ai_provider_returns_deterministic_learning_summary(tmp_path: Path):

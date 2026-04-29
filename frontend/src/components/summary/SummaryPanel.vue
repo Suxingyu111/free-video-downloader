@@ -1,5 +1,5 @@
 <script setup>
-import { Brain, FileText, MessageCircle, NotebookText } from "lucide-vue-next";
+import { Brain, FileText, Loader2, MessageCircle, NotebookText } from "lucide-vue-next";
 import { computed } from "vue";
 import SummaryMindMap from "./SummaryMindMap.vue";
 import SummaryOverview from "./SummaryOverview.vue";
@@ -22,10 +22,6 @@ const props = defineProps({
   isSummaryRunning: {
     type: Boolean,
     default: false
-  },
-  summaryProgressValue: {
-    type: Number,
-    default: 0
   },
   canExportMarkdown: {
     type: Boolean,
@@ -55,22 +51,22 @@ const props = defineProps({
 
 const emit = defineEmits(["update:view", "update:question", "submit-question", "use-question"]);
 
-const tabs = [
-  { id: "summary", label: "总结内容", icon: NotebookText },
-  { id: "transcript", label: "字幕文本", icon: FileText },
-  { id: "mindmap", label: "思维导图", icon: Brain },
-  { id: "qa", label: "AI 问答", icon: MessageCircle }
+const moduleCards = [
+  { id: "summary", label: "总结内容", caption: "摘要与要点", icon: NotebookText, loadingTitle: "正在生成学习摘要", loadingText: "AI 会把视频压缩成一句话概览、章节大纲和核心知识点。" },
+  { id: "transcript", label: "字幕文本", caption: "原文轨道", icon: FileText, loadingTitle: "正在提取字幕文本", loadingText: "优先读取公开视频字幕，没有字幕时会等待后续转写结果。" },
+  { id: "mindmap", label: "思维导图", caption: "结构视图", icon: Brain, loadingTitle: "等待摘要结构生成", loadingText: "结构化摘要完成后，会自动生成可查看和导出的知识结构图。" },
+  { id: "qa", label: "AI 问答", caption: "继续追问", icon: MessageCircle, loadingTitle: "总结完成后可追问", loadingText: "摘要生成后，可以围绕字幕和知识点继续提问。" }
 ];
 
 const sourceText = computed(() => {
   const source = props.summaryResult?.transcript_source;
   return {
     subtitle: "字幕",
-    auto_subtitle: "自动字幕"
+    auto_subtitle: "自动字幕",
+    speech_to_text: "语音转写"
   }[source] || (props.summaryResult ? "未知来源" : "准备中");
 });
 
-const progressWidth = computed(() => `${Math.min(Math.max(props.summaryProgressValue || 0, 0), 100)}%`);
 const resultWithTitle = computed(() => {
   if (!props.summaryResult) return null;
   return {
@@ -78,6 +74,38 @@ const resultWithTitle = computed(() => {
     title: props.summaryResult.title || props.summaryTask?.title || "视频学习笔记"
   };
 });
+const activeCard = computed(() => moduleCards.find((card) => card.id === props.summaryView) || moduleCards[0]);
+const shouldShowLoadingState = computed(() => !props.summaryResult);
+
+function moduleStatus(moduleId) {
+  if (props.summaryResult) {
+    return moduleId === "qa" ? "可追问" : moduleId === "mindmap" ? "已生成" : "已完成";
+  }
+
+  const stage = props.summaryTask?.stage;
+  const status = props.summaryTask?.status;
+
+  if (moduleId === "transcript") {
+    if (["subtitle", "speech_to_text"].includes(stage) || status === "transcribing") return "提取中";
+    if (stage === "summary" || status === "summarizing") return "已提取";
+    return "等待中";
+  }
+
+  if (moduleId === "summary") {
+    if (stage === "summary" || status === "summarizing") return "生成中";
+    return "等待摘要";
+  }
+
+  if (moduleId === "mindmap") return "等待摘要";
+  return "待完成";
+}
+
+function moduleTone(moduleId) {
+  const status = moduleStatus(moduleId);
+  if (["已完成", "已生成", "可追问", "已提取"].includes(status)) return "done";
+  if (["生成中", "提取中"].includes(status)) return "active";
+  return "waiting";
+}
 
 function selectView(view) {
   emit("update:view", view);
@@ -101,34 +129,39 @@ function useQuestion(question) {
       </div>
     </div>
 
-    <div v-if="summaryStatusText" class="message" aria-live="polite">
+    <div v-if="summaryStatusText" class="summary-status-message" :data-running="isSummaryRunning ? 'true' : 'false'" aria-live="polite">
+      <span class="summary-status-dot" aria-hidden="true"></span>
       <span>{{ summaryStatusText }}</span>
-      <span v-if="isSummaryRunning">{{ Math.round(summaryProgressValue) }}%</span>
-    </div>
-    <div class="progress-track summary-progress" aria-hidden="true">
-      <div class="progress-fill" :style="{ width: progressWidth }"></div>
     </div>
 
-    <nav v-if="summaryResult" class="summary-tabs" aria-label="AI 视频学习功能">
+    <nav class="summary-module-grid" aria-label="AI 视频学习功能">
       <button
-        v-for="tab in tabs"
-        :key="tab.id"
+        v-for="card in moduleCards"
+        :key="card.id"
         type="button"
-        :class="{ active: summaryView === tab.id }"
-        :aria-current="summaryView === tab.id ? 'page' : undefined"
-        @click="selectView(tab.id)"
+        class="summary-module-card"
+        :class="{ active: summaryView === card.id }"
+        :data-tone="moduleTone(card.id)"
+        :aria-current="summaryView === card.id ? 'page' : undefined"
+        @click="selectView(card.id)"
       >
-        <component :is="tab.icon" :size="18" aria-hidden="true" />
-        <span>{{ tab.label }}</span>
+        <span class="summary-module-icon">
+          <component :is="card.icon" :size="18" aria-hidden="true" />
+        </span>
+        <span class="summary-module-copy">
+          <span class="summary-module-title">{{ card.label }}</span>
+          <span class="summary-module-description">{{ card.caption }}</span>
+        </span>
+        <span class="summary-status-pill">{{ moduleStatus(card.id) }}</span>
       </button>
     </nav>
 
-    <div v-if="summaryResult" class="summary-content">
-      <SummaryOverview v-if="summaryView === 'summary'" :summary-result="resultWithTitle" @use-question="useQuestion" />
-      <SummaryTranscript v-else-if="summaryView === 'transcript'" :summary-result="resultWithTitle" />
-      <SummaryMindMap v-else-if="summaryView === 'mindmap'" :summary-result="resultWithTitle" />
+    <div class="summary-content">
+      <SummaryOverview v-if="summaryView === 'summary' && summaryResult" :summary-result="resultWithTitle" @use-question="useQuestion" />
+      <SummaryTranscript v-else-if="summaryView === 'transcript' && summaryResult" :summary-result="resultWithTitle" />
+      <SummaryMindMap v-else-if="summaryView === 'mindmap' && summaryResult" :summary-result="resultWithTitle" />
       <SummaryQa
-        v-else
+        v-else-if="summaryView === 'qa' && summaryResult"
         :summary-result="resultWithTitle"
         :summary-qa-history="summaryQaHistory"
         :summary-question="summaryQuestion"
@@ -137,6 +170,24 @@ function useQuestion(question) {
         @update:question="emit('update:question', $event)"
         @submit-question="emit('submit-question')"
       />
+      <section v-else-if="shouldShowLoadingState" class="summary-loading-state" aria-live="polite">
+        <div class="summary-loading-shell" :data-tone="moduleTone(activeCard.id)">
+          <span class="summary-loading-icon">
+            <Loader2 v-if="moduleTone(activeCard.id) === 'active'" :size="20" class="animate-spin" aria-hidden="true" />
+            <component v-else :is="activeCard.icon" :size="20" aria-hidden="true" />
+          </span>
+          <div class="summary-loading-copy">
+            <p class="summary-module-eyebrow">{{ activeCard.label }}</p>
+            <h4>{{ activeCard.loadingTitle }}</h4>
+            <p>{{ activeCard.loadingText }}</p>
+            <div class="summary-loading-bars" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </section>
 </template>

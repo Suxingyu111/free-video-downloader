@@ -63,7 +63,7 @@ class SummaryService:
         if progress_hook:
             progress_hook("summary", 72, "Generating structured summary")
         summary = self.ai_provider.summarize_transcript(title=safe_title, transcript=transcript_text, language=language)
-        result = normalize_summary_payload(summary)
+        result = normalize_summary_payload(summary, title=safe_title, transcript=transcript_text)
         result["transcript_source"] = source
         result["language"] = language
         result["transcript_language"] = transcript.language

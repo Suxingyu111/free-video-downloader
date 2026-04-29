@@ -69,7 +69,6 @@ const isBusy = computed(() => state.analyzing || state.downloading || isTaskRunn
 const canSaveFile = computed(() => currentTask.value?.status === "completed" && currentTask.value.download_url);
 const progressValue = computed(() => Math.min(currentTask.value?.progress || 0, 100));
 const isSummaryRunning = computed(() => ["queued", "transcribing", "summarizing"].includes(state.summaryTask?.status));
-const summaryProgressValue = computed(() => Math.min(state.summaryTask?.progress || 0, 100));
 const summaryResult = computed(() => state.summaryTask?.result || null);
 const canExportMarkdown = computed(() => Boolean(state.summaryTask?.status === "completed" && state.summaryTask.markdown_url));
 const statusText = computed(() => {
@@ -499,7 +498,6 @@ onBeforeUnmount(() => {
               :summary-result="summaryResult"
               :summary-status-text="summaryStatusText"
               :is-summary-running="isSummaryRunning"
-              :summary-progress-value="summaryProgressValue"
               :can-export-markdown="canExportMarkdown"
               :summary-qa-history="state.summaryQaHistory"
               :summary-question="state.summaryQuestion"

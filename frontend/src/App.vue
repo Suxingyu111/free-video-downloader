@@ -83,18 +83,17 @@ const statusText = computed(() => {
 const summaryStatusText = computed(() => {
   if (state.summaryError) return "";
   if (state.summaryTask?.message) return localizeSummaryStatus(state.summaryTask.message);
-  if (state.summarizing) return "正在创建 AI 总结任务";
+  if (state.summarizing) return "正在自动总结视频内容";
   return "";
 });
+const summaryActionLabel = computed(() => (state.summaryError ? "重试总结" : "重新总结"));
 
 async function handleAnalyze() {
   state.error = "";
   state.result = null;
   state.analyzedUrl = "";
   state.currentTaskId = null;
-  state.currentSummaryId = null;
-  state.summaryTask = null;
-  state.summaryError = "";
+  clearCurrentSummary();
   resetSummaryInteraction();
   state.analyzing = true;
   try {
@@ -102,6 +101,7 @@ async function handleAnalyze() {
     state.result = result;
     state.analyzedUrl = state.url.trim();
     state.selectedFormatId = RELIABLE_MP4_FORMAT;
+    startSummaryForResult(result, { mode: "auto" });
   } catch (error) {
     state.error = localizeStatus(error.message);
   } finally {
@@ -109,24 +109,31 @@ async function handleAnalyze() {
   }
 }
 
-async function handleSummary() {
-  if (!hasResult.value || state.summarizing || isSummaryRunning.value) return;
+async function startSummaryForResult(result, { mode = "manual" } = {}) {
+  if (!result || state.summarizing || isSummaryRunning.value) return;
 
+  clearCurrentSummary();
   state.summaryError = "";
   resetSummaryInteraction();
   state.summarizing = true;
   try {
     const { summary_id: summaryId } = await createSummaryTask({
-      url: state.result.webpage_url || state.url.trim(),
-      title: state.result.title,
+      url: result.webpage_url || state.url.trim(),
+      title: result.title,
       language: "zh-CN"
     });
-    registerSummary(summaryId);
+    registerSummary(summaryId, {
+      message: mode === "auto" ? "正在自动总结视频内容" : "AI 总结任务已排队"
+    });
   } catch (error) {
     state.summaryError = localizeSummaryStatus(error.message);
   } finally {
     state.summarizing = false;
   }
+}
+
+function retrySummary() {
+  startSummaryForResult(state.result, { mode: state.summaryError ? "retry" : "manual" });
 }
 
 async function handleDownload() {
@@ -156,7 +163,7 @@ async function handleDownload() {
   }
 }
 
-function registerSummary(summaryId) {
+function registerSummary(summaryId, options = {}) {
   resetSummaryInteraction();
   state.currentSummaryId = summaryId;
   state.summaryTask = {
@@ -164,7 +171,7 @@ function registerSummary(summaryId) {
     status: "queued",
     stage: "queued",
     progress: 0,
-    message: "AI 总结任务已排队",
+    message: options.message || "AI 总结任务已排队",
     result: null,
     markdown_url: null,
     error: null
@@ -200,6 +207,20 @@ function registerSummary(summaryId) {
     }
   }, 1000);
   summaryPollers.set(summaryId, poller);
+}
+
+function clearCurrentSummary() {
+  const summaryId = state.currentSummaryId;
+  if (summaryId) {
+    summaryDisconnectors.get(summaryId)?.();
+    summaryDisconnectors.delete(summaryId);
+    const poller = summaryPollers.get(summaryId);
+    if (poller) window.clearInterval(poller);
+    summaryPollers.delete(summaryId);
+  }
+  state.currentSummaryId = null;
+  state.summaryTask = null;
+  state.summaryError = "";
 }
 
 function registerTask(taskId) {
@@ -374,13 +395,13 @@ onBeforeUnmount(() => {
       </nav>
     </header>
 
-    <section id="download" class="hero" aria-labelledby="page-title">
+    <section id="download" class="hero" :class="{ 'hero-workbench': hasResult }" aria-labelledby="page-title">
       <div class="hero-copy-block">
         <p class="kicker"><span aria-hidden="true"></span>支持 1800+ 平台，永久免费使用</p>
         <h1 id="page-title" aria-label="复制链接，一键保存高清视频">
           <span class="title-main">万能视频下载器，</span><span>一键保存</span>
         </h1>
-        <p class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 随时随地，想下就下。</p>
+        <p v-if="!hasResult" class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 随时随地，想下就下。</p>
       </div>
 
       <section class="console" aria-label="视频下载控制台">
@@ -406,69 +427,101 @@ onBeforeUnmount(() => {
           <span>{{ state.error }}</span>
         </section>
 
-        <section v-if="hasResult" class="result-card" aria-label="视频信息">
-          <img v-if="state.result.thumbnail" class="cover" :src="state.result.thumbnail" :alt="state.result.title" />
-          <div v-else class="cover empty-cover" aria-hidden="true"><Play :size="34" /></div>
-          <div class="result-main">
-            <p class="result-meta">
-              <span>{{ state.result.extractor || state.result.kind }}</span>
-              <span>{{ formatDuration(state.result.duration) }}</span>
-              <span v-if="playlistEntries.length">{{ playlistEntries.length }} 个视频</span>
-            </p>
-            <h2>{{ state.result.title }}</h2>
-            <div class="download-row">
-              <label class="sr-only" for="format-select">选择清晰度</label>
-              <select id="format-select" v-model="state.selectedFormatId">
-                <option v-for="format in formatOptions" :key="format.format_id" :value="format.format_id">{{ format.label }}</option>
-              </select>
-              <button v-if="!canSaveFile" class="primary-button" type="button" :disabled="state.downloading || isTaskRunning" @click="handleDownload">
-                <Loader2 v-if="state.downloading || isTaskRunning" :size="20" class="animate-spin" aria-hidden="true" />
-                <Download v-else :size="20" aria-hidden="true" />
-                <span>{{ state.downloading || isTaskRunning ? "下载中" : "立即下载" }}</span>
-              </button>
-              <a v-else class="primary-button" :href="currentTask.download_url" download>
-                <CheckCircle2 :size="20" aria-hidden="true" />
-                <span>保存文件</span>
-              </a>
-              <button class="secondary-button" type="button" :disabled="state.summarizing || isSummaryRunning" @click="handleSummary">
-                <Loader2 v-if="state.summarizing || isSummaryRunning" :size="20" class="animate-spin" aria-hidden="true" />
-                <Sparkles v-else :size="20" aria-hidden="true" />
-                <span>{{ state.summarizing || isSummaryRunning ? "总结中" : "AI 总结" }}</span>
-              </button>
-            </div>
-            <div v-if="statusText && !state.error" class="message" aria-live="polite">
-              <span>{{ statusText }}</span>
-              <span v-if="isTaskRunning">{{ Math.round(progressValue) }}%</span>
-            </div>
-            <div v-if="currentTask && !state.error" class="progress-track" aria-hidden="true">
-              <div class="progress-fill" :style="{ width: `${progressValue}%` }"></div>
-            </div>
-          </div>
-        </section>
+        <section v-if="hasResult" class="analysis-workbench" aria-label="视频信息和 AI 总结">
+          <aside class="video-column" aria-label="视频信息与下载">
+            <section class="result-card" aria-label="视频信息">
+              <img v-if="state.result.thumbnail" class="cover" :src="state.result.thumbnail" :alt="state.result.title" />
+              <div v-else class="cover empty-cover" aria-hidden="true"><Play :size="34" /></div>
+              <div class="result-main">
+                <p class="result-meta">
+                  <span>{{ state.result.extractor || state.result.kind }}</span>
+                  <span>{{ formatDuration(state.result.duration) }}</span>
+                  <span v-if="playlistEntries.length">{{ playlistEntries.length }} 个视频</span>
+                </p>
+                <h2>{{ state.result.title }}</h2>
+                <div class="download-row">
+                  <label class="sr-only" for="format-select">选择清晰度</label>
+                  <select id="format-select" v-model="state.selectedFormatId">
+                    <option v-for="format in formatOptions" :key="format.format_id" :value="format.format_id">{{ format.label }}</option>
+                  </select>
+                  <button v-if="!canSaveFile" class="primary-button" type="button" :disabled="state.downloading || isTaskRunning" @click="handleDownload">
+                    <Loader2 v-if="state.downloading || isTaskRunning" :size="20" class="animate-spin" aria-hidden="true" />
+                    <Download v-else :size="20" aria-hidden="true" />
+                    <span>{{ state.downloading || isTaskRunning ? "下载中" : "立即下载" }}</span>
+                  </button>
+                  <a v-else class="primary-button" :href="currentTask.download_url" download>
+                    <CheckCircle2 :size="20" aria-hidden="true" />
+                    <span>保存文件</span>
+                  </a>
+                  <button class="secondary-button summary-retry-button" type="button" :disabled="state.summarizing || isSummaryRunning" @click="retrySummary">
+                    <Loader2 v-if="state.summarizing || isSummaryRunning" :size="20" class="animate-spin" aria-hidden="true" />
+                    <Sparkles v-else :size="20" aria-hidden="true" />
+                    <span>{{ state.summarizing || isSummaryRunning ? "总结中" : summaryActionLabel }}</span>
+                  </button>
+                </div>
+                <div v-if="statusText && !state.error" class="message" aria-live="polite">
+                  <span>{{ statusText }}</span>
+                  <span v-if="isTaskRunning">{{ Math.round(progressValue) }}%</span>
+                </div>
+                <div v-if="currentTask && !state.error" class="progress-track" aria-hidden="true">
+                  <div class="progress-fill" :style="{ width: `${progressValue}%` }"></div>
+                </div>
+              </div>
+            </section>
+          </aside>
 
-        <section v-if="state.summaryError" class="message error" role="alert">
-          <XCircle :size="18" aria-hidden="true" />
-          <span>{{ state.summaryError }}</span>
-        </section>
+          <section class="summary-column" aria-label="AI 总结工作区">
+            <section v-if="state.summaryError" class="summary-fallback-card summary-error-card" role="alert">
+              <XCircle :size="22" aria-hidden="true" />
+              <div>
+                <p class="summary-fallback-eyebrow">AI 总结失败</p>
+                <h3>可以继续下载，也可以重试总结</h3>
+                <p>{{ state.summaryError }}</p>
+              </div>
+              <button class="secondary-button" type="button" :disabled="state.summarizing || isSummaryRunning" @click="retrySummary">
+                <Sparkles :size="18" aria-hidden="true" />
+                <span>重试总结</span>
+              </button>
+            </section>
 
-        <SummaryPanel
-          v-if="state.summaryTask && !state.summaryError"
-          :summary-task="state.summaryTask"
-          :summary-result="summaryResult"
-          :summary-status-text="summaryStatusText"
-          :is-summary-running="isSummaryRunning"
-          :summary-progress-value="summaryProgressValue"
-          :can-export-markdown="canExportMarkdown"
-          :summary-qa-history="state.summaryQaHistory"
-          :summary-question="state.summaryQuestion"
-          :summary-question-error="state.summaryQuestionError"
-          :asking-summary-question="state.askingSummaryQuestion"
-          :summary-view="state.summaryView"
-          @update:view="state.summaryView = $event"
-          @update:question="state.summaryQuestion = $event"
-          @submit-question="submitSummaryQuestion"
-          @use-question="useSummaryQuestion"
-        />
+            <section v-else-if="state.summarizing && !state.summaryTask" class="summary-fallback-card summary-loading-card" aria-live="polite">
+              <Loader2 :size="24" class="animate-spin" aria-hidden="true" />
+              <div>
+                <p class="summary-fallback-eyebrow">AI 总结工作区</p>
+                <h3>正在自动总结视频内容</h3>
+                <p>解析完成后已自动开始创建总结任务，右侧会持续显示字幕提取、结构化总结和导出入口。</p>
+              </div>
+            </section>
+
+            <SummaryPanel
+              v-else-if="state.summaryTask"
+              :summary-task="state.summaryTask"
+              :summary-result="summaryResult"
+              :summary-status-text="summaryStatusText"
+              :is-summary-running="isSummaryRunning"
+              :summary-progress-value="summaryProgressValue"
+              :can-export-markdown="canExportMarkdown"
+              :summary-qa-history="state.summaryQaHistory"
+              :summary-question="state.summaryQuestion"
+              :summary-question-error="state.summaryQuestionError"
+              :asking-summary-question="state.askingSummaryQuestion"
+              :summary-view="state.summaryView"
+              @update:view="state.summaryView = $event"
+              @update:question="state.summaryQuestion = $event"
+              @submit-question="submitSummaryQuestion"
+              @use-question="useSummaryQuestion"
+            />
+
+            <section v-else class="summary-fallback-card">
+              <Sparkles :size="24" aria-hidden="true" />
+              <div>
+                <p class="summary-fallback-eyebrow">AI 总结工作区</p>
+                <h3>解析后会自动总结</h3>
+                <p>视频信息保留在左侧，学习摘要、字幕、思维导图和问答会集中显示在这里。</p>
+              </div>
+            </section>
+          </section>
+        </section>
 
         <ol v-if="!hasResult" class="workflow" aria-label="下载流程">
           <li><span>1</span>粘贴链接</li>

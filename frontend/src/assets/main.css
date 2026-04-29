@@ -220,6 +220,56 @@ select:focus-visible {
   margin-top: 54px;
 }
 
+.hero-workbench {
+  min-height: calc(100dvh - 88px);
+  align-content: start;
+  padding: clamp(26px, 3.8vw, 46px) 20px 54px;
+}
+
+.hero-workbench .hero-copy-block,
+.hero-workbench .console {
+  width: min(100%, 1320px);
+}
+
+.hero-workbench .hero-copy-block {
+  text-align: left;
+}
+
+.hero-workbench .kicker {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.hero-workbench h1 {
+  margin-top: 16px;
+  font-size: clamp(30px, 3.2vw, 46px);
+  line-height: 1.06;
+}
+
+.hero-workbench .console {
+  margin-top: 24px;
+}
+
+.hero-workbench .url-field {
+  min-height: 64px;
+  grid-template-columns: auto minmax(0, 1fr) 172px;
+  box-shadow: 0 16px 42px rgba(24, 44, 74, 0.11);
+}
+
+.hero-workbench .url-field input {
+  min-height: 44px;
+}
+
+.hero-workbench .inline-button {
+  min-height: 46px;
+}
+
+.hero-workbench .quick-row {
+  display: none;
+}
+
 .search-panel {
   display: grid;
   gap: 14px;
@@ -434,6 +484,115 @@ select:focus-visible {
   background: rgba(255, 255, 255, 0.94);
   box-shadow: var(--shadow-sm);
   padding: 16px;
+}
+
+.analysis-workbench {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.42fr);
+  gap: 18px;
+  margin-top: 20px;
+  align-items: start;
+}
+
+.video-column,
+.summary-column {
+  min-width: 0;
+}
+
+.video-column .result-card {
+  margin: 0;
+  grid-template-columns: 1fr;
+  gap: 15px;
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.video-column .cover {
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+}
+
+.video-column .result-main {
+  gap: 12px;
+}
+
+.video-column .result-main h2 {
+  font-size: clamp(20px, 2vw, 24px);
+}
+
+.video-column .download-row {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.video-column .primary-button,
+.video-column .secondary-button,
+.summary-fallback-card .secondary-button {
+  width: 100%;
+}
+
+.summary-retry-button {
+  color: #7a4a05;
+}
+
+.summary-column .summary-card {
+  min-height: 100%;
+  margin: 0;
+}
+
+.summary-fallback-card {
+  display: grid;
+  min-height: 282px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid #e1e8f2;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 251, 252, 0.98)),
+    linear-gradient(90deg, rgba(245, 158, 11, 0.08), rgba(15, 23, 42, 0.04));
+  box-shadow: 0 18px 44px rgba(23, 32, 51, 0.09);
+  padding: 26px;
+  color: #172033;
+  text-align: left;
+}
+
+.summary-fallback-card > svg {
+  color: #d97706;
+}
+
+.summary-fallback-card h3 {
+  margin: 5px 0 0;
+  color: #172033;
+  font-size: clamp(22px, 2.4vw, 30px);
+  font-weight: 900;
+  line-height: 1.18;
+}
+
+.summary-fallback-card p {
+  margin: 10px 0 0;
+  color: #5c6778;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.7;
+}
+
+.summary-fallback-eyebrow {
+  margin: 0;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.summary-error-card {
+  grid-template-columns: auto minmax(0, 1fr) 144px;
+  border-color: rgba(217, 45, 32, 0.2);
+  background: #fff7f4;
+}
+
+.summary-error-card > svg {
+  color: var(--danger);
 }
 
 .cover {
@@ -659,6 +818,36 @@ select {
   }
 }
 
+@media (max-width: 920px) {
+  .analysis-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-workbench {
+    padding-top: 34px;
+  }
+
+  .hero-workbench .url-field {
+    grid-template-columns: auto minmax(0, 1fr);
+    border-radius: 24px;
+    padding: 12px;
+  }
+
+  .hero-workbench .inline-button {
+    grid-column: 1 / -1;
+    width: 100%;
+    border-radius: 16px;
+  }
+
+  .summary-error-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .summary-error-card .secondary-button {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 760px) {
   .topbar {
     min-height: 72px;
@@ -696,6 +885,11 @@ select {
   .hero h1 {
     margin-top: 26px;
     font-size: clamp(36px, 10.6vw, 48px);
+  }
+
+  .hero-workbench h1 {
+    margin-top: 14px;
+    font-size: clamp(28px, 8.4vw, 38px);
   }
 
   .hero-copy {
@@ -738,6 +932,13 @@ select {
 
   .result-main {
     text-align: left;
+  }
+
+  .summary-fallback-card,
+  .summary-error-card {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 18px;
   }
 
   .section {

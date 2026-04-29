@@ -48,4 +48,4 @@ Open `http://localhost:5173`.
 
 ## Documentation
 
-Start with `docs/01-requirements.md` and `docs/03-technical-architecture.md` before extending the project.
+Start with `docs/01-requirements.md` and `docs/03-technical-architecture.md` before extending the project. See `docs/08-feature-summary.md` for the completed universal video downloader feature summary.

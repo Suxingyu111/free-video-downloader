@@ -69,3 +69,16 @@ def test_analyze_retries_transient_youtube_bot_check(monkeypatch):
     assert response.status_code == 200
     assert response.json()["title"] == "Recovered"
     assert fake_service.calls == 2
+
+
+def test_demo_analyze_result_is_env_gated(monkeypatch):
+    monkeypatch.delenv("SAVEANY_DEMO_MODE", raising=False)
+
+    assert main.demo_analyze_result("https://demo.saveany.local/video") is None
+
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+
+    result = main.demo_analyze_result("https://demo.saveany.local/video")
+
+    assert result["title"] == "AI 视频总结演示课"
+    assert result["extractor"] == "demo"

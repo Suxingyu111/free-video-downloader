@@ -11,7 +11,15 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
     "支持 YouTube、Bilibili、TikTok、Instagram 等主流平台",
     "粘贴视频链接，自动解析标题、封面、清晰度和音频",
     "解析视频",
-    "立即下载"
+    "立即下载",
+    "AI 总结",
+    "视频学习笔记",
+    "总结摘要",
+    "字幕文本",
+    "思维导图",
+    "AI 问答",
+    "核心知识点",
+    "Markdown"
   ];
 
   for (const phrase of requiredPhrases) {
@@ -40,4 +48,12 @@ test("douyin copy promises public video support without asking for cookies", () 
   assert.match(appSource, /受平台风控影响，少数链接可能失败/);
   assert.doesNotMatch(appSource, /抖音[^。；\n]*cookies/i);
   assert.doesNotMatch(appSource, /抖音[^。；\n]*登录态/);
+});
+
+test("mind map view keeps hierarchy and distinct visual structure", () => {
+  assert.match(appSource, /mindMapBranches/);
+  assert.match(appSource, /mind-map-canvas/);
+  assert.match(appSource, /mind-map-branch-header/);
+  assert.match(appSource, /mind-map-node-list/);
+  assert.match(appSource, /mind-map-leaves/);
 });

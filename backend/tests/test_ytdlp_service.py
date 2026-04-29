@@ -9,6 +9,7 @@ from app.services.ytdlp_service import (
     resolve_format_selector,
     select_output_artifact,
     validate_media_streams,
+    YtDlpService,
 )
 
 
@@ -222,6 +223,46 @@ def test_resolve_format_selector_maps_default_to_bilibili_mergeable_formats():
     )
 
     assert selector == BILIBILI_DEFAULT_FORMAT
+
+
+def test_analyze_falls_back_to_bilibili_public_metadata_when_yt_dlp_is_forbidden(monkeypatch):
+    class ForbiddenYdl:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def extract_info(self, url, download=False):
+            raise RuntimeError("ERROR: [BiliBili] 1mAAmzqEfP: Unable to download JSON metadata: HTTP Error 403: Forbidden")
+
+    fallback_calls = []
+
+    def fake_fetch_public_metadata(url):
+        fallback_calls.append(url)
+        return {
+            "kind": "video",
+            "id": "BV1mAAmzqEfP",
+            "title": "做了个新项目，我要出海了！",
+            "webpage_url": "https://www.bilibili.com/video/BV1mAAmzqEfP/",
+            "thumbnail": None,
+            "duration": 211,
+            "extractor": "bilibili-public",
+            "formats": [],
+            "subtitles": [],
+            "entries": [],
+        }
+
+    monkeypatch.setattr("app.services.ytdlp_service.YoutubeDL", ForbiddenYdl)
+    monkeypatch.setattr("app.services.ytdlp_service.fetch_bilibili_public_metadata", fake_fetch_public_metadata)
+
+    result = YtDlpService().analyze("https://bilibili.com/video/BV1mAAmzqEfP?spm_id_from=abc")
+
+    assert result["title"] == "做了个新项目，我要出海了！"
+    assert fallback_calls == ["https://bilibili.com/video/BV1mAAmzqEfP"]
 
 
 def test_resolve_format_selector_maps_default_to_tiktok_h264_formats():

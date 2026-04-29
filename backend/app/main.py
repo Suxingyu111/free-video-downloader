@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import threading
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from app.services.runtime_cleanup import cleanup_failed_download
 from app.services.runtime_cleanup import prune_download_directories
 from app.services.task_store import task_store
 from app.services.ytdlp_service import DEFAULT_FORMAT, DEFAULT_HTTP_HEADERS, YtDlpService, friendly_error_message
+from app.summary_routes import router as summary_router
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
@@ -50,6 +52,8 @@ app.add_middleware(
 
 if (FRONTEND_DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+app.include_router(summary_router)
 
 service = YtDlpService()
 
@@ -89,6 +93,24 @@ def proxy_media_assets(result: dict) -> dict:
     return result
 
 
+def demo_analyze_result(url: str) -> dict | None:
+    demo_enabled = os.getenv("SAVEANY_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+    if demo_enabled and url.startswith("https://demo.saveany.local/"):
+        return {
+            "kind": "video",
+            "id": "demo-ai-summary",
+            "title": "AI 视频总结演示课",
+            "webpage_url": url,
+            "thumbnail": None,
+            "duration": 618,
+            "extractor": "demo",
+            "formats": [],
+            "subtitles": [{"lang": "zh-CN", "ext": "vtt", "name": "中文演示字幕", "automatic": False}],
+            "entries": [],
+        }
+    return None
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "free-video-downloader"}
@@ -99,6 +121,9 @@ async def analyze(
     url: str = Form(...),
 ) -> dict:
     try:
+        demo_result = demo_analyze_result(url)
+        if demo_result is not None:
+            return demo_result
         last_error: Exception | None = None
         for attempt in range(3):
             try:

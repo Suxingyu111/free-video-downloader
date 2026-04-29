@@ -9,6 +9,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from yt_dlp import YoutubeDL
 
+from app.services.bilibili_public_metadata import fetch_bilibili_public_metadata
+from app.services.bilibili_public_metadata import is_bilibili_url
 from app.services.douyin_browser_service import is_douyin_url
 from app.services.douyin_public_resolver import DOUYIN_PUBLIC_FAILURE_MESSAGE
 from app.services.douyin_public_resolver import DouyinPublicResolver
@@ -378,9 +380,17 @@ class YtDlpService:
             "extract_flat": "in_playlist",
             "http_headers": build_http_headers(prepared_url),
         }
-        with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(prepared_url, download=False)
-            return normalize_info(ydl.sanitize_info(info))
+        try:
+            with YoutubeDL(options) as ydl:
+                info = ydl.extract_info(prepared_url, download=False)
+                return normalize_info(ydl.sanitize_info(info))
+        except Exception as exc:
+            if not is_bilibili_url(prepared_url):
+                raise
+            try:
+                return fetch_bilibili_public_metadata(prepared_url)
+            except Exception:
+                raise exc
 
     def download(
         self,

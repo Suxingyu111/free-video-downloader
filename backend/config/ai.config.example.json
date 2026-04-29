@@ -1,0 +1,8 @@
+{
+  "provider": "openai-compatible",
+  "base_url": "https://api.openai.com/v1",
+  "api_key": "",
+  "text_model": "gpt-4o-mini",
+  "transcribe_model": "gpt-4o-mini-transcribe",
+  "timeout_seconds": 120
+}

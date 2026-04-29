@@ -1,7 +1,7 @@
 <script setup>
-import { CheckCircle2, Download, FileVideo2, Link2, Loader2, Play, Search, ShieldCheck, Sparkles, Star, XCircle, Zap } from "lucide-vue-next";
+import { Brain, CheckCircle2, Download, FileText, FileVideo2, Link2, Loader2, MessageCircle, NotebookText, Play, Search, ShieldCheck, Sparkles, Star, XCircle, Zap } from "lucide-vue-next";
 import { computed, onBeforeUnmount, reactive } from "vue";
-import { analyzeUrl, connectTaskEvents, createDownloadTask, getTask } from "./services/api";
+import { analyzeUrl, askSummaryQuestion, connectSummaryEvents, connectTaskEvents, createDownloadTask, createSummaryTask, getSummary, getTask } from "./services/api";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT } from "./services/formats";
 
 const platforms = ["YouTube", "Bilibili", "TikTok", "Instagram", "X / Twitter", "Vimeo", "Facebook", "小红书", "抖音", "Reddit"];
@@ -20,14 +20,25 @@ const state = reactive({
   selectedFormatId: RELIABLE_MP4_FORMAT,
   analyzing: false,
   downloading: false,
+  summarizing: false,
   error: "",
+  summaryError: "",
+  summaryView: "summary",
+  summaryQuestion: "",
+  summaryQuestionError: "",
+  summaryQaHistory: [],
+  askingSummaryQuestion: false,
   result: null,
   currentTaskId: null,
+  currentSummaryId: null,
+  summaryTask: null,
   tasks: []
 });
 
 const disconnectors = new Map();
 const pollers = new Map();
+const summaryDisconnectors = new Map();
+const summaryPollers = new Map();
 
 const hasResult = computed(() => Boolean(state.result && state.analyzedUrl === state.url.trim()));
 const playlistEntries = computed(() => state.result?.entries || []);
@@ -56,6 +67,33 @@ const isTaskRunning = computed(() => ["queued", "processing", "downloading"].inc
 const isBusy = computed(() => state.analyzing || state.downloading || isTaskRunning.value);
 const canSaveFile = computed(() => currentTask.value?.status === "completed" && currentTask.value.download_url);
 const progressValue = computed(() => Math.min(currentTask.value?.progress || 0, 100));
+const isSummaryRunning = computed(() => ["queued", "transcribing", "summarizing"].includes(state.summaryTask?.status));
+const summaryProgressValue = computed(() => Math.min(state.summaryTask?.progress || 0, 100));
+const summaryResult = computed(() => state.summaryTask?.result || null);
+const canExportMarkdown = computed(() => state.summaryTask?.status === "completed" && state.summaryTask.markdown_url);
+const summaryTranscriptSegments = computed(() => summaryResult.value?.transcript_segments || []);
+const summaryTranscriptLines = computed(() => {
+  if (summaryTranscriptSegments.value.length) return summaryTranscriptSegments.value;
+  return (summaryResult.value?.transcript_text || "")
+    .split("\n")
+    .filter(Boolean)
+    .map((line, index) => ({ time: "", text: line, start: index }));
+});
+const summaryMindMap = computed(() => summaryResult.value?.mind_map || null);
+const mindMapTones = ["blue", "green", "amber", "rose", "violet", "cyan"];
+const mindMapBranches = computed(() => {
+  const branches = summaryMindMap.value?.children || [];
+  if (!Array.isArray(branches)) return [];
+  return branches
+    .filter((branch) => branch && typeof branch === "object")
+    .map((branch, index) => ({
+      title: mindNodeTitle(branch, "未命名分支"),
+      tone: mindMapTones[index % mindMapTones.length],
+      children: normalizeMindNodes(branch.children || []).slice(0, 6)
+    }))
+    .filter((branch) => branch.title || branch.children.length);
+});
+const summaryQaPairs = computed(() => summaryResult.value?.qa_pairs || []);
 const statusText = computed(() => {
   if (state.error) return "";
   if (canSaveFile.value) return "下载完成，文件已准备好";
@@ -64,12 +102,22 @@ const statusText = computed(() => {
   if (state.downloading) return "正在创建下载任务";
   return "";
 });
+const summaryStatusText = computed(() => {
+  if (state.summaryError) return "";
+  if (state.summaryTask?.message) return localizeSummaryStatus(state.summaryTask.message);
+  if (state.summarizing) return "正在创建 AI 总结任务";
+  return "";
+});
 
 async function handleAnalyze() {
   state.error = "";
   state.result = null;
   state.analyzedUrl = "";
   state.currentTaskId = null;
+  state.currentSummaryId = null;
+  state.summaryTask = null;
+  state.summaryError = "";
+  resetSummaryInteraction();
   state.analyzing = true;
   try {
     const result = await analyzeUrl({ url: state.url.trim() });
@@ -80,6 +128,26 @@ async function handleAnalyze() {
     state.error = localizeStatus(error.message);
   } finally {
     state.analyzing = false;
+  }
+}
+
+async function handleSummary() {
+  if (!hasResult.value || state.summarizing || isSummaryRunning.value) return;
+
+  state.summaryError = "";
+  resetSummaryInteraction();
+  state.summarizing = true;
+  try {
+    const { summary_id: summaryId } = await createSummaryTask({
+      url: state.result.webpage_url || state.url.trim(),
+      title: state.result.title,
+      language: "zh-CN"
+    });
+    registerSummary(summaryId);
+  } catch (error) {
+    state.summaryError = localizeSummaryStatus(error.message);
+  } finally {
+    state.summarizing = false;
   }
 }
 
@@ -108,6 +176,52 @@ async function handleDownload() {
   } finally {
     state.downloading = false;
   }
+}
+
+function registerSummary(summaryId) {
+  resetSummaryInteraction();
+  state.currentSummaryId = summaryId;
+  state.summaryTask = {
+    id: summaryId,
+    status: "queued",
+    stage: "queued",
+    progress: 0,
+    message: "AI 总结任务已排队",
+    result: null,
+    markdown_url: null,
+    error: null
+  };
+
+  const disconnect = connectSummaryEvents(
+    summaryId,
+    (snapshot) => {
+      applySummarySnapshot(snapshot);
+      if (snapshot.status === "completed" || snapshot.status === "failed") {
+        summaryDisconnectors.get(summaryId)?.();
+        summaryDisconnectors.delete(summaryId);
+      }
+    },
+    (message) => {
+      state.summaryError = localizeSummaryStatus(message);
+    }
+  );
+  summaryDisconnectors.set(summaryId, disconnect);
+
+  const poller = window.setInterval(async () => {
+    try {
+      const snapshot = await getSummary(summaryId);
+      applySummarySnapshot(snapshot);
+      if (snapshot.status === "completed" || snapshot.status === "failed") {
+        window.clearInterval(poller);
+        summaryPollers.delete(summaryId);
+        summaryDisconnectors.get(summaryId)?.();
+        summaryDisconnectors.delete(summaryId);
+      }
+    } catch (error) {
+      state.summaryError = localizeSummaryStatus(error.message);
+    }
+  }, 1000);
+  summaryPollers.set(summaryId, poller);
 }
 
 function registerTask(taskId) {
@@ -159,6 +273,15 @@ function registerTask(taskId) {
   pollers.set(taskId, poller);
 }
 
+function applySummarySnapshot(snapshot) {
+  state.summaryTask = {
+    ...(state.summaryTask || {}),
+    ...snapshot,
+    message: localizeSummaryStatus(snapshot.message || state.summaryTask?.message || "")
+  };
+  if (snapshot.status === "failed" && snapshot.error) state.summaryError = localizeSummaryStatus(snapshot.error);
+}
+
 function applyTaskSnapshot(taskId, snapshot) {
   const existingTask = state.tasks.find((item) => item.id === taskId);
   if (existingTask) {
@@ -166,6 +289,18 @@ function applyTaskSnapshot(taskId, snapshot) {
     existingTask.message = localizeStatus(snapshot.message || existingTask.message);
     if (snapshot.status === "failed" && snapshot.error) state.error = localizeStatus(snapshot.error);
   }
+}
+
+function localizeSummaryStatus(message = "") {
+  return message
+    .replaceAll("Queued", "排队中")
+    .replaceAll("Preparing transcript", "正在准备字幕文本")
+    .replaceAll("Preparing subtitles", "正在准备字幕文本")
+    .replaceAll("Extracting subtitles", "正在提取字幕")
+    .replaceAll("Generating structured summary", "正在生成结构化总结")
+    .replaceAll("Summary complete", "AI 总结完成")
+    .replaceAll("Summary failed", "AI 总结失败")
+    .replaceAll("Failed to fetch", "网络请求失败，请确认后端服务已启动");
 }
 
 function localizeStatus(message = "") {
@@ -177,6 +312,66 @@ function localizeStatus(message = "") {
     .replaceAll("Download complete", "下载完成")
     .replaceAll("Download failed", "下载失败")
     .replaceAll("Failed to fetch", "网络请求失败，请确认后端服务已启动");
+}
+
+function sourceLabel(source) {
+  return {
+    subtitle: "字幕",
+    auto_subtitle: "自动字幕"
+  }[source] || "未知来源";
+}
+
+function resetSummaryInteraction() {
+  state.summaryView = "summary";
+  state.summaryQuestion = "";
+  state.summaryQuestionError = "";
+  state.summaryQaHistory = [];
+  state.askingSummaryQuestion = false;
+}
+
+async function submitSummaryQuestion() {
+  const question = state.summaryQuestion.trim();
+  if (!question || !state.currentSummaryId || state.askingSummaryQuestion) return;
+
+  state.summaryQuestionError = "";
+  state.askingSummaryQuestion = true;
+  try {
+    const { answer } = await askSummaryQuestion(state.currentSummaryId, {
+      question,
+      language: "zh-CN"
+    });
+    state.summaryQaHistory.unshift({ question, answer });
+    state.summaryQuestion = "";
+  } catch (error) {
+    state.summaryQuestionError = localizeSummaryStatus(error.message);
+  } finally {
+    state.askingSummaryQuestion = false;
+  }
+}
+
+function useSummaryQuestion(question) {
+  state.summaryView = "qa";
+  state.summaryQuestion = question;
+}
+
+function mindNodeTitle(node, fallback = "未命名节点") {
+  if (typeof node === "string") return node.trim() || fallback;
+  if (!node || typeof node !== "object") return fallback;
+  return String(node.title || node.text || node.name || fallback).trim() || fallback;
+}
+
+function normalizeMindNodes(children = [], depth = 0) {
+  if (!Array.isArray(children) || depth > 2) return [];
+  return children
+    .map((child) => ({
+      title: mindNodeTitle(child),
+      children: normalizeMindNodes(child?.children || [], depth + 1).slice(0, 4)
+    }))
+    .filter((node) => node.title);
+}
+
+function formatBranchIndex(index) {
+  return String(index + 1).padStart(2, "0");
 }
 
 function formatLabel(format) {
@@ -207,6 +402,8 @@ function formatDuration(seconds) {
 onBeforeUnmount(() => {
   disconnectors.forEach((disconnect) => disconnect());
   pollers.forEach((poller) => window.clearInterval(poller));
+  summaryDisconnectors.forEach((disconnect) => disconnect());
+  summaryPollers.forEach((poller) => window.clearInterval(poller));
 });
 </script>
 
@@ -282,6 +479,11 @@ onBeforeUnmount(() => {
                 <CheckCircle2 :size="20" aria-hidden="true" />
                 <span>保存文件</span>
               </a>
+              <button class="secondary-button" type="button" :disabled="state.summarizing || isSummaryRunning" @click="handleSummary">
+                <Loader2 v-if="state.summarizing || isSummaryRunning" :size="20" class="animate-spin" aria-hidden="true" />
+                <Sparkles v-else :size="20" aria-hidden="true" />
+                <span>{{ state.summarizing || isSummaryRunning ? "总结中" : "AI 总结" }}</span>
+              </button>
             </div>
             <div v-if="statusText && !state.error" class="message" aria-live="polite">
               <span>{{ statusText }}</span>
@@ -293,7 +495,177 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <ol v-else class="workflow" aria-label="下载流程">
+        <section v-if="state.summaryError" class="message error" role="alert">
+          <XCircle :size="18" aria-hidden="true" />
+          <span>{{ state.summaryError }}</span>
+        </section>
+
+        <section v-if="state.summaryTask && !state.summaryError" class="summary-card" aria-label="视频学习笔记">
+          <div class="summary-header">
+            <div>
+              <p class="summary-eyebrow">视频学习笔记</p>
+              <h3>AI 总结</h3>
+            </div>
+            <div class="summary-actions">
+              <span class="summary-source">{{ summaryResult ? sourceLabel(summaryResult.transcript_source) : "准备中" }}</span>
+              <a v-if="canExportMarkdown" class="summary-export" :href="state.summaryTask.markdown_url" download>导出 Markdown</a>
+            </div>
+          </div>
+
+          <div v-if="summaryStatusText && !state.summaryError" class="message" aria-live="polite">
+            <span>{{ summaryStatusText }}</span>
+            <span v-if="isSummaryRunning">{{ Math.round(summaryProgressValue) }}%</span>
+          </div>
+          <div v-if="state.summaryTask && !state.summaryError" class="progress-track summary-progress" aria-hidden="true">
+            <div class="progress-fill" :style="{ width: `${summaryProgressValue}%` }"></div>
+          </div>
+
+          <nav v-if="summaryResult" class="summary-tabs" aria-label="AI 视频学习功能">
+            <button type="button" :class="{ active: state.summaryView === 'summary' }" @click="state.summaryView = 'summary'">
+              <NotebookText :size="18" aria-hidden="true" />
+              <span>总结摘要</span>
+            </button>
+            <button type="button" :class="{ active: state.summaryView === 'transcript' }" @click="state.summaryView = 'transcript'">
+              <FileText :size="18" aria-hidden="true" />
+              <span>字幕文本</span>
+            </button>
+            <button type="button" :class="{ active: state.summaryView === 'mindmap' }" @click="state.summaryView = 'mindmap'">
+              <Brain :size="18" aria-hidden="true" />
+              <span>思维导图</span>
+            </button>
+            <button type="button" :class="{ active: state.summaryView === 'qa' }" @click="state.summaryView = 'qa'">
+              <MessageCircle :size="18" aria-hidden="true" />
+              <span>AI 问答</span>
+            </button>
+          </nav>
+
+          <div v-if="summaryResult" class="summary-content">
+            <div v-if="state.summaryView === 'summary'" class="summary-pane">
+              <section>
+                <h4>一句话概览</h4>
+                <p>{{ summaryResult.overview }}</p>
+              </section>
+              <section v-if="summaryResult.outline?.length">
+                <h4>章节大纲</h4>
+                <ul>
+                  <li v-for="item in summaryResult.outline" :key="`${item.time}-${item.title}`">
+                    <strong>[{{ item.time || "时间未知" }}] {{ item.title || "未命名章节" }}</strong>
+                    <span>{{ item.summary || item.text }}</span>
+                  </li>
+                </ul>
+              </section>
+              <section v-if="summaryResult.key_points?.length">
+                <h4>核心知识点</h4>
+                <ul>
+                  <li v-for="point in summaryResult.key_points" :key="point">{{ point }}</li>
+                </ul>
+              </section>
+              <section v-if="summaryResult.highlights?.length">
+                <h4>时间轴要点</h4>
+                <ul>
+                  <li v-for="item in summaryResult.highlights" :key="`${item.time}-${item.text}`">[{{ item.time || "时间未知" }}] {{ item.text || item.summary }}</li>
+                </ul>
+              </section>
+              <section v-if="summaryResult.terms?.length">
+                <h4>术语解释</h4>
+                <ul>
+                  <li v-for="item in summaryResult.terms" :key="item.term"><strong>{{ item.term }}</strong>：{{ item.explanation || item.summary }}</li>
+                </ul>
+              </section>
+              <section v-if="summaryResult.questions?.length">
+                <h4>可以继续追问</h4>
+                <div class="question-chips">
+                  <button v-for="question in summaryResult.questions" :key="question" type="button" @click="useSummaryQuestion(question)">{{ question }}</button>
+                </div>
+              </section>
+            </div>
+
+            <div v-else-if="state.summaryView === 'transcript'" class="summary-pane transcript-pane">
+              <section>
+                <h4>字幕文本</h4>
+                <div v-if="summaryTranscriptLines.length" class="transcript-list">
+                  <article v-for="(segment, index) in summaryTranscriptLines" :key="`${segment.time}-${segment.text}-${index}`">
+                    <span>{{ segment.time || "字幕" }}</span>
+                    <p>{{ segment.text }}</p>
+                  </article>
+                </div>
+                <p v-else>当前总结结果没有返回字幕文本。</p>
+              </section>
+            </div>
+
+            <div v-else-if="state.summaryView === 'mindmap'" class="summary-pane">
+              <section>
+                <h4>思维导图</h4>
+                <div v-if="summaryMindMap" class="mind-map mind-map-canvas">
+                  <div class="mind-map-root">
+                    <span>中心主题</span>
+                    <strong>{{ summaryMindMap.title || "视频主题" }}</strong>
+                  </div>
+                  <div v-if="mindMapBranches.length" class="mind-map-branches">
+                    <article v-for="(branch, branchIndex) in mindMapBranches" :key="`${branch.title}-${branchIndex}`" class="mind-map-branch" :data-tone="branch.tone">
+                      <div class="mind-map-branch-header">
+                        <span class="mind-map-index">{{ formatBranchIndex(branchIndex) }}</span>
+                        <strong>{{ branch.title }}</strong>
+                      </div>
+                      <div v-if="branch.children.length" class="mind-map-node-list">
+                        <div v-for="(node, nodeIndex) in branch.children" :key="`${branch.title}-${node.title}-${nodeIndex}`" class="mind-map-node">
+                          <span class="mind-map-dot" aria-hidden="true"></span>
+                          <div class="mind-map-node-body">
+                            <p>{{ node.title }}</p>
+                            <ul v-if="node.children.length" class="mind-map-leaves">
+                              <li v-for="(leaf, leafIndex) in node.children" :key="`${node.title}-${leaf.title}-${leafIndex}`">
+                                <span>{{ leaf.title }}</span>
+                                <ul v-if="leaf.children.length" class="mind-map-leaf-details">
+                                  <li v-for="(detail, detailIndex) in leaf.children" :key="`${leaf.title}-${detail.title}-${detailIndex}`">{{ detail.title }}</li>
+                                </ul>
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                      <p v-else class="mind-map-empty">当前分支暂无细分节点。</p>
+                    </article>
+                  </div>
+                  <p v-else>当前思维导图没有可展示的分支。</p>
+                </div>
+                <p v-else>当前总结结果没有返回思维导图。</p>
+              </section>
+            </div>
+
+            <div v-else class="summary-pane qa-pane">
+              <section>
+                <h4>AI 问答</h4>
+                <div v-if="summaryQaPairs.length" class="qa-list">
+                  <article v-for="item in summaryQaPairs" :key="`${item.question}-${item.answer}`">
+                    <strong>问：{{ item.question }}</strong>
+                    <p>答：{{ item.answer }}</p>
+                  </article>
+                </div>
+                <form class="qa-form" @submit.prevent="submitSummaryQuestion">
+                  <label class="sr-only" for="summary-question">AI 问答</label>
+                  <textarea id="summary-question" v-model="state.summaryQuestion" rows="3" placeholder="基于字幕继续提问，例如：这段内容最重要的结论是什么？"></textarea>
+                  <button class="primary-button" type="submit" :disabled="state.askingSummaryQuestion || !state.summaryQuestion.trim()">
+                    <Loader2 v-if="state.askingSummaryQuestion" :size="18" class="animate-spin" aria-hidden="true" />
+                    <MessageCircle v-else :size="18" aria-hidden="true" />
+                    <span>{{ state.askingSummaryQuestion ? "回答中" : "提问" }}</span>
+                  </button>
+                </form>
+                <div v-if="state.summaryQuestionError" class="message error" role="alert">
+                  <XCircle :size="18" aria-hidden="true" />
+                  <span>{{ state.summaryQuestionError }}</span>
+                </div>
+                <div v-if="state.summaryQaHistory.length" class="qa-list qa-history">
+                  <article v-for="item in state.summaryQaHistory" :key="`${item.question}-${item.answer}`">
+                    <strong>问：{{ item.question }}</strong>
+                    <p>答：{{ item.answer }}</p>
+                  </article>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <ol v-if="!hasResult" class="workflow" aria-label="下载流程">
           <li><span>1</span>粘贴链接</li>
           <li><span>2</span>智能解析</li>
           <li><span>3</span>选择清晰度</li>

@@ -3,6 +3,16 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
+const summarySource = [
+  "../src/components/summary/SummaryPanel.vue",
+  "../src/components/summary/SummaryOverview.vue",
+  "../src/components/summary/SummaryTranscript.vue",
+  "../src/components/summary/SummaryMindMap.vue",
+  "../src/components/summary/SummaryQa.vue"
+]
+  .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
+  .join("\n");
+const uiSource = `${appSource}\n${summarySource}`;
 
 test("home page copy is Chinese-first and explains the universal downloader", () => {
   const requiredPhrases = [
@@ -14,16 +24,22 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
     "立即下载",
     "AI 总结",
     "视频学习笔记",
-    "总结摘要",
+    "总结内容",
     "字幕文本",
     "思维导图",
     "AI 问答",
     "核心知识点",
-    "Markdown"
+    "Markdown",
+    "下载总结",
+    "下载字幕",
+    "PNG",
+    "SVG",
+    "全屏",
+    "下载问答"
   ];
 
   for (const phrase of requiredPhrases) {
-    assert.match(appSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(uiSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 
   assert.doesNotMatch(appSource, /Free Video Downloader|Paste link|Video download platform/);
@@ -51,9 +67,10 @@ test("douyin copy promises public video support without asking for cookies", () 
 });
 
 test("mind map view keeps hierarchy and distinct visual structure", () => {
-  assert.match(appSource, /mindMapBranches/);
-  assert.match(appSource, /mind-map-canvas/);
-  assert.match(appSource, /mind-map-branch-header/);
-  assert.match(appSource, /mind-map-node-list/);
-  assert.match(appSource, /mind-map-leaves/);
+  assert.match(summarySource, /renderMindMapSvg/);
+  assert.match(summarySource, /mind-map-viewport/);
+  assert.match(summarySource, /mind-map-overlay/);
+  assert.match(summarySource, /下载思维导图 PNG/);
+  assert.match(summarySource, /下载思维导图 SVG/);
+  assert.match(summarySource, /全屏查看思维导图/);
 });

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -13,9 +12,7 @@ from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
 
 
-PROJECT_DIR = Path(__file__).resolve().parents[1]
-RUNTIME_DIR = PROJECT_DIR.parent / "runtime"
-SUMMARY_DIR = RUNTIME_DIR / "summaries"
+SUMMARY_DIR = summary_store.base_dir
 
 router = APIRouter(prefix="/api/summaries", tags=["summaries"])
 summary_service: SummaryService | None = None
@@ -25,6 +22,7 @@ class SummaryRequest(BaseModel):
     url: str
     title: str | None = None
     language: str = "zh-CN"
+    force: bool = False
 
 
 class SummaryQuestionRequest(BaseModel):
@@ -75,12 +73,21 @@ def get_summary_service() -> SummaryService:
 
 
 @router.post("")
-def create_summary(payload: SummaryRequest) -> dict[str, str]:
+def create_summary(payload: SummaryRequest) -> dict[str, object]:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
-    task = summary_store.create_task(payload.url, title=payload.title)
+    if not payload.force:
+        cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
+        if cached_task is not None:
+            return {
+                "summary_id": cached_task.id,
+                "cache_hit": True,
+                "status": cached_task.status,
+            }
+
+    task = summary_store.create_task(payload.url, title=payload.title, language=payload.language)
     worker = threading.Thread(target=_run_summary, args=(task.id, payload), daemon=True)
     worker.start()
-    return {"summary_id": task.id}
+    return {"summary_id": task.id, "cache_hit": False, "status": task.status}
 
 
 @router.get("/{summary_id}")

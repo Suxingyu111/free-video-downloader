@@ -18,10 +18,11 @@ import {
   XCircle,
   Zap
 } from "lucide-vue-next";
-import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, watch } from "vue";
 import SummaryPanel from "./components/summary/SummaryPanel.vue";
 import { analyzeUrl, askSummaryQuestion, connectSummaryEvents, connectTaskEvents, createDownloadTask, createSummaryTask, getSummary, getTask } from "./services/api";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT } from "./services/formats";
+import { applyWorkspaceSnapshot, loadWorkspaceSnapshot, pickWorkspaceSnapshot, saveWorkspaceSnapshot } from "./services/workspacePersistence";
 
 const platforms = ["YouTube", "Bilibili", "TikTok", "Instagram", "X / Twitter", "Vimeo", "Facebook", "小红书", "抖音", "Reddit"];
 const features = [
@@ -105,9 +106,17 @@ const state = reactive({
   tasks: []
 });
 
+applyWorkspaceSnapshot(state, loadWorkspaceSnapshot());
+
 if (typeof window !== "undefined") {
   state.currentPage = normalizePageHash(window.location.hash);
 }
+
+watch(
+  () => pickWorkspaceSnapshot(state),
+  (snapshot) => saveWorkspaceSnapshot(snapshot),
+  { deep: true }
+);
 
 const disconnectors = new Map();
 const pollers = new Map();
@@ -219,13 +228,14 @@ async function startSummaryForResult(result, { mode = "manual" } = {}) {
   resetSummaryInteraction();
   state.summarizing = true;
   try {
-    const { summary_id: summaryId } = await createSummaryTask({
+    const { summary_id: summaryId, cache_hit: cacheHit } = await createSummaryTask({
       url: result.webpage_url || state.url.trim(),
       title: result.title,
-      language: "zh-CN"
+      language: "zh-CN",
+      force: mode !== "auto"
     });
     registerSummary(summaryId, {
-      message: mode === "auto" ? "正在自动总结视频内容" : "AI 总结任务已排队"
+      message: cacheHit ? "Restored summary from cache" : mode === "auto" ? "正在自动总结视频内容" : "AI 总结任务已排队"
     });
   } catch (error) {
     state.summaryError = localizeSummaryStatus(error.message);
@@ -279,48 +289,74 @@ function registerSummary(summaryId, options = {}) {
     markdown_url: null,
     error: null
   };
+  trackSummary(summaryId);
+}
 
+function resumeSummary(summaryId) {
+  if (!summaryId) return;
+  if (!state.summaryTask || state.summaryTask.id !== summaryId) {
+    state.summaryTask = {
+      id: summaryId,
+      status: "queued",
+      stage: "queued",
+      progress: 0,
+      message: "正在恢复上次 AI 总结",
+      result: null,
+      streamed_text: "",
+      markdown_url: null,
+      error: null
+    };
+  }
+  trackSummary(summaryId);
+  refreshSummary(summaryId);
+}
+
+function trackSummary(summaryId) {
+  if (typeof window === "undefined" || !summaryId || summaryDisconnectors.has(summaryId) || summaryPollers.has(summaryId)) return;
   const disconnect = connectSummaryEvents(
     summaryId,
     (snapshot) => {
+      if (state.currentSummaryId !== summaryId) return;
       applySummarySnapshot(snapshot);
       if (snapshot.status === "completed" || snapshot.status === "failed") {
-        summaryDisconnectors.get(summaryId)?.();
-        summaryDisconnectors.delete(summaryId);
+        stopSummaryTracking(summaryId);
       }
     },
     (message) => {
+      if (state.currentSummaryId !== summaryId) return;
       state.summaryError = localizeSummaryStatus(message);
     }
   );
   summaryDisconnectors.set(summaryId, disconnect);
 
-  const poller = window.setInterval(async () => {
-    try {
-      const snapshot = await getSummary(summaryId);
-      applySummarySnapshot(snapshot);
-      if (snapshot.status === "completed" || snapshot.status === "failed") {
-        window.clearInterval(poller);
-        summaryPollers.delete(summaryId);
-        summaryDisconnectors.get(summaryId)?.();
-        summaryDisconnectors.delete(summaryId);
-      }
-    } catch (error) {
-      state.summaryError = localizeSummaryStatus(error.message);
-    }
-  }, 1000);
+  const poller = window.setInterval(() => refreshSummary(summaryId), 1000);
   summaryPollers.set(summaryId, poller);
+}
+
+async function refreshSummary(summaryId) {
+  try {
+    const snapshot = await getSummary(summaryId);
+    if (state.currentSummaryId !== summaryId) return;
+    applySummarySnapshot(snapshot);
+    if (snapshot.status === "completed" || snapshot.status === "failed") {
+      stopSummaryTracking(summaryId);
+    }
+  } catch (error) {
+    if (state.currentSummaryId === summaryId) state.summaryError = localizeSummaryStatus(error.message);
+  }
+}
+
+function stopSummaryTracking(summaryId) {
+  summaryDisconnectors.get(summaryId)?.();
+  summaryDisconnectors.delete(summaryId);
+  const poller = summaryPollers.get(summaryId);
+  if (poller && typeof window !== "undefined") window.clearInterval(poller);
+  summaryPollers.delete(summaryId);
 }
 
 function clearCurrentSummary() {
   const summaryId = state.currentSummaryId;
-  if (summaryId) {
-    summaryDisconnectors.get(summaryId)?.();
-    summaryDisconnectors.delete(summaryId);
-    const poller = summaryPollers.get(summaryId);
-    if (poller) window.clearInterval(poller);
-    summaryPollers.delete(summaryId);
-  }
+  if (summaryId) stopSummaryTracking(summaryId);
   state.currentSummaryId = null;
   state.summaryTask = null;
   state.summaryError = "";
@@ -339,14 +375,37 @@ function registerTask(taskId) {
   };
   state.currentTaskId = taskId;
   state.tasks.unshift(task);
+  trackTask(taskId, task);
+}
 
+function resumeTask(taskId) {
+  if (!taskId) return;
+  let task = state.tasks.find((item) => item.id === taskId);
+  if (!task) {
+    task = {
+      id: taskId,
+      status: "queued",
+      progress: 0,
+      message: "正在恢复下载任务状态",
+      speed: null,
+      eta: null,
+      download_url: null,
+      error: null
+    };
+    state.tasks.unshift(task);
+  }
+  trackTask(taskId, task);
+  refreshTask(taskId, task);
+}
+
+function trackTask(taskId, task) {
+  if (typeof window === "undefined" || !taskId || disconnectors.has(taskId) || pollers.has(taskId)) return;
   const disconnect = connectTaskEvents(
     taskId,
     (snapshot) => {
       applyTaskSnapshot(taskId, snapshot);
       if (snapshot.status === "completed" || snapshot.status === "failed") {
-        disconnectors.get(taskId)?.();
-        disconnectors.delete(taskId);
+        stopTaskTracking(taskId);
       }
     },
     (message) => {
@@ -357,22 +416,29 @@ function registerTask(taskId) {
   );
   disconnectors.set(taskId, disconnect);
 
-  const poller = window.setInterval(async () => {
-    try {
-      const snapshot = await getTask(taskId);
-      applyTaskSnapshot(taskId, snapshot);
-      if (snapshot.status === "completed" || snapshot.status === "failed") {
-        window.clearInterval(poller);
-        pollers.delete(taskId);
-        disconnectors.get(taskId)?.();
-        disconnectors.delete(taskId);
-      }
-    } catch (error) {
-      task.error = localizeStatus(error.message);
-      state.error = task.error;
-    }
-  }, 1000);
+  const poller = window.setInterval(() => refreshTask(taskId, task), 1000);
   pollers.set(taskId, poller);
+}
+
+async function refreshTask(taskId, task) {
+  try {
+    const snapshot = await getTask(taskId);
+    applyTaskSnapshot(taskId, snapshot);
+    if (snapshot.status === "completed" || snapshot.status === "failed") {
+      stopTaskTracking(taskId);
+    }
+  } catch (error) {
+    task.error = localizeStatus(error.message);
+    state.error = task.error;
+  }
+}
+
+function stopTaskTracking(taskId) {
+  disconnectors.get(taskId)?.();
+  disconnectors.delete(taskId);
+  const poller = pollers.get(taskId);
+  if (poller && typeof window !== "undefined") window.clearInterval(poller);
+  pollers.delete(taskId);
 }
 
 function applySummarySnapshot(snapshot) {
@@ -396,6 +462,7 @@ function applyTaskSnapshot(taskId, snapshot) {
 function localizeSummaryStatus(message = "") {
   return message
     .replaceAll("Queued", "排队中")
+    .replaceAll("Restored summary from cache", "已恢复上次 AI 总结")
     .replaceAll("Preparing transcript", "正在准备字幕文本")
     .replaceAll("Preparing subtitles", "正在准备字幕文本")
     .replaceAll("Extracting subtitles", "正在提取字幕")
@@ -406,6 +473,11 @@ function localizeSummaryStatus(message = "") {
     .replaceAll("Summary complete", "AI 总结完成")
     .replaceAll("Summary failed", "AI 总结失败")
     .replaceAll("Failed to fetch", "网络请求失败，请确认后端服务已启动");
+}
+
+function resumePersistedWorkspace() {
+  if (state.currentTaskId) resumeTask(state.currentTaskId);
+  if (state.currentSummaryId) resumeSummary(state.currentSummaryId);
 }
 
 function localizeStatus(message = "") {
@@ -480,6 +552,7 @@ function formatDuration(seconds) {
 onMounted(() => {
   syncCurrentPageFromHash();
   window.addEventListener("hashchange", syncCurrentPageFromHash);
+  resumePersistedWorkspace();
 });
 
 onBeforeUnmount(() => {

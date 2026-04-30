@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 from app import summary_routes
+from app.services.summary_store import SummaryStore
 
 
 class FakeSummaryService:
@@ -43,7 +45,15 @@ class FakeSummaryService:
         return f"回答：{question}"
 
 
-def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch):
+@pytest.fixture()
+def isolated_summary_store(monkeypatch, tmp_path):
+    store = SummaryStore(tmp_path / "summaries")
+    monkeypatch.setattr(summary_routes, "summary_store", store)
+    monkeypatch.setattr(summary_routes, "SUMMARY_DIR", store.base_dir)
+    return store
+
+
+def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
@@ -80,7 +90,60 @@ def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch):
     assert fake.questions[0][1] == "[00:01] 测试字幕"
 
 
-def test_summary_question_requires_completed_task(monkeypatch):
+def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/cached-video", "title": "Demo", "language": "zh-CN"},
+    )
+    summary_id = first.json()["summary_id"]
+
+    for _ in range(20):
+        snapshot = client.get(f"/api/summaries/{summary_id}").json()
+        if snapshot["status"] == "completed":
+            break
+
+    second = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/cached-video", "title": "Demo", "language": "zh-CN"},
+    )
+
+    assert second.status_code == 200
+    assert second.json()["summary_id"] == summary_id
+    assert second.json()["cache_hit"] is True
+    assert len(fake.calls) == 1
+
+
+def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/force-video", "title": "Demo", "language": "zh-CN"},
+    )
+    first_summary_id = first.json()["summary_id"]
+
+    for _ in range(20):
+        snapshot = client.get(f"/api/summaries/{first_summary_id}").json()
+        if snapshot["status"] == "completed":
+            break
+
+    second = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/force-video", "title": "Demo", "language": "zh-CN", "force": True},
+    )
+
+    assert second.status_code == 200
+    assert second.json()["summary_id"] != first_summary_id
+    assert second.json()["cache_hit"] is False
+
+
+def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)

@@ -1,6 +1,6 @@
 <script setup>
 import { CheckCircle2, Download, FileVideo2, Link2, Loader2, Play, Search, ShieldCheck, Sparkles, Star, XCircle, Zap } from "lucide-vue-next";
-import { computed, onBeforeUnmount, reactive } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
 import SummaryPanel from "./components/summary/SummaryPanel.vue";
 import { analyzeUrl, askSummaryQuestion, connectSummaryEvents, connectTaskEvents, createDownloadTask, createSummaryTask, getSummary, getTask } from "./services/api";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT } from "./services/formats";
@@ -13,9 +13,22 @@ const features = [
   ["本地部署更安心", "解析与下载任务在自己的服务中完成，减少广告跳转、弹窗劫持和不透明的第三方中转。"]
 ];
 
+const pageLinks = [
+  { id: "download", label: "视频下载" },
+  { id: "features", label: "功能特性" },
+  { id: "platforms", label: "支持平台" },
+  { id: "pricing", label: "套餐价格", accent: true }
+];
+const pageIds = pageLinks.map((link) => link.id);
 const quickLinks = ["YouTube", "Bilibili", "抖音"];
 
+function normalizePageHash(hash = "") {
+  const pageId = hash.replace(/^#/, "").trim();
+  return pageIds.includes(pageId) ? pageId : "download";
+}
+
 const state = reactive({
+  currentPage: "download",
   url: "",
   analyzedUrl: "",
   selectedFormatId: RELIABLE_MP4_FORMAT,
@@ -36,11 +49,16 @@ const state = reactive({
   tasks: []
 });
 
+if (typeof window !== "undefined") {
+  state.currentPage = normalizePageHash(window.location.hash);
+}
+
 const disconnectors = new Map();
 const pollers = new Map();
 const summaryDisconnectors = new Map();
 const summaryPollers = new Map();
 
+const currentPage = computed(() => state.currentPage);
 const hasResult = computed(() => Boolean(state.result && state.analyzedUrl === state.url.trim()));
 const playlistEntries = computed(() => state.result?.entries || []);
 const formatOptions = computed(() => {
@@ -86,6 +104,35 @@ const summaryStatusText = computed(() => {
   return "";
 });
 const summaryActionLabel = computed(() => (state.summaryError ? "重试总结" : "重新总结"));
+
+function scrollPageToTop(behavior = "auto") {
+  if (typeof window === "undefined") return;
+  const scroll = () => window.scrollTo({ top: 0, behavior });
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(scroll);
+  } else {
+    scroll();
+  }
+}
+
+function syncCurrentPageFromHash() {
+  if (typeof window === "undefined") return;
+  state.currentPage = normalizePageHash(window.location.hash);
+  scrollPageToTop("auto");
+}
+
+function navigateToPage(pageId) {
+  const nextPage = normalizePageHash(`#${pageId}`);
+  state.currentPage = nextPage;
+  if (typeof window === "undefined") return;
+
+  const nextHash = `#${nextPage}`;
+  if (window.location.hash !== nextHash) {
+    window.location.hash = nextHash;
+  } else {
+    scrollPageToTop("smooth");
+  }
+}
 
 async function handleAnalyze() {
   state.error = "";
@@ -374,7 +421,13 @@ function formatDuration(seconds) {
   return `${minutes}:${rest}`;
 }
 
+onMounted(() => {
+  syncCurrentPageFromHash();
+  window.addEventListener("hashchange", syncCurrentPageFromHash);
+});
+
 onBeforeUnmount(() => {
+  if (typeof window !== "undefined") window.removeEventListener("hashchange", syncCurrentPageFromHash);
   disconnectors.forEach((disconnect) => disconnect());
   pollers.forEach((poller) => window.clearInterval(poller));
   summaryDisconnectors.forEach((disconnect) => disconnect());
@@ -385,26 +438,33 @@ onBeforeUnmount(() => {
 <template>
   <main class="page">
     <header class="topbar">
-      <a class="brand" href="#" aria-label="万能视频下载器首页">
+      <a class="brand" href="#download" aria-label="万能视频下载器首页" @click.prevent="navigateToPage('download')">
         <span class="brand-mark" aria-hidden="true"><FileVideo2 :size="21" /></span>
         <span class="brand-name">SaveAny</span>
         <span class="brand-pill">万能视频下载</span>
       </a>
       <nav class="nav-links" aria-label="主导航">
-        <a href="#features">功能特性</a>
-        <a href="#pricing">套餐价格</a>
-        <a href="#platforms">支持平台</a>
-        <a class="nav-cta" href="#download"><Star :size="18" aria-hidden="true" />开通 VIP</a>
+        <a
+          v-for="link in pageLinks"
+          :key="link.id"
+          :class="{ 'nav-cta': link.accent }"
+          :href="`#${link.id}`"
+          :aria-current="currentPage === link.id ? 'page' : undefined"
+          @click.prevent="navigateToPage(link.id)"
+        >
+          <Star v-if="link.accent" :size="18" aria-hidden="true" />
+          <span>{{ link.label }}</span>
+        </a>
       </nav>
     </header>
 
-    <section id="download" class="hero" :class="{ 'hero-workbench': hasResult }" aria-labelledby="page-title">
+    <section id="download" class="hero" v-show="currentPage === 'download'" aria-labelledby="page-title">
       <div class="hero-copy-block">
         <p class="kicker"><span aria-hidden="true"></span>支持 1800+ 平台，永久免费使用</p>
         <h1 id="page-title" aria-label="复制链接，一键保存高清视频">
           <span class="title-main">万能视频下载器，</span><span>一键保存</span>
         </h1>
-        <p v-if="!hasResult" class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 随时随地，想下就下。</p>
+        <p class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 随时随地，想下就下。</p>
       </div>
 
       <section class="console" aria-label="视频下载控制台">
@@ -540,7 +600,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section id="platforms" class="section">
+    <section id="platforms" class="section page-view" v-if="currentPage === 'platforms'">
       <p class="kicker">覆盖你每天会遇到的视频来源</p>
       <h2>从长视频到短视频，从公开视频到播放列表</h2>
       <div class="platform-grid">
@@ -549,7 +609,7 @@ onBeforeUnmount(() => {
       <p class="section-copy">抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。其他平台兼容能力基于 yt-dlp 的站点解析器，遇到登录态、地区限制或平台风控时，请稍后重试或改用公开视频链接。</p>
     </section>
 
-    <section id="features" class="section">
+    <section id="features" class="section page-view" v-if="currentPage === 'features'">
       <p class="kicker">为什么它看起来值得付费</p>
       <h2>不只是“能下”，而是把下载变成可靠工作流</h2>
       <div class="feature-grid">
@@ -561,7 +621,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section id="pricing" class="section pricing-section">
+    <section id="pricing" class="section pricing-section page-view" v-if="currentPage === 'pricing'">
       <p class="kicker">轻量开始，需要时再升级</p>
       <h2>免费版覆盖常用下载，高频任务可以切到 VIP 队列</h2>
       <div class="pricing-card">
@@ -569,7 +629,7 @@ onBeforeUnmount(() => {
           <h3>SaveAny VIP</h3>
           <p>更高并发、批量队列、长视频优先处理，适合素材整理和内容运营。</p>
         </div>
-        <a class="primary-button" href="#download"><Star :size="20" aria-hidden="true" />开通 VIP</a>
+        <a class="primary-button" href="#download" @click.prevent="navigateToPage('download')"><Star :size="20" aria-hidden="true" />开通 VIP</a>
       </div>
     </section>
   </main>

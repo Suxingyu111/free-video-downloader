@@ -9,13 +9,13 @@
   --summary-green: #12825a;
   --summary-cyan: #087ea4;
   display: grid;
-  gap: 18px;
+  gap: 14px;
   margin: 18px auto 0;
   border: 1px solid rgba(23, 32, 51, 0.1);
   border-radius: 22px;
   background: #fbfcf8;
   box-shadow: 0 16px 38px rgba(23, 32, 51, 0.09);
-  padding: 22px;
+  padding: 18px;
   text-align: left;
 }
 
@@ -25,7 +25,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .summary-eyebrow,
@@ -40,14 +40,14 @@
 .summary-header h3,
 .summary-module-header h4,
 .mind-map-overlay-header h4 {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
   color: var(--summary-ink);
   font-weight: 900;
   line-height: 1.2;
 }
 
 .summary-header h3 {
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .summary-module-header h4,
@@ -156,17 +156,17 @@
 .summary-module-card {
   position: relative;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr);
   grid-template-rows: auto auto;
-  column-gap: 10px;
-  row-gap: 8px;
+  column-gap: 8px;
+  row-gap: 6px;
   min-width: 0;
-  min-height: 88px;
+  min-height: 76px;
   align-items: center;
   border: 1px solid rgba(23, 32, 51, 0.1);
   border-radius: 8px;
   background: #ffffff;
-  padding: 12px;
+  padding: 10px;
   color: var(--summary-ink);
   font: inherit;
   letter-spacing: 0;
@@ -190,8 +190,8 @@
 
 .summary-module-icon {
   display: inline-flex;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
@@ -224,7 +224,7 @@
 
 .summary-module-title {
   color: var(--summary-ink);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 900;
   line-height: 1.2;
 }
@@ -271,12 +271,12 @@
 .summary-module {
   display: grid;
   min-width: 0;
-  gap: 18px;
+  gap: 14px;
 }
 
 .summary-loading-state {
   display: grid;
-  min-height: 280px;
+  min-height: 220px;
   align-content: center;
   color: var(--summary-ink);
 }
@@ -284,14 +284,14 @@
 .summary-loading-shell {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
-  min-height: 242px;
+  min-height: 196px;
   align-items: center;
   border: 1px solid rgba(23, 32, 51, 0.09);
   border-radius: 8px;
   background: #ffffff;
-  padding: 22px;
+  padding: 18px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
@@ -317,32 +317,32 @@
 }
 
 .summary-loading-state h4 {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
   color: var(--summary-ink);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
   line-height: 1.25;
 }
 
 .summary-loading-state p:not(.summary-module-eyebrow) {
   max-width: 640px;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   color: var(--summary-muted);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
-  line-height: 1.65;
+  line-height: 1.5;
 }
 
 .summary-loading-bars {
   display: grid;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .summary-loading-bars span {
   position: relative;
   display: block;
-  height: 12px;
+  height: 10px;
   overflow: hidden;
   border-radius: 999px;
   background: #e8eef5;
@@ -363,14 +363,14 @@
 
 .summary-stream-preview {
   display: grid;
-  gap: 10px;
-  max-height: 360px;
-  margin-top: 18px;
+  gap: 8px;
+  max-height: 300px;
+  margin-top: 14px;
   overflow: auto;
   border: 1px solid rgba(23, 32, 51, 0.08);
   border-radius: 8px;
   background: #f8fbfc;
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .summary-stream-preview ol {
@@ -707,8 +707,8 @@
 
 @media (max-width: 760px) {
   .summary-card {
-    gap: 16px;
-    padding: 16px;
+    gap: 14px;
+    padding: 14px;
   }
 
   .summary-header,
@@ -728,18 +728,18 @@
   }
 
   .summary-module-card {
-    min-height: 88px;
+    min-height: 76px;
     font-size: 14px;
   }
 
   .summary-loading-state {
-    min-height: 240px;
+    min-height: 210px;
   }
 
   .summary-loading-shell {
     grid-template-columns: 1fr;
-    min-height: 230px;
-    padding: 18px;
+    min-height: 200px;
+    padding: 16px;
   }
 
   .transcript-item {

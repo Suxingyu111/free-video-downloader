@@ -389,6 +389,156 @@ select:focus-visible {
   color: var(--primary);
 }
 
+.home-highlights {
+  width: min(100%, 1180px);
+  margin: 28px auto 0;
+  text-align: left;
+}
+
+.highlights-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.highlight-card {
+  --highlight: #2f7df4;
+  --highlight-soft: #eaf2ff;
+  --highlight-ink: #1f5fc9;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  min-height: 258px;
+  align-content: start;
+  gap: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(212, 223, 237, 0.92);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 252, 255, 0.94)),
+    var(--highlight-soft);
+  box-shadow: 0 12px 32px rgba(31, 53, 85, 0.08);
+  padding: 22px;
+  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.highlight-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--highlight) 13%, transparent), transparent 42%),
+    repeating-linear-gradient(135deg, rgba(18, 24, 38, 0.025) 0 1px, transparent 1px 9px);
+  opacity: 0.76;
+}
+
+.highlight-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 22px;
+  left: 22px;
+  height: 4px;
+  border-radius: 0 0 999px 999px;
+  background: var(--highlight);
+}
+
+.highlight-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--highlight) 34%, #d4dfed);
+  box-shadow: 0 20px 44px rgba(31, 53, 85, 0.13);
+}
+
+.highlight-card.featured {
+  transform: translateY(-6px);
+  border-color: color-mix(in srgb, var(--highlight) 30%, #d4dfed);
+  box-shadow: 0 22px 50px rgba(214, 133, 19, 0.17);
+}
+
+.highlight-card.featured:hover {
+  transform: translateY(-9px);
+}
+
+.highlight-card[data-tone="sky"] {
+  --highlight: #2f7df4;
+  --highlight-soft: #eaf2ff;
+  --highlight-ink: #1f5fc9;
+}
+
+.highlight-card[data-tone="amber"] {
+  --highlight: #e8a21a;
+  --highlight-soft: #fff7df;
+  --highlight-ink: #985f04;
+}
+
+.highlight-card[data-tone="green"] {
+  --highlight: #11a070;
+  --highlight-soft: #e9f9f1;
+  --highlight-ink: #08734e;
+}
+
+.highlight-card[data-tone="orange"] {
+  --highlight: #e26c2f;
+  --highlight-soft: #fff0e8;
+  --highlight-ink: #a84112;
+}
+
+.highlight-card[data-tone="rose"] {
+  --highlight: #df6682;
+  --highlight-soft: #fff0f4;
+  --highlight-ink: #a93651;
+}
+
+.highlight-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.highlight-icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--highlight) 16%, #ffffff);
+  border-radius: 17px;
+  background: var(--highlight-soft);
+  color: var(--highlight-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 10px 22px rgba(31, 53, 85, 0.06);
+}
+
+.highlight-metric {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--highlight) 18%, #dfe8f4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 0 11px;
+  color: var(--highlight-ink);
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.highlight-card h3 {
+  margin: 5px 0 0;
+  color: #151f31;
+  font-size: 20px;
+  font-weight: 930;
+  line-height: 1.22;
+}
+
+.highlight-card p {
+  margin: 0;
+  color: #697386;
+  font-size: 14px;
+  font-weight: 640;
+  line-height: 1.72;
+}
+
 .message {
   justify-content: space-between;
   gap: 12px;
@@ -795,6 +945,15 @@ select {
     padding-left: 24px;
   }
 
+  .highlights-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .highlight-card.featured,
+  .highlight-card.featured:hover {
+    transform: none;
+  }
+
   .feature-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -937,9 +1096,25 @@ select {
   .result-card,
   .download-row,
   .sample-card,
+  .highlights-grid,
   .feature-grid,
   .pricing-card {
     grid-template-columns: 1fr;
+  }
+
+  .home-highlights {
+    margin-top: 24px;
+  }
+
+  .highlight-card {
+    min-height: auto;
+    gap: 14px;
+    border-radius: 20px;
+    padding: 20px;
+  }
+
+  .highlight-card:hover {
+    transform: none;
   }
 
   .result-main {

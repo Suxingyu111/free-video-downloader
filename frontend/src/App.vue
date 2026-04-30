@@ -1,5 +1,23 @@
 <script setup>
-import { CheckCircle2, Download, FileVideo2, Link2, Loader2, Play, Search, ShieldCheck, Sparkles, Star, XCircle, Zap } from "lucide-vue-next";
+import {
+  BrainCircuit,
+  CheckCircle2,
+  Download,
+  FileVideo2,
+  Gauge,
+  Globe2,
+  Link2,
+  Loader2,
+  MonitorSmartphone,
+  Play,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  XCircle,
+  Zap
+} from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
 import SummaryPanel from "./components/summary/SummaryPanel.vue";
 import { analyzeUrl, askSummaryQuestion, connectSummaryEvents, connectTaskEvents, createDownloadTask, createSummaryTask, getSummary, getTask } from "./services/api";
@@ -11,6 +29,44 @@ const features = [
   ["清晰度自由选择", "自动识别标题、封面、时长和可用格式，按需选择稳定 MP4 或原始最高画质。"],
   ["列表与长视频更省心", "遇到合集、课程、播客或播放列表时，可一次创建任务，后台持续处理进度。"],
   ["本地部署更安心", "解析与下载任务在自己的服务中完成，减少广告跳转、弹窗劫持和不透明的第三方中转。"]
+];
+const homeHighlights = [
+  {
+    title: "支持 1800+ 平台",
+    description: "覆盖 YouTube、Bilibili、抖音、TikTok、Instagram 等主流视频来源，公开视频链接直接粘贴即可解析。",
+    icon: Globe2,
+    metric: "1800+",
+    tone: "sky"
+  },
+  {
+    title: "极速解析下载",
+    description: "自动识别视频信息和可用格式，选择清晰度后一键开始下载，流程简单直接。",
+    icon: Gauge,
+    metric: "1 步",
+    tone: "amber",
+    featured: true
+  },
+  {
+    title: "多种清晰度选择",
+    description: "支持稳定 MP4 和原始最高画质，满足普通保存、高清收藏、素材整理等不同需求。",
+    icon: SlidersHorizontal,
+    metric: "MP4",
+    tone: "green"
+  },
+  {
+    title: "AI 视频总结",
+    description: "自动生成摘要、字幕、思维导图和问答，把视频变成可复习、可导出的学习笔记。",
+    icon: BrainCircuit,
+    metric: "AI",
+    tone: "orange"
+  },
+  {
+    title: "手机也能使用",
+    description: "无需安装 App，手机浏览器打开即可粘贴链接、解析视频、查看总结和下载内容。",
+    icon: MonitorSmartphone,
+    metric: "Web",
+    tone: "rose"
+  }
 ];
 
 const pageLinks = [
@@ -598,6 +654,27 @@ onBeforeUnmount(() => {
         <span><Zap :size="18" />批量任务</span>
         <span><Sparkles :size="18" />高清画质</span>
       </div>
+
+      <section class="home-highlights" aria-label="核心亮点">
+        <div class="highlights-grid">
+          <article
+            v-for="highlight in homeHighlights"
+            :key="highlight.title"
+            class="highlight-card"
+            :class="{ featured: highlight.featured }"
+            :data-tone="highlight.tone"
+          >
+            <div class="highlight-card-top">
+              <span class="highlight-icon" aria-hidden="true">
+                <component :is="highlight.icon" :size="24" stroke-width="2.2" />
+              </span>
+              <span class="highlight-metric">{{ highlight.metric }}</span>
+            </div>
+            <h3>{{ highlight.title }}</h3>
+            <p>{{ highlight.description }}</p>
+          </article>
+        </div>
+      </section>
     </section>
 
     <section id="platforms" class="section page-view" v-if="currentPage === 'platforms'">

@@ -235,12 +235,14 @@ select:focus-visible {
 }
 
 .console {
-  width: min(100%, 920px);
+  width: min(85vw, 100%);
   margin-top: 22px;
 }
 
 .search-panel {
   display: grid;
+  width: min(100%, 920px);
+  margin: 0 auto;
   gap: 8px;
 }
 
@@ -906,6 +908,7 @@ select {
   }
 
   .console {
+    width: 100%;
     margin-top: 18px;
   }
 

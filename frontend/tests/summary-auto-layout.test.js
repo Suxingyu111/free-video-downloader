@@ -30,7 +30,10 @@ test("hero search area uses compact vertical spacing so results enter the first 
   assert.match(mainCss, /\.kicker\s*\{[\s\S]*min-height:\s*34px/);
   assert.match(mainCss, /\.hero h1\s*\{[\s\S]*margin:\s*16px\s+auto\s+0/);
   assert.match(mainCss, /\.hero-copy,\s*\n\.section-copy\s*\{[\s\S]*margin:\s*10px\s+auto\s+0/);
+  assert.match(mainCss, /\.console\s*\{[\s\S]*width:\s*min\(85vw,\s*100%\)/);
   assert.match(mainCss, /\.console\s*\{[\s\S]*margin-top:\s*22px/);
+  assert.match(mainCss, /\.search-panel\s*\{[\s\S]*width:\s*min\(100%,\s*920px\)/);
+  assert.match(mainCss, /\.search-panel\s*\{[\s\S]*margin:\s*0\s+auto/);
   assert.match(mainCss, /\.search-panel\s*\{[\s\S]*gap:\s*8px/);
   assert.match(mainCss, /\.url-field\s*\{[\s\S]*min-height:\s*60px/);
   assert.match(mainCss, /\.quick-row\s*\{[\s\S]*min-height:\s*28px/);

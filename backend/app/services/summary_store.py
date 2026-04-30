@@ -9,7 +9,7 @@ from typing import Literal
 
 
 SummaryStatus = Literal["queued", "transcribing", "summarizing", "completed", "failed"]
-SummaryStage = Literal["queued", "subtitle", "summary", "completed", "failed"]
+SummaryStage = Literal["queued", "subtitle", "speech_to_text", "summary", "completed", "failed"]
 
 
 @dataclass
@@ -22,6 +22,7 @@ class SummarySnapshot:
     progress: float = 0.0
     message: str = "Queued"
     result: dict | None = None
+    streamed_text: str = ""
     markdown_url: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time)
@@ -37,6 +38,7 @@ class SummarySnapshot:
             "progress": self.progress,
             "message": self.message,
             "result": self.result,
+            "streamed_text": self.streamed_text,
             "markdown_url": self.markdown_url,
             "error": self.error,
             "created_at": self.created_at,

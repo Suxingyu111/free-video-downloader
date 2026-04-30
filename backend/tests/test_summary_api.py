@@ -12,7 +12,12 @@ class FakeSummaryService:
     def generate_summary(self, *, url, title, language, output_dir, progress_hook=None):
         self.calls.append((url, title, language, output_dir))
         if progress_hook:
-            progress_hook("summary", 72, "Generating structured summary")
+            progress_hook(
+                "summary",
+                72,
+                "Streaming structured summary",
+                streamed_text="一句话概览：测试概览\n- 测试要点",
+            )
         markdown_path = output_dir / "summary.md"
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
         markdown_path.write_text("# Demo\n\n## 一句话概览\n测试概览\n", encoding="utf-8")
@@ -57,6 +62,7 @@ def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch):
             break
 
     assert snapshot["status"] == "completed"
+    assert snapshot["streamed_text"] == "一句话概览：测试概览\n- 测试要点"
     assert snapshot["result"]["overview"] == "测试概览"
     assert snapshot["markdown_url"] == f"/api/summaries/{summary_id}/markdown"
     assert fake.calls[0][0] == "https://example.com/video"
@@ -84,6 +90,12 @@ def test_summary_question_requires_completed_task(monkeypatch):
         json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
     )
     summary_id = response.json()["summary_id"]
+
+    for _ in range(20):
+        snapshot = client.get(f"/api/summaries/{summary_id}").json()
+        if snapshot["status"] == "completed":
+            break
+
     summary_routes.summary_store.update_task(summary_id, status="summarizing", result=None)
 
     answer = client.post(

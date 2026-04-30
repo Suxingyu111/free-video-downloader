@@ -34,7 +34,7 @@ class FakeAIProvider:
         self.transcribed.append((audio_path, language))
         return "[00:00] 语音转写内容"
 
-    def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
+    def summarize_transcript(self, *, title: str, transcript: str, language: str, stream_hook=None) -> dict:
         self.summarized.append((title, transcript, language))
         return {
             "overview": "课程概览",
@@ -110,7 +110,47 @@ def test_summary_service_uses_subtitle_transcript_before_speech_to_text(tmp_path
     assert markdown_path.exists()
 
 
-def test_summary_service_fails_without_subtitles_and_never_transcribes_audio(tmp_path: Path):
+def test_summary_service_emits_grounded_draft_and_stream_preview(tmp_path: Path):
+    class StreamingAIProvider(FakeAIProvider):
+        def summarize_transcript(self, *, title: str, transcript: str, language: str, stream_hook=None) -> dict:
+            if stream_hook:
+                stream_hook("一句话概览：AI 正在逐行输出总结\n核心知识点：实时生成的要点")
+            return super().summarize_transcript(
+                title=title,
+                transcript=transcript,
+                language=language,
+                stream_hook=stream_hook,
+            )
+
+    transcript = Transcript(
+        source="subtitle",
+        language="zh-CN",
+        segments=[
+            TranscriptSegment(start=0, end=20, text="主讲人说明 AI 总结需要边生成边展示。"),
+            TranscriptSegment(start=40, end=70, text="系统先让用户看到概览，再逐步补充章节和要点。"),
+        ],
+    )
+    service = SummaryService(
+        transcript_service=FakeTranscriptService(transcript),
+        ai_provider=StreamingAIProvider(),
+    )
+    events = []
+
+    service.generate_summary(
+        url="https://example.com/video",
+        title="AI 课程",
+        language="zh-CN",
+        output_dir=tmp_path,
+        progress_hook=lambda stage, progress, message, **changes: events.append((stage, progress, message, changes)),
+    )
+
+    streamed_updates = [event for event in events if event[3].get("streamed_text")]
+    assert streamed_updates
+    assert any("基于字幕" in event[2] for event in streamed_updates)
+    assert any("实时生成的要点" in event[3]["streamed_text"] for event in streamed_updates)
+
+
+def test_summary_service_falls_back_to_speech_to_text_without_subtitles(tmp_path: Path):
     ai = FakeAIProvider()
     audio = FakeAudioService(tmp_path / "audio.m4a")
     service = SummaryService(
@@ -119,21 +159,21 @@ def test_summary_service_fails_without_subtitles_and_never_transcribes_audio(tmp
         ai_provider=ai,
     )
 
-    try:
-        service.generate_summary(
-            url="https://example.com/video",
-            title="AI 课程",
-            language="zh-CN",
-            output_dir=tmp_path,
-        )
-    except RuntimeError as exc:
-        assert "没有可用字幕" in str(exc)
-    else:
-        raise AssertionError("无字幕视频不应进入 AI 总结流程")
+    result, markdown_path = service.generate_summary(
+        url="https://example.com/video",
+        title="AI 课程",
+        language="zh-CN",
+        output_dir=tmp_path,
+    )
 
-    assert audio.calls == []
-    assert ai.transcribed == []
-    assert ai.summarized == []
+    assert audio.calls == [("https://example.com/video", tmp_path / "audio")]
+    assert ai.transcribed == [(tmp_path / "audio.m4a", "zh-CN")]
+    assert ai.summarized[0][1] == "[00:00] 语音转写内容"
+    assert result["transcript_source"] == "speech_to_text"
+    assert result["transcript_segments"] == [
+        {"start": 0.0, "end": 30.0, "time": "00:00", "text": "语音转写内容"}
+    ]
+    assert markdown_path.exists()
 
 
 def test_summary_service_surfaces_bilibili_login_required_subtitle_reason(tmp_path: Path, monkeypatch):
@@ -197,7 +237,7 @@ def test_summary_service_answers_questions_from_existing_summary(tmp_path: Path)
 
 def test_summary_service_enriches_sparse_ai_summary_with_transcript(tmp_path: Path):
     class SparseAIProvider(FakeAIProvider):
-        def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
+        def summarize_transcript(self, *, title: str, transcript: str, language: str, stream_hook=None) -> dict:
             self.summarized.append((title, transcript, language))
             return {
                 "overview": "本视频介绍核心内容。",

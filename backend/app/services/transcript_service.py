@@ -11,7 +11,7 @@ from yt_dlp import YoutubeDL
 from app.services.ytdlp_service import build_http_headers, prepare_url
 
 
-TranscriptSource = Literal["subtitle", "auto_subtitle"]
+TranscriptSource = Literal["subtitle", "auto_subtitle", "speech_to_text"]
 
 
 @dataclass(frozen=True)

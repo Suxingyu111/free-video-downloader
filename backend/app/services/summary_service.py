@@ -1,15 +1,32 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+from time import monotonic
 from typing import Callable
 
-from app.services.ai_provider import AIProvider, build_ai_provider_from_env, normalize_summary_payload
+from app.services.ai_provider import (
+    AIProvider,
+    build_ai_provider_from_env,
+    build_fallback_summary_payload,
+    build_stream_preview_from_payload,
+    normalize_summary_payload,
+)
+from app.services.audio_service import AudioExtractionService
 from app.services.bilibili_public_metadata import describe_bilibili_transcript_unavailable
-from app.services.transcript_service import Transcript, TranscriptSegment, TranscriptService, format_timestamp, transcript_to_text
+from app.services.transcript_service import (
+    Transcript,
+    TranscriptSegment,
+    TranscriptService,
+    format_timestamp,
+    parse_timestamp,
+    transcript_to_text,
+)
 
 
-SummaryProgressHook = Callable[[str, float, str], None]
+SummaryProgressHook = Callable[..., None]
+TRANSCRIBED_LINE_PATTERN = re.compile(r"^\[(?P<time>\d{1,2}:\d{2}(?::\d{2})?)\]\s*(?P<text>.+)$")
 
 
 class SummaryService:
@@ -21,7 +38,7 @@ class SummaryService:
         ai_provider: AIProvider | None = None,
     ) -> None:
         self.transcript_service = transcript_service or TranscriptService()
-        self.audio_service = audio_service
+        self.audio_service = audio_service or AudioExtractionService()
         self.ai_provider = ai_provider or build_ai_provider_from_env()
 
     def generate_summary(
@@ -47,7 +64,7 @@ class SummaryService:
             )
         else:
             if progress_hook:
-                progress_hook("subtitle", 12, "Extracting subtitles")
+                emit_summary_progress(progress_hook, "subtitle", 12, "Extracting subtitles")
             try:
                 transcript = self.transcript_service.fetch_transcript(url, output_dir / "subtitles")
             except Exception:
@@ -58,11 +75,63 @@ class SummaryService:
             transcript_text = transcript_to_text(transcript.segments)
         else:
             reason = describe_bilibili_transcript_unavailable(url)
-            raise RuntimeError(reason or "该视频没有可用字幕，当前版本仅支持已有字幕的视频总结。")
+            if reason:
+                raise RuntimeError(reason)
+            if progress_hook:
+                emit_summary_progress(progress_hook, "speech_to_text", 30, "Extracting audio for speech-to-text")
+            audio_path = self.audio_service.extract_audio(url, output_dir / "audio")
+            if progress_hook:
+                emit_summary_progress(progress_hook, "speech_to_text", 48, "Transcribing audio")
+            transcribed_text = self.ai_provider.transcribe_audio(audio_path, language)
+            segments = segments_from_transcribed_text(transcribed_text)
+            if not segments:
+                raise RuntimeError("AI 语音转写服务未返回可用文本。")
+            transcript = Transcript(source="speech_to_text", language=language, segments=segments)
+            source = transcript.source
+            transcript_text = transcript_to_text(transcript.segments)
 
+        stream_hook = None
         if progress_hook:
-            progress_hook("summary", 72, "Generating structured summary")
-        summary = self.ai_provider.summarize_transcript(title=safe_title, transcript=transcript_text, language=language)
+            draft_payload = build_fallback_summary_payload(title=safe_title, transcript=transcript_text)
+            draft_preview = build_stream_preview_from_payload(draft_payload, title=safe_title, transcript=transcript_text)
+            draft_source = "转写文本" if source == "speech_to_text" else "字幕"
+            if draft_preview:
+                emit_summary_progress(
+                    progress_hook,
+                    "summary",
+                    68,
+                    f"基于{draft_source}整理摘要草稿",
+                    streamed_text=draft_preview,
+                )
+            emit_summary_progress(progress_hook, "summary", 72, "Generating structured summary")
+
+            last_stream = {"text": draft_preview, "at": 0.0}
+
+            def stream_hook(preview_text: str) -> None:
+                preview = str(preview_text or "").strip()
+                if not preview or preview == last_stream["text"]:
+                    return
+                now = monotonic()
+                line_count = max(1, len([line for line in preview.splitlines() if line.strip()]))
+                progress = min(96.0, 72.0 + line_count * 1.5)
+                if now - float(last_stream["at"]) < 0.12 and len(preview) - len(str(last_stream["text"])) < 24:
+                    return
+                last_stream["text"] = preview
+                last_stream["at"] = now
+                emit_summary_progress(
+                    progress_hook,
+                    "summary",
+                    progress,
+                    "Streaming structured summary",
+                    streamed_text=preview,
+                )
+
+        summary = self.ai_provider.summarize_transcript(
+            title=safe_title,
+            transcript=transcript_text,
+            language=language,
+            stream_hook=stream_hook,
+        )
         result = normalize_summary_payload(summary, title=safe_title, transcript=transcript_text)
         result["transcript_source"] = source
         result["language"] = language
@@ -83,6 +152,52 @@ class SummaryService:
             question=question,
             language=language,
         )
+
+
+def emit_summary_progress(
+    progress_hook: SummaryProgressHook | None,
+    stage: str,
+    progress: float,
+    message: str,
+    **changes: object,
+) -> None:
+    if not progress_hook:
+        return
+    try:
+        progress_hook(stage, progress, message, **changes)
+    except TypeError:
+        progress_hook(stage, progress, message)
+
+
+def segments_from_transcribed_text(text: str) -> list[TranscriptSegment]:
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not lines:
+        value = str(text or "").strip()
+        return [TranscriptSegment(start=0.0, end=30.0, text=value)] if value else []
+
+    segments: list[TranscriptSegment] = []
+    for index, line in enumerate(lines):
+        match = TRANSCRIBED_LINE_PATTERN.match(line)
+        if match:
+            start = parse_timestamp(match.group("time"))
+            body = match.group("text").strip()
+        else:
+            start = float(index * 30)
+            body = line
+        if not body:
+            continue
+        segments.append(TranscriptSegment(start=start, end=start + 30.0, text=body))
+
+    for index in range(len(segments) - 1):
+        current = segments[index]
+        next_segment = segments[index + 1]
+        if next_segment.start > current.start:
+            segments[index] = TranscriptSegment(
+                start=current.start,
+                end=max(current.start + 1.0, next_segment.start),
+                text=current.text,
+            )
+    return segments
 
 
 def _demo_mode_enabled() -> bool:

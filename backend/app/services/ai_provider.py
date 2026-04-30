@@ -3,17 +3,18 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 import httpx
 
 from app.services.ai_config import AIProviderConfig, load_ai_provider_config
 
 SUMMARY_TRANSCRIPT_CHAR_BUDGET = 12_000
-SUMMARY_RESPONSE_MAX_TOKENS = 4_096
+SUMMARY_RESPONSE_MAX_TOKENS = 8_192
 SUMMARY_REQUEST_TIMEOUT_SECONDS = 45.0
 QUESTION_TRANSCRIPT_CHAR_BUDGET = 8_000
 QUESTION_RESPONSE_MAX_TOKENS = 1_000
+SUMMARY_STREAM_PREVIEW_MAX_LINES = 18
 
 TRANSCRIPT_LINE_PATTERN = re.compile(r"^\[(?P<time>[^\]]+)\]\s*(?P<text>.+)$")
 LATIN_TERM_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9.+#/-]*(?:\s+[A-Za-z][A-Za-z0-9.+#/-]*){0,2}\b")
@@ -36,7 +37,14 @@ class AIProvider(Protocol):
     def transcribe_audio(self, audio_path: Path, language: str) -> str:
         ...
 
-    def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
+    def summarize_transcript(
+        self,
+        *,
+        title: str,
+        transcript: str,
+        language: str,
+        stream_hook: Callable[[str], None] | None = None,
+    ) -> dict:
         ...
 
     def answer_question(self, *, title: str, transcript: str, summary: dict, question: str, language: str) -> str:
@@ -86,33 +94,52 @@ class OpenAICompatibleProvider:
             raise RuntimeError("AI 语音转写服务未返回文本。")
         return str(text).strip()
 
-    def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
-        try:
-            response = self.client.post(
-                f"{self.config.base_url}/chat/completions",
-                headers={**self._headers(), "Content-Type": "application/json"},
-                timeout=_summary_timeout_seconds(self.config),
-                json={
-                    "model": self.config.text_model,
-                    "temperature": 0.1,
-                    "max_tokens": SUMMARY_RESPONSE_MAX_TOKENS,
-                    "response_format": {"type": "json_object"},
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "你是专业的视频学习笔记助手。只输出紧凑 JSON，不要输出 Markdown。"
-                                "字段必须包含 overview, outline, key_points, highlights, terms, questions, mind_map, qa_pairs。"
-                                "所有字符串必须是合法 JSON 字符串，换行必须转义为 \\n。"
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": build_summary_prompt(title=title, transcript=transcript, language=language),
-                        },
-                    ],
+    def summarize_transcript(
+        self,
+        *,
+        title: str,
+        transcript: str,
+        language: str,
+        stream_hook: Callable[[str], None] | None = None,
+    ) -> dict:
+        request_payload = {
+            "model": self.config.text_model,
+            "temperature": 0.1,
+            "max_tokens": SUMMARY_RESPONSE_MAX_TOKENS,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是专业的视频学习笔记助手。只输出紧凑 JSON，不要输出 Markdown。"
+                        "字段必须包含 overview, outline, key_points, highlights, terms, questions, mind_map, qa_pairs。"
+                        "所有字符串必须是合法 JSON 字符串，换行必须转义为 \\n。"
+                    ),
                 },
-            )
+                {
+                    "role": "user",
+                    "content": build_summary_prompt(title=title, transcript=transcript, language=language),
+                },
+            ],
+        }
+        try:
+            if stream_hook and hasattr(self.client, "stream"):
+                content = self._stream_summary_completion(
+                    request_payload,
+                    title=title,
+                    transcript=transcript,
+                    stream_hook=stream_hook,
+                )
+            else:
+                response = self.client.post(
+                    f"{self.config.base_url}/chat/completions",
+                    headers={**self._headers(), "Content-Type": "application/json"},
+                    timeout=_summary_timeout_seconds(self.config),
+                    json=request_payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
         except httpx.TimeoutException:
             return normalize_summary_payload(
                 build_fallback_summary_payload(
@@ -123,14 +150,47 @@ class OpenAICompatibleProvider:
                 title=title,
                 transcript=transcript,
             )
-        response.raise_for_status()
-        data = response.json()
-        content = data["choices"][0]["message"]["content"]
         return normalize_summary_payload(
             parse_summary_content(content, title=title, transcript=transcript),
             title=title,
             transcript=transcript,
         )
+
+    def _stream_summary_completion(
+        self,
+        request_payload: dict,
+        *,
+        title: str,
+        transcript: str,
+        stream_hook: Callable[[str], None],
+    ) -> str:
+        content_parts: list[str] = []
+        last_preview = ""
+        with self.client.stream(
+            "POST",
+            f"{self.config.base_url}/chat/completions",
+            headers={**self._headers(), "Content-Type": "application/json"},
+            timeout=_summary_timeout_seconds(self.config),
+            json={**request_payload, "stream": True},
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                delta = _openai_stream_delta(line)
+                if not delta:
+                    continue
+                content_parts.append(delta)
+                preview = build_stream_preview_from_summary_text(
+                    "".join(content_parts),
+                    title=title,
+                    transcript=transcript,
+                )
+                if preview and preview != last_preview:
+                    stream_hook(preview)
+                    last_preview = preview
+        content = "".join(content_parts).strip()
+        if not content:
+            raise RuntimeError("AI 总结服务未返回文本。")
+        return content
 
     def answer_question(self, *, title: str, transcript: str, summary: dict, question: str, language: str) -> str:
         response = self.client.post(
@@ -185,34 +245,58 @@ class AnthropicCompatibleProvider:
     def transcribe_audio(self, audio_path: Path, language: str) -> str:
         raise RuntimeError("当前 Anthropic-compatible AI 服务不支持语音转写，请配置支持 /audio/transcriptions 的 AI 服务。")
 
-    def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
-        try:
-            response = self.client.post(
-                f"{self.config.base_url}/v1/messages",
-                headers=self._headers(),
-                timeout=_summary_timeout_seconds(self.config),
-                json={
-                    "model": self.config.text_model,
-                    "max_tokens": SUMMARY_RESPONSE_MAX_TOKENS,
-                    "temperature": 0.1,
-                    "system": (
-                        "你是专业的视频学习笔记助手。只输出紧凑 JSON，不要输出 Markdown。"
-                        "字段必须包含 overview, outline, key_points, highlights, terms, questions, mind_map, qa_pairs。"
-                        "所有字符串必须是合法 JSON 字符串，换行必须转义为 \\n。"
-                    ),
-                    "messages": [
+    def summarize_transcript(
+        self,
+        *,
+        title: str,
+        transcript: str,
+        language: str,
+        stream_hook: Callable[[str], None] | None = None,
+    ) -> dict:
+        request_payload = {
+            "model": self.config.text_model,
+            "max_tokens": SUMMARY_RESPONSE_MAX_TOKENS,
+            "temperature": 0.1,
+            "system": (
+                "你是专业的视频学习笔记助手。只输出紧凑 JSON，不要输出 Markdown。"
+                "字段必须包含 overview, outline, key_points, highlights, terms, questions, mind_map, qa_pairs。"
+                "所有字符串必须是合法 JSON 字符串，换行必须转义为 \\n。"
+            ),
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
                         {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": build_summary_prompt(title=title, transcript=transcript, language=language),
-                                }
-                            ],
+                            "type": "text",
+                            "text": build_summary_prompt(title=title, transcript=transcript, language=language),
                         }
                     ],
-                },
-            )
+                }
+            ],
+        }
+        try:
+            if stream_hook and hasattr(self.client, "stream"):
+                text = self._stream_summary_completion(
+                    request_payload,
+                    title=title,
+                    transcript=transcript,
+                    stream_hook=stream_hook,
+                )
+            else:
+                response = self.client.post(
+                    f"{self.config.base_url}/v1/messages",
+                    headers=self._headers(),
+                    timeout=_summary_timeout_seconds(self.config),
+                    json=request_payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                content_blocks = data.get("content") if isinstance(data, dict) else []
+                text = "\n".join(
+                    str(block.get("text") or "")
+                    for block in content_blocks
+                    if isinstance(block, dict) and block.get("type") == "text"
+                ).strip()
         except httpx.TimeoutException:
             return normalize_summary_payload(
                 build_fallback_summary_payload(
@@ -223,14 +307,6 @@ class AnthropicCompatibleProvider:
                 title=title,
                 transcript=transcript,
             )
-        response.raise_for_status()
-        data = response.json()
-        content_blocks = data.get("content") if isinstance(data, dict) else []
-        text = "\n".join(
-            str(block.get("text") or "")
-            for block in content_blocks
-            if isinstance(block, dict) and block.get("type") == "text"
-        ).strip()
         if not text:
             raise RuntimeError("AI 总结服务未返回文本。")
         return normalize_summary_payload(
@@ -238,6 +314,39 @@ class AnthropicCompatibleProvider:
             title=title,
             transcript=transcript,
         )
+
+    def _stream_summary_completion(
+        self,
+        request_payload: dict,
+        *,
+        title: str,
+        transcript: str,
+        stream_hook: Callable[[str], None],
+    ) -> str:
+        content_parts: list[str] = []
+        last_preview = ""
+        with self.client.stream(
+            "POST",
+            f"{self.config.base_url}/v1/messages",
+            headers=self._headers(),
+            timeout=_summary_timeout_seconds(self.config),
+            json={**request_payload, "stream": True},
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                delta = _anthropic_stream_delta(line)
+                if not delta:
+                    continue
+                content_parts.append(delta)
+                preview = build_stream_preview_from_summary_text(
+                    "".join(content_parts),
+                    title=title,
+                    transcript=transcript,
+                )
+                if preview and preview != last_preview:
+                    stream_hook(preview)
+                    last_preview = preview
+        return "".join(content_parts).strip()
 
     def answer_question(self, *, title: str, transcript: str, summary: dict, question: str, language: str) -> str:
         response = self.client.post(
@@ -359,6 +468,326 @@ def build_question_prompt(*, title: str, transcript: str, summary: dict, questio
 2. 优先给出直接答案，再列出必要依据。
 3. 如果字幕里没有依据，请明确说明“字幕中没有足够依据”。
 """
+
+
+def build_stream_preview_from_summary_text(
+    content: str,
+    *,
+    title: str | None = None,
+    transcript: str | None = None,
+) -> str:
+    text = _strip_json_wrapping(content)
+    try:
+        payload = parse_json_content(text)
+    except json.JSONDecodeError:
+        return _build_stream_preview_from_partial_json(text)
+    return build_stream_preview_from_payload(payload, title=title, transcript=transcript)
+
+
+def build_stream_preview_from_payload(
+    payload: dict,
+    *,
+    title: str | None = None,
+    transcript: str | None = None,
+) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    lines: list[str] = []
+    overview = str(payload.get("overview") or "").strip()
+    if overview:
+        lines.append(f"一句话概览：{overview}")
+
+    outline = _list_of_dicts(payload.get("outline"))
+    if outline:
+        lines.append("章节大纲：")
+        lines.extend(f"- {_format_stream_outline_item(item)}" for item in outline[:5])
+
+    key_points = _list_of_strings(payload.get("key_points"))
+    if key_points:
+        lines.append("核心知识点：")
+        lines.extend(f"- {point}" for point in key_points[:6])
+
+    highlights = _list_of_dicts(payload.get("highlights"))
+    if highlights:
+        lines.append("时间轴要点：")
+        lines.extend(f"- {_format_stream_timed_item(item)}" for item in highlights[:4])
+
+    terms = _list_of_dicts(payload.get("terms"))
+    if terms:
+        lines.append("术语解释：")
+        lines.extend(f"- {_format_stream_term_item(item)}" for item in terms[:4])
+
+    questions = _list_of_strings(payload.get("questions"))
+    if questions:
+        lines.append("可以继续追问：")
+        lines.extend(f"- {question}" for question in questions[:4])
+
+    if not lines and transcript:
+        fallback = build_fallback_summary_payload(title=title or "", transcript=transcript)
+        return build_stream_preview_from_payload(fallback, title=title, transcript=None)
+    return _join_stream_preview_lines(lines)
+
+
+def _build_stream_preview_from_partial_json(text: str) -> str:
+    lines: list[str] = []
+    overview = _first_stream_value(_extract_json_key_values(text, "overview"))
+    if overview:
+        lines.append(f"一句话概览：{overview}")
+
+    outline_fragment = _json_section_fragment(text, "outline")
+    outline_times = _extract_json_key_values(outline_fragment, "time")
+    outline_titles = _extract_json_key_values(outline_fragment, "title")
+    outline_summaries = _extract_json_key_values(outline_fragment, "summary")
+    outline_items = _combine_stream_items(
+        outline_times,
+        outline_titles,
+        outline_summaries,
+        formatter=_format_stream_outline_parts,
+    )
+    if outline_items:
+        lines.append("章节大纲：")
+        lines.extend(f"- {item}" for item in outline_items[:5])
+
+    key_point_items = _extract_json_array_strings(_json_section_fragment(text, "key_points"))
+    if key_point_items:
+        lines.append("核心知识点：")
+        lines.extend(f"- {item}" for item in key_point_items[:6])
+
+    highlight_fragment = _json_section_fragment(text, "highlights")
+    highlight_items = _combine_stream_items(
+        _extract_json_key_values(highlight_fragment, "time"),
+        _extract_json_key_values(highlight_fragment, "text"),
+        [],
+        formatter=lambda time, text, _: _format_stream_timed_parts(time, text),
+    )
+    if highlight_items:
+        lines.append("时间轴要点：")
+        lines.extend(f"- {item}" for item in highlight_items[:4])
+
+    term_fragment = _json_section_fragment(text, "terms")
+    term_items = _combine_stream_items(
+        [],
+        _extract_json_key_values(term_fragment, "term"),
+        _extract_json_key_values(term_fragment, "explanation"),
+        formatter=lambda _, term, explanation: _format_stream_term_parts(term, explanation),
+    )
+    if term_items:
+        lines.append("术语解释：")
+        lines.extend(f"- {item}" for item in term_items[:4])
+
+    question_items = _extract_json_array_strings(_json_section_fragment(text, "questions"))
+    if question_items:
+        lines.append("可以继续追问：")
+        lines.extend(f"- {item}" for item in question_items[:4])
+
+    return _join_stream_preview_lines(lines)
+
+
+def _json_section_fragment(text: str, key: str) -> str:
+    match = re.search(rf'"{re.escape(key)}"\s*:', text)
+    if not match:
+        return ""
+    start = match.end()
+    next_positions = [
+        next_match.start()
+        for next_match in re.finditer(r'"(?:overview|outline|key_points|highlights|terms|questions|mind_map|qa_pairs)"\s*:', text)
+        if next_match.start() > match.start()
+    ]
+    end = min(next_positions) if next_positions else len(text)
+    return text[start:end]
+
+
+def _extract_json_key_values(fragment: str, key: str) -> list[str]:
+    values = []
+    for match in re.finditer(rf'"{re.escape(key)}"\s*:\s*"', fragment):
+        value = _read_json_string_fragment(fragment, match.end())
+        if value:
+            values.append(value)
+    return values
+
+
+def _extract_json_array_strings(fragment: str) -> list[str]:
+    start = fragment.find("[")
+    if start == -1:
+        return []
+    values = []
+    index = start + 1
+    while index < len(fragment):
+        if fragment[index] != '"':
+            index += 1
+            continue
+        value, end_index = _read_json_string_with_end(fragment, index + 1)
+        if value:
+            values.append(value)
+        index = max(end_index + 1, index + 1)
+    return values
+
+
+def _read_json_string_fragment(text: str, start: int) -> str:
+    value, _ = _read_json_string_with_end(text, start)
+    return value
+
+
+def _read_json_string_with_end(text: str, start: int) -> tuple[str, int]:
+    output: list[str] = []
+    escaped = False
+    index = start
+    while index < len(text):
+        char = text[index]
+        if escaped:
+            output.append(_decode_json_escape(char))
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            return "".join(output).strip(), index
+        elif char in "\r\n":
+            break
+        else:
+            output.append(char)
+        index += 1
+    return "".join(output).strip(), index
+
+
+def _decode_json_escape(char: str) -> str:
+    return {
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        "b": "\b",
+        "f": "\f",
+        '"': '"',
+        "\\": "\\",
+        "/": "/",
+    }.get(char, char)
+
+
+def _first_stream_value(values: list[str]) -> str:
+    return next((value for value in values if len(value.strip()) >= 4), "")
+
+
+def _combine_stream_items(times: list[str], titles: list[str], summaries: list[str], *, formatter) -> list[str]:
+    count = max(len(times), len(titles), len(summaries))
+    items = []
+    for index in range(count):
+        item = formatter(
+            times[index] if index < len(times) else "",
+            titles[index] if index < len(titles) else "",
+            summaries[index] if index < len(summaries) else "",
+        )
+        if item:
+            items.append(item)
+    return items
+
+
+def _format_stream_outline_item(item: dict) -> str:
+    return _format_stream_outline_parts(
+        str(item.get("time") or item.get("timestamp") or ""),
+        str(item.get("title") or item.get("text") or ""),
+        str(item.get("summary") or ""),
+    )
+
+
+def _format_stream_outline_parts(time: str, title: str, summary: str) -> str:
+    title = title.strip()
+    summary = summary.strip()
+    if not title and not summary:
+        return ""
+    prefix = f"[{time.strip()}] " if time.strip() else ""
+    if title and summary and summary != title:
+        return f"{prefix}{title}：{summary}"
+    return f"{prefix}{title or summary}"
+
+
+def _format_stream_timed_item(item: dict) -> str:
+    return _format_stream_timed_parts(
+        str(item.get("time") or item.get("timestamp") or ""),
+        str(item.get("text") or item.get("summary") or item.get("title") or ""),
+    )
+
+
+def _format_stream_timed_parts(time: str, text: str) -> str:
+    text = text.strip()
+    if not text:
+        return ""
+    return f"[{time.strip()}] {text}" if time.strip() else text
+
+
+def _format_stream_term_item(item: dict) -> str:
+    return _format_stream_term_parts(
+        str(item.get("term") or item.get("name") or ""),
+        str(item.get("explanation") or item.get("definition") or item.get("summary") or ""),
+    )
+
+
+def _format_stream_term_parts(term: str, explanation: str) -> str:
+    term = term.strip()
+    explanation = explanation.strip()
+    if not term and not explanation:
+        return ""
+    if term and explanation:
+        return f"{term}：{explanation}"
+    return term or explanation
+
+
+def _join_stream_preview_lines(lines: list[str]) -> str:
+    clean_lines = []
+    for line in lines:
+        value = re.sub(r"\s+", " ", str(line or "")).strip().strip(",，")
+        if not value or value in {"-", "："}:
+            continue
+        clean_lines.append(value)
+    return "\n".join(_dedupe_strings(clean_lines)[:SUMMARY_STREAM_PREVIEW_MAX_LINES])
+
+
+def _openai_stream_delta(line) -> str:
+    data = _stream_data_payload(line)
+    if not data:
+        return ""
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return ""
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    if not choices:
+        return ""
+    delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
+    if not isinstance(delta, dict):
+        return ""
+    content = delta.get("content")
+    if isinstance(content, str) and content:
+        return content
+    return ""
+
+
+def _anthropic_stream_delta(line) -> str:
+    data = _stream_data_payload(line)
+    if not data:
+        return ""
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    delta = payload.get("delta")
+    if isinstance(delta, dict):
+        return str(delta.get("text") or "")
+    return ""
+
+
+def _stream_data_payload(line) -> str:
+    if isinstance(line, bytes):
+        text = line.decode("utf-8", errors="ignore")
+    else:
+        text = str(line or "")
+    text = text.strip()
+    if not text.startswith("data:"):
+        return ""
+    data = text.removeprefix("data:").strip()
+    if not data or data == "[DONE]":
+        return ""
+    return data
 
 
 def compact_transcript_for_prompt(transcript: str, *, max_chars: int = SUMMARY_TRANSCRIPT_CHAR_BUDGET) -> str:
@@ -534,7 +963,7 @@ def _build_grounded_overview(*, title: str, segments: list[dict[str, str]], reas
     topic = f"《{title}》" if title else "该视频"
     sampled = _sample_transcript_points(segments, min(4, len(segments)))
     content = "；".join(_clip_text(item["text"], 48) for item in sampled if item.get("text"))
-    lead = reason or "已基于字幕生成快速摘要。"
+    lead = reason or "已基于转写文本生成快速摘要。"
     if content:
         return f"{lead}{topic}围绕这些字幕内容展开：{content}。"
     return f"{lead}{topic}有字幕内容，但暂时只能提取有限信息。"
@@ -1029,9 +1458,16 @@ class MockAIProvider:
     def transcribe_audio(self, audio_path: Path, language: str) -> str:
         return "[00:00] 这是演示转写内容，用于本地浏览器验收。 [01:10] 视频介绍了核心概念、章节结构和实践建议。"
 
-    def summarize_transcript(self, *, title: str, transcript: str, language: str) -> dict:
+    def summarize_transcript(
+        self,
+        *,
+        title: str,
+        transcript: str,
+        language: str,
+        stream_hook: Callable[[str], None] | None = None,
+    ) -> dict:
         title = title or "演示视频"
-        return {
+        payload = {
             "overview": f"《{title}》主要帮助用户快速理解长视频的知识结构和关键结论。",
             "outline": [
                 {"time": "00:00", "title": "内容背景", "summary": "说明视频主题和学习目标。"},
@@ -1089,6 +1525,9 @@ class MockAIProvider:
                 {"question": "哪些章节值得回看？", "answer": "建议优先回看核心知识和实践建议相关章节。"},
             ],
         }
+        if stream_hook:
+            stream_hook(build_stream_preview_from_payload(payload, title=title, transcript=transcript))
+        return payload
 
     def answer_question(self, *, title: str, transcript: str, summary: dict, question: str, language: str) -> str:
         return f"基于《{title or '演示视频'}》的字幕，可以这样理解：{question} 与视频的主题、章节和核心知识点直接相关。"

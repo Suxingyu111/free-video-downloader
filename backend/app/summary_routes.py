@@ -42,14 +42,15 @@ def _friendly_summary_error(error: Exception | str) -> str:
 def _run_summary(summary_id: str, payload: SummaryRequest) -> None:
     output_dir = SUMMARY_DIR / summary_id
 
-    def progress_hook(stage: str, progress: float, message: str) -> None:
-        status = "transcribing" if stage == "subtitle" else "summarizing"
+    def progress_hook(stage: str, progress: float, message: str, **changes: object) -> None:
+        status = "transcribing" if stage in {"subtitle", "speech_to_text"} else "summarizing"
         summary_store.update_task(
             summary_id,
             status=status,
             stage=stage,
             progress=progress,
             message=message,
+            **changes,
         )
 
     try:
@@ -126,9 +127,13 @@ async def summary_events(summary_id: str) -> StreamingResponse:
                 last_payload = payload
             if task.status in {"completed", "failed"}:
                 break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.15)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{summary_id}/markdown")

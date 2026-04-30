@@ -4,6 +4,11 @@ const DEFAULT_NODE_HEIGHT = 54;
 const DEFAULT_X_GAP = 104;
 const DEFAULT_Y_GAP = 28;
 const DEFAULT_MARGIN = 32;
+const DEFAULT_MIN_ZOOM = 0.35;
+const DEFAULT_MAX_ZOOM = 2.5;
+const DEFAULT_LABEL_LINE_LENGTH = 18;
+const DEFAULT_LABEL_LINE_HEIGHT = 17;
+const NODE_VERTICAL_PADDING = 22;
 
 const BRANCH_COLORS = [
   "#2563eb",
@@ -162,23 +167,37 @@ export function layoutMindMap(tree, options = {}) {
   const xGap = options.xGap || DEFAULT_X_GAP;
   const yGap = options.yGap || DEFAULT_Y_GAP;
   const margin = options.margin || DEFAULT_MARGIN;
-  const { leaves, maxDepth } = measureTree(tree);
+  const { maxDepth } = measureTree(tree);
+  const dimensionsById = new Map();
   const yById = new Map();
   const nodes = [];
   const links = [];
   let nextLeafY = margin;
 
+  function getDimensions(node) {
+    if (!dimensionsById.has(node.id)) {
+      const labelLines = wrapLabel(node.label, options.maxLineLength || DEFAULT_LABEL_LINE_LENGTH);
+      dimensionsById.set(node.id, {
+        width: nodeWidth,
+        height: Math.max(nodeHeight, NODE_VERTICAL_PADDING + labelLines.length * DEFAULT_LABEL_LINE_HEIGHT),
+        labelLines
+      });
+    }
+    return dimensionsById.get(node.id);
+  }
+
   function assignY(node) {
+    const dimensions = getDimensions(node);
     if (node.children.length === 0) {
       const y = nextLeafY;
-      nextLeafY += nodeHeight + yGap;
+      nextLeafY += dimensions.height + yGap;
       yById.set(node.id, y);
-      return y + nodeHeight / 2;
+      return y + dimensions.height / 2;
     }
 
     const childCenters = node.children.map(assignY);
     const center = childCenters.reduce((sum, value) => sum + value, 0) / childCenters.length;
-    yById.set(node.id, center - nodeHeight / 2);
+    yById.set(node.id, center - dimensions.height / 2);
     return center;
   }
 
@@ -186,14 +205,16 @@ export function layoutMindMap(tree, options = {}) {
 
   function flatten(node, branchIndex = 0) {
     const color = node.depth === 0 ? "#334155" : BRANCH_COLORS[branchIndex % BRANCH_COLORS.length];
+    const dimensions = getDimensions(node);
     const layoutNode = {
       id: node.id,
       label: node.label,
+      labelLines: dimensions.labelLines,
       depth: node.depth,
       x: margin + node.depth * (nodeWidth + xGap),
       y: Math.max(margin, Math.round(yById.get(node.id))),
-      width: nodeWidth,
-      height: nodeHeight,
+      width: dimensions.width,
+      height: dimensions.height,
       color
     };
     nodes.push(layoutNode);
@@ -212,7 +233,7 @@ export function layoutMindMap(tree, options = {}) {
   flatten(tree);
 
   const width = margin * 2 + (maxDepth + 1) * nodeWidth + maxDepth * xGap;
-  const height = margin * 2 + Math.max(1, leaves.length) * nodeHeight + Math.max(0, leaves.length - 1) * yGap;
+  const height = Math.ceil(Math.max(...nodes.map((node) => node.y + node.height), margin + nodeHeight) + margin);
 
   return {
     nodes,
@@ -233,35 +254,47 @@ function escapeXml(value) {
     .replaceAll("'", "&apos;");
 }
 
-function wrapLabel(label, maxLineLength = 18) {
-  const text = String(label);
+function wrapLabel(label, maxLineLength = DEFAULT_LABEL_LINE_LENGTH) {
+  const text = String(label).replace(/\s+/g, " ").trim();
   if (text.length <= maxLineLength) {
     return [text];
   }
 
   const lines = [];
   let current = "";
-  for (const part of text.split(/\s+/)) {
-    if (!part) {
-      continue;
+  for (const part of text.split(" ")) {
+    const chunks = chunkText(part, maxLineLength);
+    for (const chunk of chunks) {
+      if (!chunk) {
+        continue;
+      }
+      if ((current + " " + chunk).trim().length <= maxLineLength) {
+        current = (current + " " + chunk).trim();
+        continue;
+      }
+      if (current) {
+        lines.push(current);
+      }
+      current = chunk;
     }
-    if ((current + " " + part).trim().length <= maxLineLength) {
-      current = (current + " " + part).trim();
-      continue;
-    }
-    if (current) {
-      lines.push(current);
-    }
-    current = part;
   }
   if (current) {
     lines.push(current);
   }
 
-  if (lines.length <= 1 && text.length > maxLineLength) {
-    return [text.slice(0, maxLineLength), text.slice(maxLineLength, maxLineLength * 2)];
+  return lines.length ? lines : [text];
+}
+
+function chunkText(text, maxLineLength) {
+  const chars = [...text];
+  if (chars.length <= maxLineLength) {
+    return [text];
   }
-  return lines.slice(0, 2);
+  const chunks = [];
+  for (let index = 0; index < chars.length; index += maxLineLength) {
+    chunks.push(chars.slice(index, index + maxLineLength).join(""));
+  }
+  return chunks;
 }
 
 export function renderMindMapSvg(tree, options = {}) {
@@ -289,8 +322,8 @@ export function renderMindMapSvg(tree, options = {}) {
 
   const nodeGroups = layout.nodes
     .map((node) => {
-      const lines = wrapLabel(node.label);
-      const lineHeight = 17;
+      const lines = node.labelLines?.length ? node.labelLines : wrapLabel(node.label);
+      const lineHeight = DEFAULT_LABEL_LINE_HEIGHT;
       const firstY = node.y + node.height / 2 - ((lines.length - 1) * lineHeight) / 2 + 5;
       const text = lines
         .map((line, index) => {
@@ -314,6 +347,63 @@ export function renderMindMapSvg(tree, options = {}) {
     `<g class="mind-map-nodes" role="list">${nodeGroups}</g>`,
     "</svg>"
   ].join("");
+}
+
+export function getMindMapSvgSize(svg) {
+  const text = String(svg || "");
+  const viewBox = text.match(/\bviewBox=(["'])([^"']+)\1/i);
+  if (viewBox) {
+    const [, , value] = viewBox;
+    const parts = value
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    if (parts.length >= 4 && Number.isFinite(parts[2]) && Number.isFinite(parts[3]) && parts[2] > 0 && parts[3] > 0) {
+      return { width: parts[2], height: parts[3] };
+    }
+  }
+
+  const width = numericSvgAttribute(text, "width");
+  const height = numericSvgAttribute(text, "height");
+  return {
+    width,
+    height
+  };
+}
+
+export function calculateMindMapFitZoom(options = {}) {
+  const viewportWidth = positiveNumber(options.viewportWidth);
+  const viewportHeight = positiveNumber(options.viewportHeight);
+  const contentWidth = positiveNumber(options.contentWidth);
+  const contentHeight = positiveNumber(options.contentHeight);
+  if (!viewportWidth || !viewportHeight || !contentWidth || !contentHeight) {
+    return clampMindMapZoom(options.fallbackZoom || 1, options);
+  }
+
+  const padding = Math.max(0, Number.isFinite(options.padding) ? options.padding : DEFAULT_MARGIN);
+  const availableWidth = Math.max(1, viewportWidth - padding * 2);
+  const availableHeight = Math.max(1, viewportHeight - padding * 2);
+  return clampMindMapZoom(Math.min(availableWidth / contentWidth, availableHeight / contentHeight), options);
+}
+
+export function clampMindMapZoom(value, options = {}) {
+  const minZoom = positiveNumber(options.minZoom) || DEFAULT_MIN_ZOOM;
+  const maxZoom = positiveNumber(options.maxZoom) || DEFAULT_MAX_ZOOM;
+  const lower = Math.min(minZoom, maxZoom);
+  const upper = Math.max(minZoom, maxZoom);
+  const numeric = Number.isFinite(value) ? value : 1;
+  return Math.round(Math.min(upper, Math.max(lower, numeric)) * 100) / 100;
+}
+
+function numericSvgAttribute(text, name) {
+  const match = text.match(new RegExp(`\\b${name}=(["'])([0-9.]+)(?:px)?\\1`, "i"));
+  if (!match) return 0;
+  const value = Number(match[2]);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function positiveNumber(value) {
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 export function downloadSvg(svg, filename = "mind-map.svg") {

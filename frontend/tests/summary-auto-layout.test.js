@@ -6,6 +6,7 @@ const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8
 const mainCss = readFileSync(new URL("../src/assets/main.css", import.meta.url), "utf8");
 const summaryPanelSource = readFileSync(new URL("../src/components/summary/SummaryPanel.vue", import.meta.url), "utf8");
 const summaryOverviewSource = readFileSync(new URL("../src/components/summary/SummaryOverview.vue", import.meta.url), "utf8");
+const summaryMindMapSource = readFileSync(new URL("../src/components/summary/SummaryMindMap.vue", import.meta.url), "utf8");
 const summaryCss = readFileSync(new URL("../src/assets/summary.css", import.meta.url), "utf8");
 
 test("analyzing a video automatically starts the AI summary task", () => {
@@ -53,11 +54,38 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryPanelSource, /class="summary-module-icon"/);
   assert.match(summaryPanelSource, /class="summary-status-pill"/);
   assert.match(summaryPanelSource, /class="summary-loading-shell"/);
+  assert.match(summaryPanelSource, /revealedStreamLines/);
+  assert.match(summaryPanelSource, /summary-stream-preview/);
   assert.match(summaryPanelSource, /summary-loading-bars/);
   assert.match(summaryCss, /\.summary-module-grid\s*\{[\s\S]*gap:\s*10px/);
   assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*min-height:\s*88px/);
   assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*padding:\s*12px/);
   assert.match(summaryCss, /\.summary-status-pill\s*\{/);
   assert.match(summaryCss, /\.summary-loading-shell\s*\{/);
+  assert.match(summaryCss, /\.summary-stream-preview\s*\{/);
   assert.match(summaryCss, /@media \(max-width:\s*760px\)[\s\S]*\.summary-module-grid[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+});
+
+test("summary streaming preview reveals generated lines incrementally", () => {
+  assert.match(summaryPanelSource, /normalizeSummaryStreamLines/);
+  assert.match(summaryPanelSource, /diffSummaryStreamLines/);
+  assert.match(summaryPanelSource, /revealedStreamLines/);
+  assert.match(summaryPanelSource, /streamRevealQueue/);
+  assert.match(summaryPanelSource, /window\.setTimeout\(revealNextStreamLine,\s*STREAM_LINE_REVEAL_MS\)/);
+  assert.match(summaryPanelSource, /v-for="\(\s*line,\s*index\s*\) in revealedStreamLines"/);
+});
+
+test("mind map view exposes zoom controls and fit-to-screen rendering", () => {
+  assert.match(summaryMindMapSource, /calculateMindMapFitZoom/);
+  assert.match(summaryMindMapSource, /getMindMapSvgSize/);
+  assert.match(summaryMindMapSource, /zoomIn/);
+  assert.match(summaryMindMapSource, /zoomOut/);
+  assert.match(summaryMindMapSource, /fitInlineMap/);
+  assert.match(summaryMindMapSource, /fitFullscreenMap/);
+  assert.match(summaryMindMapSource, /minZoom:\s*0\.12/);
+  assert.match(summaryMindMapSource, /class="mind-map-zoom-controls"/);
+  assert.match(summaryMindMapSource, /:style="canvasStyle/);
+  assert.match(summaryCss, /\.mind-map-canvas\s*\{/);
+  assert.match(summaryCss, /\.mind-map-overlay\s*\{[\s\S]*inset:\s*0/);
+  assert.match(summaryCss, /\.mind-map-overlay-body\s*\{[\s\S]*place-items:\s*center/);
 });

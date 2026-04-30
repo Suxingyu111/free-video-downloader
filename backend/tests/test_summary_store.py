@@ -24,6 +24,26 @@ def test_summary_store_tracks_task_lifecycle_and_result():
     assert snapshot.message == "Extracting subtitles"
 
 
+def test_summary_store_exposes_streamed_text_during_generation():
+    store = SummaryStore()
+    task = store.create_task("https://example.com/watch", title="Demo")
+
+    store.update_task(
+        task.id,
+        status="summarizing",
+        stage="summary",
+        progress=78,
+        message="Streaming structured summary",
+        streamed_text="一句话概览：正在生成内容\n- 核心知识点：第一条",
+    )
+
+    snapshot = store.get_task(task.id)
+
+    assert snapshot is not None
+    assert snapshot.streamed_text == "一句话概览：正在生成内容\n- 核心知识点：第一条"
+    assert snapshot.as_dict()["streamed_text"] == "一句话概览：正在生成内容\n- 核心知识点：第一条"
+
+
 def test_summary_store_completes_with_markdown_url_without_exposing_path(tmp_path):
     store = SummaryStore()
     task = store.create_task("https://example.com/watch")

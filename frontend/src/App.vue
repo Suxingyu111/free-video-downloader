@@ -172,6 +172,7 @@ function registerSummary(summaryId, options = {}) {
     progress: 0,
     message: options.message || "AI 总结任务已排队",
     result: null,
+    streamed_text: "",
     markdown_url: null,
     error: null
   };
@@ -295,6 +296,9 @@ function localizeSummaryStatus(message = "") {
     .replaceAll("Preparing transcript", "正在准备字幕文本")
     .replaceAll("Preparing subtitles", "正在准备字幕文本")
     .replaceAll("Extracting subtitles", "正在提取字幕")
+    .replaceAll("Extracting audio for speech-to-text", "正在提取音频")
+    .replaceAll("Transcribing audio", "正在进行语音转写")
+    .replaceAll("Streaming structured summary", "AI 正在逐行生成总结")
     .replaceAll("Generating structured summary", "正在生成结构化总结")
     .replaceAll("Summary complete", "AI 总结完成")
     .replaceAll("Summary failed", "AI 总结失败")

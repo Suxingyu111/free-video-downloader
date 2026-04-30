@@ -1,10 +1,11 @@
 <script setup>
 import { Brain, FileText, Loader2, MessageCircle, NotebookText } from "lucide-vue-next";
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import SummaryMindMap from "./SummaryMindMap.vue";
 import SummaryOverview from "./SummaryOverview.vue";
 import SummaryQa from "./SummaryQa.vue";
 import SummaryTranscript from "./SummaryTranscript.vue";
+import { diffSummaryStreamLines, normalizeSummaryStreamLines } from "../../utils/summaryStream";
 
 const props = defineProps({
   summaryTask: {
@@ -76,6 +77,30 @@ const resultWithTitle = computed(() => {
 });
 const activeCard = computed(() => moduleCards.find((card) => card.id === props.summaryView) || moduleCards[0]);
 const shouldShowLoadingState = computed(() => !props.summaryResult);
+const STREAM_LINE_LIMIT = 18;
+const STREAM_SOURCE_LIMIT = 36;
+const STREAM_LINE_REVEAL_MS = 360;
+const streamSourceLines = ref([]);
+const revealedStreamLines = ref([]);
+const streamRevealQueue = ref([]);
+let streamRevealTimer = null;
+
+watch(
+  () => props.summaryTask?.id,
+  () => {
+    resetStreamReveal();
+    enqueueStreamLines(props.summaryTask?.streamed_text || "");
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.summaryTask?.streamed_text,
+  (text) => {
+    enqueueStreamLines(text);
+  },
+  { immediate: true }
+);
 
 function moduleStatus(moduleId) {
   if (props.summaryResult) {
@@ -96,14 +121,14 @@ function moduleStatus(moduleId) {
     return "等待摘要";
   }
 
-  if (moduleId === "mindmap") return "等待摘要";
+  if (moduleId === "mindmap") return stage === "summary" || status === "summarizing" ? "构建中" : "等待摘要";
   return "待完成";
 }
 
 function moduleTone(moduleId) {
   const status = moduleStatus(moduleId);
   if (["已完成", "已生成", "可追问", "已提取"].includes(status)) return "done";
-  if (["生成中", "提取中"].includes(status)) return "active";
+  if (["生成中", "提取中", "构建中"].includes(status)) return "active";
   return "waiting";
 }
 
@@ -114,6 +139,58 @@ function selectView(view) {
 function useQuestion(question) {
   emit("use-question", question);
 }
+
+function enqueueStreamLines(text) {
+  const nextLines = normalizeSummaryStreamLines(text || "", { maxLines: STREAM_SOURCE_LIMIT });
+  const pendingLines = diffSummaryStreamLines(streamSourceLines.value, nextLines);
+  streamSourceLines.value = nextLines;
+  if (!nextLines.length) {
+    resetStreamReveal();
+    return;
+  }
+  if (!pendingLines.length) return;
+
+  streamRevealQueue.value.push(...pendingLines);
+  if (!revealedStreamLines.value.length) {
+    revealNextStreamLine();
+    return;
+  }
+  scheduleNextStreamLine();
+}
+
+function revealNextStreamLine() {
+  if (streamRevealTimer && typeof window !== "undefined") {
+    window.clearTimeout(streamRevealTimer);
+  }
+  streamRevealTimer = null;
+  const nextLine = streamRevealQueue.value.shift();
+  if (!nextLine) return;
+  revealedStreamLines.value = [...revealedStreamLines.value, nextLine].slice(-STREAM_LINE_LIMIT);
+  scheduleNextStreamLine();
+}
+
+function scheduleNextStreamLine() {
+  if (streamRevealTimer || !streamRevealQueue.value.length) return;
+  if (typeof window === "undefined") {
+    revealNextStreamLine();
+    return;
+  }
+  streamRevealTimer = window.setTimeout(revealNextStreamLine, STREAM_LINE_REVEAL_MS);
+}
+
+function resetStreamReveal() {
+  if (streamRevealTimer && typeof window !== "undefined") {
+    window.clearTimeout(streamRevealTimer);
+  }
+  streamRevealTimer = null;
+  streamSourceLines.value = [];
+  revealedStreamLines.value = [];
+  streamRevealQueue.value = [];
+}
+
+onBeforeUnmount(() => {
+  resetStreamReveal();
+});
 </script>
 
 <template>
@@ -180,7 +257,15 @@ function useQuestion(question) {
             <p class="summary-module-eyebrow">{{ activeCard.label }}</p>
             <h4>{{ activeCard.loadingTitle }}</h4>
             <p>{{ activeCard.loadingText }}</p>
-            <div class="summary-loading-bars" aria-hidden="true">
+            <div v-if="revealedStreamLines.length || streamRevealQueue.length" class="summary-stream-preview" aria-label="AI 实时总结内容">
+              <ol>
+                <li v-for="(line, index) in revealedStreamLines" :key="`${line}-${index}`">
+                  <span>{{ line }}</span>
+                </li>
+              </ol>
+              <span v-if="isSummaryRunning" class="summary-stream-cursor" aria-hidden="true"></span>
+            </div>
+            <div v-else class="summary-loading-bars" aria-hidden="true">
               <span></span>
               <span></span>
               <span></span>

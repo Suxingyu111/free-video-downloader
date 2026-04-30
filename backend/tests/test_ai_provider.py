@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import httpx
 import pytest
@@ -8,6 +9,7 @@ from app.services.ai_provider import (
     AnthropicCompatibleProvider,
     MockAIProvider,
     OpenAICompatibleProvider,
+    build_stream_preview_from_summary_text,
     build_summary_prompt,
     build_ai_provider,
     normalize_summary_payload,
@@ -69,6 +71,36 @@ class TimeoutClient:
         raise httpx.TimeoutException("too slow")
 
 
+class FakeStreamResponse:
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_lines(self):
+        for chunk in self.chunks:
+            yield f'data: {{"choices":[{{"delta":{{"content":{json.dumps(chunk, ensure_ascii=False)}}}}}]}}'
+        yield "data: [DONE]"
+
+
+class FakeStreamingClient(FakeClient):
+    def __init__(self, *, chunks):
+        super().__init__(summary_content="".join(chunks))
+        self.stream_calls = []
+        self.chunks = chunks
+
+    def stream(self, method, url, **kwargs):
+        self.stream_calls.append((method, url, kwargs))
+        return FakeStreamResponse(self.chunks)
+
+
 def test_openai_provider_requires_api_key_for_real_provider():
     config = AIProviderConfig(base_url="https://api.example.com/v1", api_key="", text_model="gpt", transcribe_model="whisper")
 
@@ -100,6 +132,54 @@ def test_openai_provider_shapes_chat_completion_request():
     assert result["key_points"] == ["A"]
     assert result["mind_map"]["title"] == "Demo"
     assert result["qa_pairs"] == [{"question": "Q", "answer": "A"}]
+
+
+def test_openai_provider_streams_readable_summary_preview_before_final_json():
+    summary_content = (
+        '{"overview":"这是一段逐步生成的概览，说明视频主题、关键步骤和最终结论。",'
+        '"outline":[{"time":"00:00","title":"开场","summary":"介绍视频主题和学习目标。"}],'
+        '"key_points":["第一条核心知识点","第二条核心知识点"],'
+        '"highlights":[],"terms":[],"questions":[],"mind_map":{"title":"演示","children":[]},"qa_pairs":[]}'
+    )
+    client = FakeStreamingClient(chunks=[summary_content[:48], summary_content[48:120], summary_content[120:]])
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+    previews = []
+
+    result = provider.summarize_transcript(
+        title="Demo",
+        transcript="[00:01] hello",
+        language="zh-CN",
+        stream_hook=previews.append,
+    )
+
+    method, url, kwargs = client.stream_calls[0]
+    assert method == "POST"
+    assert url == "https://api.example.com/v1/chat/completions"
+    assert kwargs["json"]["stream"] is True
+    assert result["overview"].startswith("这是一段逐步生成")
+    assert any("一句话概览" in preview and "逐步生成" in preview for preview in previews)
+    assert any("章节大纲" in preview for preview in previews)
+
+
+def test_build_stream_preview_from_summary_text_removes_json_scaffolding():
+    preview = build_stream_preview_from_summary_text(
+        '{"overview":"视频说明如何边生成边展示摘要。","key_points":["用户先看到概览","随后看到要点"]}',
+        title="Demo",
+        transcript="[00:00] 视频说明如何边生成边展示摘要。",
+    )
+
+    assert "overview" not in preview
+    assert "{" not in preview
+    assert "一句话概览：视频说明如何边生成边展示摘要。" in preview
+    assert "- 用户先看到概览" in preview
 
 
 def test_openai_provider_repairs_literal_newlines_inside_json_strings():
@@ -470,6 +550,102 @@ def test_normalize_summary_payload_extracts_chinese_terms_from_transcript():
 
     terms = {item["term"] for item in result["terms"]}
     assert terms & {"私域运营流程", "自动化工具", "活动指标", "用户标签体系"}
+
+
+class FakeRefusalStreamResponse(FakeStreamResponse):
+    def iter_lines(self):
+        yield 'data: {"choices":[{"delta":{"refusal":"I cannot generate this content.","content":""}}]}'
+        yield "data: [DONE]"
+
+
+class FakeRefusalStreamingClient(FakeClient):
+    def __init__(self):
+        super().__init__(summary_content="")
+        self.stream_calls = []
+
+    def stream(self, method, url, **kwargs):
+        self.stream_calls.append((method, url, kwargs))
+        return FakeRefusalStreamResponse([])
+
+
+def test_openai_stream_delta_skips_refusal_and_returns_empty_string():
+    client = FakeRefusalStreamingClient()
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+
+    with pytest.raises(RuntimeError, match="AI 总结服务未返回文本"):
+        provider.summarize_transcript(
+            title="Demo",
+            transcript="[00:01] hello",
+            language="zh-CN",
+            stream_hook=lambda preview: None,
+        )
+
+
+def test_openai_stream_delta_does_not_leak_refusal_into_preview():
+    valid_json = json.dumps(
+        {
+            "overview": "本视频介绍核心内容。",
+            "outline": [],
+            "key_points": ["要点一"],
+            "highlights": [],
+            "terms": [],
+            "questions": [],
+            "mind_map": {"title": "Demo", "children": []},
+            "qa_pairs": [],
+        },
+        ensure_ascii=False,
+    )
+
+    class RefusalThenContentStreamResponse:
+        def __init__(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            yield 'data: {"choices":[{"delta":{"refusal":"I cannot generate","content":""}}]}'
+            for i in range(0, len(valid_json), 30):
+                yield f'data: {{"choices":[{{"delta":{{"content":{json.dumps(valid_json[i:i+30], ensure_ascii=False)}}}}}]}}'
+            yield "data: [DONE]"
+
+    client = FakeClient()
+    client.stream = lambda method, url, **kwargs: RefusalThenContentStreamResponse()
+
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+    previews = []
+
+    result = provider.summarize_transcript(
+        title="Demo",
+        transcript="[00:01] hello",
+        language="zh-CN",
+        stream_hook=previews.append,
+    )
+
+    assert result["overview"] == "本视频介绍核心内容。"
+    assert not any("I cannot generate" in p for p in previews)
 
 
 def test_mock_ai_provider_returns_deterministic_learning_summary(tmp_path: Path):

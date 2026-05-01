@@ -45,7 +45,9 @@ def get_membership(user_id: str) -> Membership:
         conn.close()
     if row is None:
         return Membership(plan="free", status="free", active=False)
-    active = row["status"] in ACTIVE_STATUSES
+    active = row["status"] in ACTIVE_STATUSES and (
+        row["current_period_end"] is None or row["current_period_end"] >= time()
+    )
     return Membership(
         plan=row["plan"],
         status=row["status"],
@@ -119,7 +121,8 @@ def expire_mock_subscription(user: User) -> Membership:
         conn.execute(
             """
             update subscriptions
-            set status = 'canceled', current_period_end = ?, updated_at = ?
+            set status = 'canceled', current_period_end = ?,
+                cancel_at_period_end = 0, updated_at = ?
             where user_id = ?
             """,
             (now - 1, now, user.id),
@@ -133,7 +136,7 @@ def fail_mock_payment(user: User) -> Membership:
             """
             update subscriptions
             set status = 'past_due', updated_at = ?
-            where user_id = ?
+            where user_id = ? and status in ('active', 'trialing')
             """,
             (time(), user.id),
         )

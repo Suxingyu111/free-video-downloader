@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import database
+from app.services.database import transaction
 
 
 def _login(client):
@@ -49,3 +50,57 @@ def test_mock_cancel_and_expire_subscription(monkeypatch, tmp_path):
     assert expired.status_code == 200
     assert expired.json()["membership"]["active"] is False
     assert expired.json()["membership"]["status"] == "canceled"
+
+
+def test_membership_inactive_after_period_end(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    _login(client)
+    client.post("/api/billing/mock/activate")
+
+    with transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            update subscriptions
+            set current_period_end = strftime('%s', 'now') - 1
+            where user_id = (select id from users where email = 'member@example.com')
+            """
+        )
+
+    status = client.get("/api/billing/status")
+    assert status.status_code == 200
+    assert status.json()["membership"]["plan"] == "pro"
+    assert status.json()["membership"]["status"] == "active"
+    assert status.json()["membership"]["active"] is False
+
+
+def test_mock_payment_failed_does_not_update_canceled_subscription(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    _login(client)
+    client.post("/api/billing/mock/activate")
+    client.post("/api/billing/mock/expire")
+
+    failed = client.post("/api/billing/mock/payment-failed")
+    assert failed.status_code == 200
+    assert failed.json()["membership"]["status"] == "canceled"
+    assert failed.json()["membership"]["active"] is False
+
+
+def test_mock_expire_clears_cancel_at_period_end(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    _login(client)
+    client.post("/api/billing/mock/activate")
+    client.post("/api/billing/mock/cancel")
+
+    expired = client.post("/api/billing/mock/expire")
+    assert expired.status_code == 200
+    assert expired.json()["membership"]["status"] == "canceled"
+    assert expired.json()["membership"]["cancel_at_period_end"] is False

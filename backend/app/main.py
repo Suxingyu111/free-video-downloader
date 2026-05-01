@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.services.asset_store import asset_store
+from app.services.database import initialize_database
 from app.services.geo_monitor import append_geo_access_log
 from app.services.geo_monitor import build_geo_access_record
 from app.services.geo_monitor import should_log_geo_access
@@ -48,6 +49,7 @@ FRONTEND_MEDIA_TYPES = {
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    initialize_database()
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     prune_download_directories(DOWNLOAD_DIR, keep_completed=MAX_COMPLETED_DOWNLOADS)
     yield

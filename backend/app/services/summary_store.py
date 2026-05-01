@@ -113,9 +113,10 @@ class SummaryStore:
         language: str = "zh-CN",
         cache_key: str | None = None,
         quota_user_id: str | None = None,
+        task_id: str | None = None,
     ) -> SummarySnapshot:
         task = SummarySnapshot(
-            id=f"summary_{secrets.token_urlsafe(10)}",
+            id=task_id or f"summary_{secrets.token_urlsafe(10)}",
             url=url,
             title=title,
             language=language or "zh-CN",

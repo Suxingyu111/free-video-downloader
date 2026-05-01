@@ -26,6 +26,7 @@ def test_initialize_database_creates_membership_tables(tmp_path, monkeypatch):
         "subscriptions",
         "stripe_events",
         "usage_daily",
+        "summary_quota_reservations",
         "billing_attempts",
         "rate_limits",
     }.issubset(tables)

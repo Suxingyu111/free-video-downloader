@@ -5,7 +5,7 @@ from app.main import app
 from app import summary_routes
 from app.services import database
 from app.services.auth_service import create_user
-from app.services.entitlements import consume_summary_quota, get_usage_summary
+from app.services.entitlements import get_usage_summary, reserve_summary_quota
 from app.services.summary_store import SummaryStore
 
 
@@ -262,13 +262,15 @@ def test_failed_summary_refunds_consumed_quota(monkeypatch, isolated_summary_sto
 
 def test_interrupted_summary_task_refunds_quota_on_startup(monkeypatch, isolated_summary_store):
     user = create_user("restart@example.com", "summary-password")
-    consume_summary_quota(user)
+    summary_id = "summary_interrupted_video"
+    reserve_summary_quota(user, summary_id)
 
     task = isolated_summary_store.create_task(
         "https://example.com/interrupted-video",
         title="Demo",
         language="zh-CN",
         quota_user_id=user.id,
+        task_id=summary_id,
     )
     isolated_summary_store.update_task(task.id, status="summarizing", stage="summary")
 
@@ -283,17 +285,25 @@ def test_interrupted_summary_task_refunds_quota_on_startup(monkeypatch, isolated
     assert restarted_task.quota_refunded_at is not None
     assert usage.used_today == 0
     assert usage.remaining_today == 3
+    with database.connect() as conn:
+        reservation = conn.execute(
+            "select refunded_at from summary_quota_reservations where reservation_id = ?",
+            (summary_id,),
+        ).fetchone()
+    assert reservation["refunded_at"] is not None
 
 
 def test_interrupted_summary_quota_refund_is_idempotent(monkeypatch, isolated_summary_store):
     user = create_user("restart-idempotent@example.com", "summary-password")
-    consume_summary_quota(user)
+    summary_id = "summary_interrupted_idempotent_video"
+    reserve_summary_quota(user, summary_id)
 
     task = isolated_summary_store.create_task(
         "https://example.com/interrupted-idempotent-video",
         title="Demo",
         language="zh-CN",
         quota_user_id=user.id,
+        task_id=summary_id,
     )
     isolated_summary_store.update_task(task.id, status="summarizing", stage="summary")
 
@@ -309,6 +319,15 @@ def test_interrupted_summary_quota_refund_is_idempotent(monkeypatch, isolated_su
     assert usage.used_today == 0
     assert usage.remaining_today == 3
     assert refunded_tasks == []
+    with database.connect() as conn:
+        reservation = conn.execute(
+            "select summary_count, refunded_at from summary_quota_reservations "
+            "join usage_daily using (user_id, usage_date) "
+            "where reservation_id = ?",
+            (summary_id,),
+        ).fetchone()
+    assert reservation["summary_count"] == 0
+    assert reservation["refunded_at"] is not None
 
 
 def test_summary_response_hides_internal_quota_metadata(monkeypatch, isolated_summary_store):

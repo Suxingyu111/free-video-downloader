@@ -70,6 +70,14 @@ create table if not exists usage_daily (
   primary key (user_id, usage_date)
 );
 
+create table if not exists summary_quota_reservations (
+  reservation_id text primary key,
+  user_id text not null references users(id) on delete cascade,
+  usage_date text not null,
+  created_at real not null,
+  refunded_at real
+);
+
 create table if not exists billing_attempts (
   id text primary key,
   user_id text not null references users(id) on delete cascade,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import threading
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,10 +13,9 @@ from app.auth_routes import current_user
 from app.services.auth_service import User
 from app.services.entitlements import (
     QuotaExceeded,
-    consume_summary_quota,
     get_usage_summary,
-    refund_summary_quota,
-    refund_summary_quota_for_user_id,
+    refund_summary_quota_reservation,
+    reserve_summary_quota,
 )
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
@@ -51,7 +51,7 @@ def _run_summary(
     summary_id: str,
     payload: SummaryRequest,
     seed_result: dict | None = None,
-    refund_user: User | None = None,
+    refund_on_failure: bool = False,
 ) -> None:
     output_dir = SUMMARY_DIR / summary_id
 
@@ -78,9 +78,9 @@ def _run_summary(
         )
         summary_store.complete_task(summary_id, result=result, markdown_path=markdown_path)
     except Exception as exc:
-        if refund_user is not None:
+        if refund_on_failure:
             try:
-                refund_summary_quota(refund_user)
+                refund_summary_quota_reservation(summary_id)
                 summary_store.mark_quota_refunded(summary_id)
             except Exception:
                 pass
@@ -111,8 +111,9 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
         if cached_task.status == "completed" and cached_task.result:
             seed_result = cached_task.result
 
+    summary_id = f"summary_{secrets.token_urlsafe(10)}"
     try:
-        usage = consume_summary_quota(user)
+        usage = reserve_summary_quota(user, summary_id)
     except QuotaExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
@@ -122,9 +123,13 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
         title=payload.title,
         language=payload.language,
         quota_user_id=quota_user_id,
+        task_id=summary_id,
     )
-    refund_user = None if quota_user_id is None else user
-    worker = threading.Thread(target=_run_summary, args=(task.id, payload, seed_result, refund_user), daemon=True)
+    worker = threading.Thread(
+        target=_run_summary,
+        args=(task.id, payload, seed_result, quota_user_id is not None),
+        daemon=True,
+    )
     worker.start()
     return {"summary_id": task.id, "cache_hit": False, "status": task.status, "usage": usage.as_dict()}
 
@@ -134,7 +139,7 @@ def refund_interrupted_summary_quotas() -> None:
         if not task.quota_user_id:
             continue
         try:
-            refund_summary_quota_for_user_id(task.quota_user_id)
+            refund_summary_quota_reservation(task.id)
             summary_store.mark_quota_refunded(task.id)
         except Exception:
             continue

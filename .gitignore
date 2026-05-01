@@ -16,3 +16,4 @@ backend/.pytest_cache/
 .tmp
 .playwright*
 .firecrawl/
+.superpowers/

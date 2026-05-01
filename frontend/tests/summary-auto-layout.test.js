@@ -70,6 +70,12 @@ test("video details and AI summary use a left-narrow right-wide workbench layout
   assert.match(mainCss, /@media \(max-width:\s*920px\)[\s\S]*\.analysis-workbench[\s\S]*flex-direction:\s*column/);
 });
 
+test("completed downloads stay bound to the selected format", () => {
+  assert.match(appSource, /currentTask\.value\.format_id === state\.selectedFormatId/);
+  assert.match(appSource, /registerTask\(taskId,\s*state\.selectedFormatId\)/);
+  assert.match(appSource, /format_id:\s*formatId/);
+});
+
 test("summary workbench shows module cards before final result and loads selected content", () => {
   assert.match(summaryPanelSource, /class="summary-module-grid"/);
   assert.match(summaryPanelSource, /class="\{ active: summaryView === card\.id \}"/);

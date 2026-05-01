@@ -78,6 +78,24 @@ def test_summary_store_failed_tasks_are_not_active(tmp_path):
     assert store.get_task(failed.id).error == "Provider unavailable"
 
 
+def test_summary_store_restores_previous_completed_cache_after_forced_failure(tmp_path):
+    store = SummaryStore(tmp_path)
+    completed = store.create_task("https://example.com/watch", title="Demo")
+    markdown_path = tmp_path / completed.id / "summary.md"
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text("# Demo", encoding="utf-8")
+    store.complete_task(completed.id, result={"overview": "旧总结"}, markdown_path=markdown_path)
+
+    forced = store.create_task("https://example.com/watch", title="Demo")
+    assert store.get_cached_task("https://example.com/watch", language="zh-CN").id == forced.id
+
+    store.fail_task(forced.id, "YouTube bot check")
+
+    assert store.get_cached_task("https://example.com/watch", language="zh-CN").id == completed.id
+    restored = SummaryStore(tmp_path)
+    assert restored.get_cached_task("https://example.com/watch", language="zh-CN").id == completed.id
+
+
 def test_summary_store_recovers_completed_snapshots_from_disk(tmp_path):
     store = SummaryStore(tmp_path)
     task = store.create_task("https://example.com/watch", title="Demo", language="zh-CN")

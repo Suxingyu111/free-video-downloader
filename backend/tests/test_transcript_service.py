@@ -89,6 +89,16 @@ def test_build_transcript_ytdlp_options_adds_optional_cookie_auth(tmp_path: Path
     assert options["subtitleslangs"] == ["zh-CN"]
 
 
+def test_build_transcript_ytdlp_options_uses_public_youtube_clients(tmp_path: Path):
+    options = build_transcript_ytdlp_options(
+        prepared_url="https://www.youtube.com/watch?v=DXVHmGoCTco",
+        output_dir=tmp_path,
+        subtitle_languages=["zh-Hans"],
+    )
+
+    assert options["extractor_args"] == {"youtube": {"player_client": ["android", "web"]}}
+
+
 def test_transcript_service_reads_cookie_auth_from_environment(monkeypatch):
     monkeypatch.setenv("BILIBILI_COOKIE_FILE", "/tmp/bilibili-cookies.txt")
     monkeypatch.setenv("BILIBILI_COOKIES_FROM_BROWSER", "safari")

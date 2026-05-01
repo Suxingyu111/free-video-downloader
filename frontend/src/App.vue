@@ -21,7 +21,7 @@ import {
 import { computed, onBeforeUnmount, onMounted, reactive, watch } from "vue";
 import SummaryPanel from "./components/summary/SummaryPanel.vue";
 import { analyzeUrl, askSummaryQuestion, connectSummaryEvents, connectTaskEvents, createDownloadTask, createSummaryTask, getSummary, getTask } from "./services/api";
-import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT } from "./services/formats";
+import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT, resolveDownloadFormat } from "./services/formats";
 import { applyWorkspaceSnapshot, loadWorkspaceSnapshot, pickWorkspaceSnapshot, saveWorkspaceSnapshot } from "./services/workspacePersistence";
 
 const platforms = ["YouTube", "Bilibili", "TikTok", "Instagram", "X / Twitter", "Vimeo", "Facebook", "小红书", "抖音", "Reddit"];
@@ -138,7 +138,7 @@ const formatOptions = computed(() => {
       return true;
     })
     .slice(0, 8)
-    .map((format) => ({ format_id: format.format_id, label: formatLabel(format) }));
+    .map((format) => ({ format_id: resolveDownloadFormat(format), label: formatLabel(format) }));
 
   return [
     { format_id: RELIABLE_MP4_FORMAT, label: "稳定 MP4（推荐）" },
@@ -149,7 +149,12 @@ const formatOptions = computed(() => {
 const currentTask = computed(() => state.tasks.find((task) => task.id === state.currentTaskId) || null);
 const isTaskRunning = computed(() => ["queued", "processing", "downloading"].includes(currentTask.value?.status));
 const isBusy = computed(() => state.analyzing || state.downloading || isTaskRunning.value);
-const canSaveFile = computed(() => currentTask.value?.status === "completed" && currentTask.value.download_url);
+const canSaveFile = computed(
+  () =>
+    currentTask.value?.status === "completed" &&
+    currentTask.value.download_url &&
+    currentTask.value.format_id === state.selectedFormatId
+);
 const progressValue = computed(() => Math.min(currentTask.value?.progress || 0, 100));
 const isSummaryRunning = computed(() => ["queued", "transcribing", "summarizing"].includes(state.summaryTask?.status));
 const summaryResult = computed(() => state.summaryTask?.result || null);
@@ -267,7 +272,7 @@ async function handleDownload() {
       write_auto_subs: false,
       prefer_srt: true
     });
-    registerTask(taskId);
+    registerTask(taskId, state.selectedFormatId);
   } catch (error) {
     state.error = localizeStatus(error.message);
   } finally {
@@ -362,9 +367,10 @@ function clearCurrentSummary() {
   state.summaryError = "";
 }
 
-function registerTask(taskId) {
+function registerTask(taskId, formatId = state.selectedFormatId) {
   const task = {
     id: taskId,
+    format_id: formatId,
     status: "queued",
     progress: 0,
     message: "任务已排队，正在准备下载环境",
@@ -384,6 +390,7 @@ function resumeTask(taskId) {
   if (!task) {
     task = {
       id: taskId,
+      format_id: state.selectedFormatId,
       status: "queued",
       progress: 0,
       message: "正在恢复下载任务状态",
@@ -466,6 +473,7 @@ function localizeSummaryStatus(message = "") {
     .replaceAll("Preparing transcript", "正在准备字幕文本")
     .replaceAll("Preparing subtitles", "正在准备字幕文本")
     .replaceAll("Extracting subtitles", "正在提取字幕")
+    .replaceAll("Reusing previous transcript", "正在复用上次字幕文本")
     .replaceAll("Extracting audio for speech-to-text", "正在提取音频")
     .replaceAll("Transcribing audio", "正在进行语音转写")
     .replaceAll("Streaming structured summary", "AI 正在逐行生成总结")

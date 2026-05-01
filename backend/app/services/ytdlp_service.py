@@ -91,6 +91,12 @@ def is_youtube_url(url: str) -> bool:
     return "youtube.com" in hostname or "youtu.be" in hostname
 
 
+def build_extractor_args(url: str) -> dict[str, dict[str, list[str]]]:
+    if is_youtube_url(url):
+        return {"youtube": {"player_client": ["android", "web"]}}
+    return {}
+
+
 def friendly_error_message(error: Exception | str) -> str:
     text = str(error)
     if "[BiliBili]" in text and "HTTP Error 412" in text:
@@ -233,6 +239,9 @@ def build_download_options(
         "merge_output_format": "mp4",
         "js_runtimes": {"node": {}},
     }
+    extractor_args = build_extractor_args(prepared_url)
+    if extractor_args:
+        options["extractor_args"] = extractor_args
     if not is_youtube_url(prepared_url):
         options["http_chunk_size"] = 1024 * 1024
     if selected_ids:
@@ -380,6 +389,9 @@ class YtDlpService:
             "extract_flat": "in_playlist",
             "http_headers": build_http_headers(prepared_url),
         }
+        extractor_args = build_extractor_args(prepared_url)
+        if extractor_args:
+            options["extractor_args"] = extractor_args
         try:
             with YoutubeDL(options) as ydl:
                 info = ydl.extract_info(prepared_url, download=False)

@@ -1,6 +1,7 @@
 from app.services.ytdlp_service import (
     DEFAULT_FORMAT,
     BILIBILI_DEFAULT_FORMAT,
+    build_extractor_args,
     download_with_resumable_retries,
     build_download_options,
     friendly_error_message,
@@ -147,6 +148,14 @@ def test_build_download_options_avoids_chunked_youtube_media_requests(tmp_path):
     )
 
     assert "http_chunk_size" not in options
+    assert options["extractor_args"] == {"youtube": {"player_client": ["android", "web"]}}
+
+
+def test_build_extractor_args_uses_public_youtube_clients():
+    assert build_extractor_args("https://www.youtube.com/watch?v=abc") == {
+        "youtube": {"player_client": ["android", "web"]}
+    }
+    assert build_extractor_args("https://example.com/video") == {}
 
 
 def test_download_with_resumable_retries_reextracts_youtube_url_after_403(monkeypatch):

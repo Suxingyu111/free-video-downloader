@@ -10,9 +10,11 @@ class FakeSummaryService:
     def __init__(self):
         self.calls = []
         self.questions = []
+        self.seed_results = []
 
-    def generate_summary(self, *, url, title, language, output_dir, progress_hook=None):
+    def generate_summary(self, *, url, title, language, output_dir, progress_hook=None, seed_result=None):
         self.calls.append((url, title, language, output_dir))
+        self.seed_results.append(seed_result)
         if progress_hook:
             progress_hook(
                 "summary",
@@ -142,6 +144,13 @@ def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summar
     assert second.json()["summary_id"] != first_summary_id
     assert second.json()["cache_hit"] is False
 
+    for _ in range(20):
+        snapshot = client.get(f"/api/summaries/{second.json()['summary_id']}").json()
+        if snapshot["status"] == "completed":
+            break
+
+    assert fake.seed_results[1]["transcript_text"] == "[00:01] 测试字幕"
+
 
 def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
@@ -175,3 +184,14 @@ def test_unknown_summary_task_returns_404():
     response = client.get("/api/summaries/missing")
 
     assert response.status_code == 404
+
+
+def test_summary_errors_localize_youtube_bot_check_without_cookie_prompt():
+    message = summary_routes._friendly_summary_error(
+        "ERROR: [youtube] DXVHmGoCTco: Sign in to confirm you’re not a bot. "
+        "Use --cookies-from-browser or --cookies for the authentication."
+    )
+
+    assert "YouTube 要求登录验证" in message
+    assert "公开视频" in message
+    assert "--cookies" not in message

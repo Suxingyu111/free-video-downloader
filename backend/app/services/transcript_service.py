@@ -8,7 +8,7 @@ from typing import Literal
 
 from yt_dlp import YoutubeDL
 
-from app.services.ytdlp_service import build_http_headers, prepare_url
+from app.services.ytdlp_service import build_extractor_args, build_http_headers, prepare_url
 
 
 TranscriptSource = Literal["subtitle", "auto_subtitle", "speech_to_text"]
@@ -186,6 +186,9 @@ def build_transcript_ytdlp_options(
         "outtmpl": str(output_dir / "%(title).120s-%(id)s.%(ext)s"),
         "http_headers": build_http_headers(prepared_url),
     }
+    extractor_args = build_extractor_args(prepared_url)
+    if extractor_args:
+        options["extractor_args"] = extractor_args
     if cookie_file:
         options["cookiefile"] = str(cookie_file)
     if cookies_from_browser:

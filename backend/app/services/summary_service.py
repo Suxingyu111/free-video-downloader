@@ -49,11 +49,16 @@ class SummaryService:
         language: str,
         output_dir: Path,
         progress_hook: SummaryProgressHook | None = None,
+        seed_result: dict | None = None,
     ) -> tuple[dict, Path]:
         output_dir.mkdir(parents=True, exist_ok=True)
         safe_title = title or "未命名视频"
+        transcript = transcript_from_summary_result(seed_result, language=language)
 
-        if _demo_mode_enabled() and url.startswith("https://demo.saveany.local/"):
+        if transcript:
+            if progress_hook:
+                emit_summary_progress(progress_hook, "subtitle", 24, "Reusing previous transcript")
+        elif _demo_mode_enabled() and url.startswith("https://demo.saveany.local/"):
             transcript = Transcript(
                 source="subtitle",
                 language=language,
@@ -75,8 +80,8 @@ class SummaryService:
             transcript_text = transcript_to_text(transcript.segments)
         else:
             reason = describe_bilibili_transcript_unavailable(url)
-            if reason:
-                raise RuntimeError(reason)
+            if reason and progress_hook:
+                emit_summary_progress(progress_hook, "speech_to_text", 26, reason)
             if progress_hook:
                 emit_summary_progress(progress_hook, "speech_to_text", 30, "Extracting audio for speech-to-text")
             audio_path = self.audio_service.extract_audio(url, output_dir / "audio")
@@ -214,6 +219,60 @@ def serialize_transcript_segments(segments: list[TranscriptSegment]) -> list[dic
         }
         for segment in segments
     ]
+
+
+def transcript_from_summary_result(result: dict | None, *, language: str) -> Transcript | None:
+    if not isinstance(result, dict):
+        return None
+
+    source = result.get("transcript_source")
+    if source not in {"subtitle", "auto_subtitle", "speech_to_text"}:
+        source = "subtitle"
+    transcript_language = str(result.get("transcript_language") or language or "zh-CN")
+    segments = _segments_from_summary_result(result)
+    if not segments:
+        segments = segments_from_transcribed_text(str(result.get("transcript_text") or ""))
+    if not segments:
+        return None
+    return Transcript(source=source, language=transcript_language, segments=segments)
+
+
+def _segments_from_summary_result(result: dict) -> list[TranscriptSegment]:
+    raw_segments = result.get("transcript_segments")
+    if not isinstance(raw_segments, list):
+        return []
+
+    segments: list[TranscriptSegment] = []
+    for item in raw_segments:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        start = _coerce_segment_time(item.get("start"))
+        if start is None:
+            start = _coerce_segment_time(item.get("time"))
+        if start is None:
+            start = float(len(segments) * 30)
+        end = _coerce_segment_time(item.get("end"))
+        if end is None or end <= start:
+            end = start + 30.0
+        segments.append(TranscriptSegment(start=start, end=end, text=text))
+    return segments
+
+
+def _coerce_segment_time(value: object) -> float | None:
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return parse_timestamp(value.strip())
+        except (ValueError, TypeError):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+    return None
 
 
 def render_markdown(result: dict, *, title: str) -> str:

@@ -249,11 +249,14 @@ class SummaryStore:
 
     def _save_index_unlocked(self) -> None:
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        live_index = {
-            cache_key: task_id
-            for cache_key, task_id in self._cache_index.items()
-            if task_id in self._tasks and self._tasks[task_id].status != "failed"
-        }
+        live_index: dict[str, str] = {}
+        for task in self._tasks.values():
+            if not task.cache_key or task.status == "failed":
+                continue
+            current_id = live_index.get(task.cache_key)
+            current = self._tasks.get(current_id) if current_id else None
+            if current is None or _cache_index_sort_key(task) >= _cache_index_sort_key(current):
+                live_index[task.cache_key] = task.id
         self._cache_index = live_index
         self._write_json(self._index_file, live_index)
 
@@ -283,6 +286,16 @@ class SummaryStore:
         tmp_path = path.with_suffix(f"{path.suffix}.tmp")
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         tmp_path.replace(path)
+
+
+def _cache_index_sort_key(task: SummarySnapshot) -> tuple[int, float]:
+    status_priority = {
+        "queued": 3,
+        "transcribing": 3,
+        "summarizing": 3,
+        "completed": 2,
+    }.get(task.status, 0)
+    return status_priority, task.updated_at
 
 
 summary_store = SummaryStore()

@@ -110,6 +110,36 @@ def test_summary_service_uses_subtitle_transcript_before_speech_to_text(tmp_path
     assert markdown_path.exists()
 
 
+def test_summary_service_reuses_seed_transcript_before_fetching_media(tmp_path: Path):
+    ai = FakeAIProvider()
+    audio = FakeAudioService(tmp_path / "audio.m4a")
+    transcript_service = FakeTranscriptService(None)
+    service = SummaryService(
+        transcript_service=transcript_service,
+        audio_service=audio,
+        ai_provider=ai,
+    )
+
+    result, markdown_path = service.generate_summary(
+        url="https://www.youtube.com/watch?v=DXVHmGoCTco",
+        title="AI 课程",
+        language="zh-CN",
+        output_dir=tmp_path,
+        seed_result={
+            "transcript_source": "subtitle",
+            "transcript_language": "zh-Hans",
+            "transcript_segments": [{"start": 3, "end": 6, "time": "00:03", "text": "已有字幕内容"}],
+        },
+    )
+
+    assert transcript_service.calls == []
+    assert audio.calls == []
+    assert ai.transcribed == []
+    assert ai.summarized[0][1] == "[00:03] 已有字幕内容"
+    assert result["transcript_language"] == "zh-Hans"
+    assert markdown_path.exists()
+
+
 def test_summary_service_emits_grounded_draft_and_stream_preview(tmp_path: Path):
     class StreamingAIProvider(FakeAIProvider):
         def summarize_transcript(self, *, title: str, transcript: str, language: str, stream_hook=None) -> dict:

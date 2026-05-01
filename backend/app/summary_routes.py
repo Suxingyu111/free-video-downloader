@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
+from app.services.ytdlp_service import friendly_error_message
 
 
 SUMMARY_DIR = summary_store.base_dir
@@ -34,10 +35,10 @@ def _friendly_summary_error(error: Exception | str) -> str:
     text = str(error)
     if "AI_API_KEY" in text:
         return "AI 总结服务尚未配置，请在后端配置 AI_API_KEY 后重试。"
-    return text
+    return friendly_error_message(text)
 
 
-def _run_summary(summary_id: str, payload: SummaryRequest) -> None:
+def _run_summary(summary_id: str, payload: SummaryRequest, seed_result: dict | None = None) -> None:
     output_dir = SUMMARY_DIR / summary_id
 
     def progress_hook(stage: str, progress: float, message: str, **changes: object) -> None:
@@ -59,6 +60,7 @@ def _run_summary(summary_id: str, payload: SummaryRequest) -> None:
             language=payload.language,
             output_dir=output_dir,
             progress_hook=progress_hook,
+            seed_result=seed_result,
         )
         summary_store.complete_task(summary_id, result=result, markdown_path=markdown_path)
     except Exception as exc:
@@ -75,17 +77,20 @@ def get_summary_service() -> SummaryService:
 @router.post("")
 def create_summary(payload: SummaryRequest) -> dict[str, object]:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
-    if not payload.force:
-        cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
-        if cached_task is not None:
+    cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
+    seed_result = None
+    if cached_task is not None:
+        if not payload.force:
             return {
                 "summary_id": cached_task.id,
                 "cache_hit": True,
                 "status": cached_task.status,
             }
+        if cached_task.status == "completed" and cached_task.result:
+            seed_result = cached_task.result
 
     task = summary_store.create_task(payload.url, title=payload.title, language=payload.language)
-    worker = threading.Thread(target=_run_summary, args=(task.id, payload), daemon=True)
+    worker = threading.Thread(target=_run_summary, args=(task.id, payload, seed_result), daemon=True)
     worker.start()
     return {"summary_id": task.id, "cache_hit": False, "status": task.status}
 

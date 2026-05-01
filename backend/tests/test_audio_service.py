@@ -40,3 +40,4 @@ def test_audio_extraction_uses_resilient_youtube_audio_options(monkeypatch, tmp_
     assert options["retries"] == 10
     assert options["extractor_retries"] == 5
     assert options["js_runtimes"] == {"node": {}}
+    assert options["extractor_args"] == {"youtube": {"player_client": ["android", "web"]}}

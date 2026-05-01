@@ -33,7 +33,7 @@ class AppConfig:
 def load_config() -> AppConfig:
     billing_mode = os.getenv("BILLING_MODE", "mock").strip().lower()
     if billing_mode not in {"mock", "stripe"}:
-        billing_mode = "mock"
+        raise ValueError("BILLING_MODE must be one of: mock, stripe")
     return AppConfig(
         db_path=Path(os.getenv("SAVEANY_DB_PATH", RUNTIME_DIR / "saveany.db")),
         billing_mode=billing_mode,

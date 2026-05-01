@@ -98,9 +98,12 @@ def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
 
 
 def initialize_database(db_path: Path | str | None = None) -> None:
-    with connect(db_path) as conn:
+    conn = connect(db_path)
+    try:
         conn.executescript(SCHEMA)
         conn.commit()
+    finally:
+        conn.close()
 
 
 @contextmanager

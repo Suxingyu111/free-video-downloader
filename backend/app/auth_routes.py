@@ -91,7 +91,7 @@ def login(payload: AuthRequest, response: Response) -> dict:
 
 
 @router.post("/auth/logout")
-def logout(request: Request, response: Response) -> dict[str, bool]:
+def logout(request: Request, response: Response, _: User = Depends(current_user)) -> dict[str, bool]:
     config = load_config()
     revoke_session(request.cookies.get(config.session_cookie_name))
     response.delete_cookie(config.session_cookie_name, path="/")

@@ -53,6 +53,17 @@ def test_login_rejects_wrong_password(monkeypatch, tmp_path):
     assert response.json()["detail"] == "邮箱或密码错误"
 
 
+def test_logout_requires_authentication(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    response = client.post("/api/auth/logout")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "请先登录"
+
+
 def test_password_reset_token_is_single_use(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")

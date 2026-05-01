@@ -58,6 +58,7 @@ create table if not exists stripe_events (
   event_id text primary key,
   event_type text not null,
   status text not null default 'pending',
+  processing_started_at real not null default 0,
   processed_at real not null,
   payload_hash text not null
 );
@@ -85,6 +86,7 @@ create table if not exists billing_attempts (
   mode text not null,
   status text not null,
   stripe_checkout_session_id text,
+  stripe_checkout_url text,
   created_at real not null,
   updated_at real not null
 );
@@ -111,6 +113,7 @@ def initialize_database(db_path: Path | str | None = None) -> None:
     try:
         conn.executescript(SCHEMA)
         _migrate_stripe_events(conn)
+        _migrate_billing_attempts(conn)
         conn.commit()
     finally:
         conn.close()
@@ -125,6 +128,19 @@ def _migrate_stripe_events(conn: sqlite3.Connection) -> None:
         conn.execute(
             "alter table stripe_events add column status text not null default 'processed'"
         )
+    if "processing_started_at" not in columns:
+        conn.execute(
+            "alter table stripe_events add column processing_started_at real not null default 0"
+        )
+
+
+def _migrate_billing_attempts(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute("pragma table_info(billing_attempts)").fetchall()
+    }
+    if "stripe_checkout_url" not in columns:
+        conn.execute("alter table billing_attempts add column stripe_checkout_url text")
 
 
 @contextmanager

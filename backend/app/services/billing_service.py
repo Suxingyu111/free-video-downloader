@@ -11,6 +11,11 @@ from app.services.database import connect, transaction
 
 
 ACTIVE_STATUSES = {"active", "trialing"}
+STRIPE_EVENT_PROCESSING_LEASE_SECONDS = 300
+
+
+class StripeEventInProgress(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -48,7 +53,7 @@ def get_membership(user_id: str) -> Membership:
     if row is None:
         return Membership(plan="free", status="free", active=False)
     active = row["status"] in ACTIVE_STATUSES and (
-        row["current_period_end"] is None or row["current_period_end"] >= time()
+        row["current_period_end"] is not None and row["current_period_end"] >= time()
     )
     return Membership(
         plan=row["plan"],
@@ -134,6 +139,71 @@ def create_mock_checkout(user: User) -> dict:
             (attempt_id, user.id, now, now),
         )
     return {"mode": "mock", "url": "/#pricing", "attempt_id": attempt_id}
+
+
+def get_open_stripe_checkout_attempt(user_id: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute(
+            """
+            select id, stripe_checkout_session_id, stripe_checkout_url
+            from billing_attempts
+            where user_id = ? and mode = 'stripe' and status = 'open'
+            order by updated_at desc
+            limit 1
+            """,
+            (user_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def record_stripe_checkout_attempt(user_id: str, session_id: str, session_url: str) -> None:
+    now = time()
+    with transaction() as conn:
+        existing = conn.execute(
+            """
+            select id from billing_attempts
+            where stripe_checkout_session_id = ?
+            limit 1
+            """,
+            (session_id,),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """
+                insert into billing_attempts
+                (id, user_id, mode, status, stripe_checkout_session_id, stripe_checkout_url,
+                 created_at, updated_at)
+                values (?, ?, 'stripe', 'open', ?, ?, ?, ?)
+                """,
+                (f"attempt_{secrets.token_urlsafe(10)}", user_id, session_id, session_url, now, now),
+            )
+        else:
+            conn.execute(
+                """
+                update billing_attempts
+                set user_id = ?, mode = 'stripe', status = 'open',
+                    stripe_checkout_url = ?, updated_at = ?
+                where id = ?
+                """,
+                (user_id, session_url, now, existing["id"]),
+            )
+
+
+def complete_stripe_checkout_attempt(session_id: str) -> None:
+    with transaction() as conn:
+        conn.execute(
+            """
+            update billing_attempts
+            set status = 'completed', updated_at = ?
+            where stripe_checkout_session_id = ? and status = 'open'
+            """,
+            (time(), session_id),
+        )
 
 
 def activate_mock_subscription(user: User) -> Membership:
@@ -317,7 +387,7 @@ def upsert_stripe_checkout_session(session: dict) -> Membership:
         values = (
             user_id,
             "pro",
-            "active" if session.get("payment_status") == "paid" else "incomplete",
+            "incomplete",
             customer_id,
             subscription_id,
             None,
@@ -459,31 +529,48 @@ def mark_stripe_invoice_payment_failed(invoice: dict) -> Membership:
 
 def begin_stripe_event_processing(event_id: str, event_type: str, payload: bytes) -> bool:
     payload_hash = hashlib.sha256(payload).hexdigest()
+    now = time()
     with transaction() as conn:
         row = conn.execute(
-            "select status from stripe_events where event_id = ?",
+            "select status, processing_started_at, payload_hash from stripe_events where event_id = ?",
             (event_id,),
         ).fetchone()
         if row is None:
             conn.execute(
                 """
-                insert into stripe_events (event_id, event_type, status, processed_at, payload_hash)
-                values (?, ?, 'processing', 0, ?)
+                insert into stripe_events
+                (event_id, event_type, status, processing_started_at, processed_at, payload_hash)
+                values (?, ?, 'processing', ?, 0, ?)
                 """,
-                (event_id, event_type, payload_hash),
+                (event_id, event_type, now, payload_hash),
             )
             return True
         if row["status"] == "processed":
             return False
         if row["status"] == "processing":
-            return False
+            if now - row["processing_started_at"] < STRIPE_EVENT_PROCESSING_LEASE_SECONDS:
+                raise StripeEventInProgress(event_id)
+            cursor = conn.execute(
+                """
+                update stripe_events
+                set event_type = ?, payload_hash = ?, status = 'processing',
+                    processing_started_at = ?
+                where event_id = ? and status = 'processing'
+                  and processing_started_at = ?
+                """,
+                (event_type, payload_hash, now, event_id, row["processing_started_at"]),
+            )
+            if cursor.rowcount == 1:
+                return True
+            raise StripeEventInProgress(event_id)
         cursor = conn.execute(
             """
             update stripe_events
-            set event_type = ?, payload_hash = ?, status = 'processing'
+            set event_type = ?, payload_hash = ?, status = 'processing',
+                processing_started_at = ?
             where event_id = ? and status = 'pending'
             """,
-            (event_type, payload_hash, event_id),
+            (event_type, payload_hash, now, event_id),
         )
         return cursor.rowcount == 1
 
@@ -493,7 +580,7 @@ def mark_stripe_event_pending(event_id: str) -> None:
         conn.execute(
             """
             update stripe_events
-            set status = 'pending'
+            set status = 'pending', processing_started_at = 0
             where event_id = ? and status = 'processing'
             """,
             (event_id,),
@@ -505,7 +592,7 @@ def mark_stripe_event_processed(event_id: str) -> None:
         conn.execute(
             """
             update stripe_events
-            set status = 'processed', processed_at = ?
+            set status = 'processed', processing_started_at = 0, processed_at = ?
             where event_id = ?
             """,
             (time(), event_id),

@@ -1,4 +1,6 @@
+import hashlib
 import json
+import pytest
 from time import time
 
 from fastapi.testclient import TestClient
@@ -82,11 +84,13 @@ def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
 
     assert first.status_code == 200
     assert second.status_code == 200
+    assert first.json()["session_id"] == second.json()["session_id"]
+    assert first.json()["url"] == second.json()["url"]
     assert len(FakeStripeCustomer.created) == 1
+    assert len(FakeStripeCheckoutSession.created) == 1
     assert FakeStripeCustomer.created[0]["email"] == "checkout@example.com"
     assert FakeStripeCustomer.created[0]["metadata"]["saveany_user_id"]
     assert [call["customer"] for call in FakeStripeCheckoutSession.created] == [
-        "cus_reused",
         "cus_reused",
     ]
     assert FakeStripeCheckoutSession.created[0]["client_reference_id"]
@@ -115,14 +119,14 @@ def test_stripe_event_processing_claim_blocks_pending_duplicate(monkeypatch, tmp
         "customer.subscription.updated",
         b'{"id":"evt_lock"}',
     )
-    duplicate = begin_stripe_event_processing(
-        "evt_lock",
-        "customer.subscription.updated",
-        b'{"id":"evt_lock"}',
-    )
 
     assert first is True
-    assert duplicate is False
+    with pytest.raises(billing_routes.StripeEventInProgress):
+        begin_stripe_event_processing(
+            "evt_lock",
+            "customer.subscription.updated",
+            b'{"id":"evt_lock"}',
+        )
     conn = database.connect(tmp_path / "saveany.db")
     try:
         row = conn.execute(
@@ -132,6 +136,122 @@ def test_stripe_event_processing_claim_blocks_pending_duplicate(monkeypatch, tmp
         conn.close()
     assert row["status"] == "processing"
     assert row["processed_at"] == 0
+
+
+def test_webhook_duplicate_during_processing_is_retryable_without_processing(
+    monkeypatch, tmp_path
+):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("inflight@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_inflight",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_inflight",
+                "customer": "cus_inflight",
+                "status": "active",
+                "current_period_start": 1777600000,
+                "current_period_end": 1780278400,
+                "cancel_at_period_end": False,
+                "metadata": {"saveany_user_id": user.id},
+                "items": {"data": [{"price": {"id": "price_inflight"}}]},
+            }
+        },
+    }
+    payload = json.dumps(event).encode()
+    assert begin_stripe_event_processing(event["id"], event["type"], payload) is True
+
+    duplicate = client.post(
+        "/api/billing/webhook",
+        content=payload,
+        headers={"Stripe-Signature": "valid"},
+    )
+
+    assert duplicate.status_code == 409
+    assert get_membership(user.id).active is False
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        subscription = conn.execute(
+            """
+            select id from subscriptions
+            where stripe_subscription_id = 'sub_inflight'
+            """
+        ).fetchone()
+        event_row = conn.execute(
+            """
+            select status, processed_at from stripe_events
+            where event_id = 'evt_inflight'
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+    assert subscription is None
+    assert event_row["status"] == "processing"
+    assert event_row["processed_at"] == 0
+
+
+def test_webhook_reclaims_stale_processing_event(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("stale@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_stale",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_stale",
+                "customer": "cus_stale",
+                "status": "active",
+                "current_period_start": 1777600000,
+                "current_period_end": 1780278400,
+                "cancel_at_period_end": False,
+                "metadata": {"saveany_user_id": user.id},
+                "items": {"data": [{"price": {"id": "price_stale"}}]},
+            }
+        },
+    }
+    payload = json.dumps(event).encode()
+    with transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into stripe_events
+            (event_id, event_type, status, processed_at, payload_hash, processing_started_at)
+            values (?, ?, 'processing', 0, ?, ?)
+            """,
+            (
+                event["id"],
+                event["type"],
+                hashlib.sha256(payload).hexdigest(),
+                time() - 1000,
+            ),
+        )
+
+    response = client.post(
+        "/api/billing/webhook",
+        content=payload,
+        headers={"Stripe-Signature": "valid"},
+    )
+
+    assert response.status_code == 200
+    assert get_membership(user.id).active is True
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        event_row = conn.execute(
+            """
+            select status, processed_at from stripe_events
+            where event_id = 'evt_stale'
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+    assert event_row["status"] == "processed"
+    assert event_row["processed_at"] > 0
 
 
 def test_webhook_rejects_bad_signature(monkeypatch, tmp_path):
@@ -239,7 +359,8 @@ def test_checkout_session_completed_webhook_links_subscription(monkeypatch, tmp_
 
     assert response.status_code == 200
     membership = get_membership(user.id)
-    assert membership.active is True
+    assert membership.active is False
+    assert membership.current_period_end is None
     conn = database.connect(tmp_path / "saveany.db")
     try:
         subscription = conn.execute(
@@ -253,7 +374,7 @@ def test_checkout_session_completed_webhook_links_subscription(monkeypatch, tmp_
         conn.close()
     assert subscription["stripe_customer_id"] == "cus_complete"
     assert subscription["stripe_subscription_id"] == "sub_complete"
-    assert subscription["status"] == "active"
+    assert subscription["status"] == "incomplete"
 
 
 def test_invoice_paid_webhook_marks_subscription_active_and_updates_period(monkeypatch, tmp_path):

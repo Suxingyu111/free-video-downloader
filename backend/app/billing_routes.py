@@ -10,14 +10,18 @@ from app.services.billing_service import (
     activate_mock_subscription,
     begin_stripe_event_processing,
     cancel_mock_subscription,
+    complete_stripe_checkout_attempt,
     create_mock_checkout,
     ensure_stripe_customer_id,
     expire_mock_subscription,
     fail_mock_payment,
+    get_open_stripe_checkout_attempt,
     get_membership,
     mark_stripe_event_pending,
     mark_stripe_event_processed,
     mark_stripe_invoice_payment_failed,
+    record_stripe_checkout_attempt,
+    StripeEventInProgress,
     upsert_stripe_checkout_session,
     upsert_stripe_invoice_paid,
     upsert_stripe_subscription,
@@ -44,6 +48,13 @@ def billing_checkout(user: User = Depends(current_user)) -> dict:
     if config.billing_mode == "stripe":
         if not config.stripe_secret_key or not config.stripe_pro_monthly_price_id:
             raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
+        open_attempt = get_open_stripe_checkout_attempt(user.id)
+        if open_attempt is not None:
+            return {
+                "mode": "stripe",
+                "url": open_attempt["stripe_checkout_url"],
+                "session_id": open_attempt["stripe_checkout_session_id"],
+            }
         stripe.api_key = config.stripe_secret_key
         customer_id = ensure_stripe_customer_id(
             user,
@@ -62,6 +73,7 @@ def billing_checkout(user: User = Depends(current_user)) -> dict:
             subscription_data={"metadata": {"saveany_user_id": user.id}},
             metadata={"saveany_user_id": user.id},
         )
+        record_stripe_checkout_attempt(user.id, session.id, session.url)
         return {"mode": "stripe", "url": session.url, "session_id": session.id}
     raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
 
@@ -111,12 +123,19 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
     event_type = event.get("type")
     if not event_id or not event_type:
         raise HTTPException(status_code=400, detail="Stripe webhook 缺少事件 ID")
-    if not begin_stripe_event_processing(event_id, event_type, payload):
+    try:
+        should_process = begin_stripe_event_processing(event_id, event_type, payload)
+    except StripeEventInProgress as exc:
+        raise HTTPException(status_code=409, detail="Stripe webhook 事件正在处理") from exc
+    if not should_process:
         return {"ok": True}
 
     try:
         if event_type == "checkout.session.completed":
-            upsert_stripe_checkout_session(event["data"]["object"])
+            checkout_session = event["data"]["object"]
+            upsert_stripe_checkout_session(checkout_session)
+            if checkout_session.get("id"):
+                complete_stripe_checkout_attempt(checkout_session["id"])
         elif event_type in {
             "customer.subscription.created",
             "customer.subscription.updated",

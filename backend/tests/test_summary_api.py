@@ -4,6 +4,8 @@ import pytest
 from app.main import app
 from app import summary_routes
 from app.services import database
+from app.services.auth_service import create_user
+from app.services.entitlements import consume_summary_quota, get_usage_summary
 from app.services.summary_store import SummaryStore
 
 
@@ -256,6 +258,74 @@ def test_failed_summary_refunds_consumed_quota(monkeypatch, isolated_summary_sto
     assert snapshot["status"] == "failed"
     assert usage["used_today"] == 0
     assert usage["remaining_today"] == 3
+
+
+def test_interrupted_summary_task_refunds_quota_on_startup(monkeypatch, isolated_summary_store):
+    user = create_user("restart@example.com", "summary-password")
+    consume_summary_quota(user)
+
+    task = isolated_summary_store.create_task(
+        "https://example.com/interrupted-video",
+        title="Demo",
+        language="zh-CN",
+        quota_user_id=user.id,
+    )
+    isolated_summary_store.update_task(task.id, status="summarizing", stage="summary")
+
+    restarted_store = SummaryStore(isolated_summary_store.base_dir)
+    monkeypatch.setattr(summary_routes, "summary_store", restarted_store)
+    summary_routes.refund_interrupted_summary_quotas()
+
+    usage = get_usage_summary(user)
+    restarted_task = restarted_store.get_task(task.id)
+
+    assert restarted_task.status == "failed"
+    assert restarted_task.quota_refunded_at is not None
+    assert usage.used_today == 0
+    assert usage.remaining_today == 3
+
+
+def test_interrupted_summary_quota_refund_is_idempotent(monkeypatch, isolated_summary_store):
+    user = create_user("restart-idempotent@example.com", "summary-password")
+    consume_summary_quota(user)
+
+    task = isolated_summary_store.create_task(
+        "https://example.com/interrupted-idempotent-video",
+        title="Demo",
+        language="zh-CN",
+        quota_user_id=user.id,
+    )
+    isolated_summary_store.update_task(task.id, status="summarizing", stage="summary")
+
+    restarted_store = SummaryStore(isolated_summary_store.base_dir)
+    monkeypatch.setattr(summary_routes, "summary_store", restarted_store)
+
+    summary_routes.refund_interrupted_summary_quotas()
+    summary_routes.refund_interrupted_summary_quotas()
+
+    usage = get_usage_summary(user)
+    refunded_tasks = restarted_store.pending_quota_refunds()
+
+    assert usage.used_today == 0
+    assert usage.remaining_today == 3
+    assert refunded_tasks == []
+
+
+def test_summary_response_hides_internal_quota_metadata(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/private-quota-metadata", "title": "Demo", "language": "zh-CN"},
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(client, summary_id, "completed")
+
+    assert "quota_user_id" not in snapshot
+    assert "quota_refunded_at" not in snapshot
 
 
 def test_create_summary_quota_exhaustion_returns_upgrade_message(monkeypatch, isolated_summary_store):

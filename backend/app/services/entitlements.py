@@ -84,12 +84,16 @@ def consume_summary_quota(user: User) -> UsageSummary:
 
 
 def refund_summary_quota(user: User) -> UsageSummary:
+    return refund_summary_quota_for_user_id(user.id)
+
+
+def refund_summary_quota_for_user_id(user_id: str) -> UsageSummary:
     usage_date = _today_key()
     now = time()
     with transaction() as conn:
         row = conn.execute(
             "select summary_count from usage_daily where user_id = ? and usage_date = ?",
-            (user.id, usage_date),
+            (user_id, usage_date),
         ).fetchone()
         used = int(row["summary_count"]) if row else 0
         next_used = max(used - 1, 0)
@@ -100,7 +104,8 @@ def refund_summary_quota(user: User) -> UsageSummary:
                 set summary_count = ?, updated_at = ?
                 where user_id = ? and usage_date = ?
                 """,
-                (next_used, now, user.id, usage_date),
+                (next_used, now, user_id, usage_date),
             )
 
-    return get_usage_summary(user)
+    limit = load_config().free_summary_daily_limit
+    return UsageSummary(limit, next_used, max(limit - next_used, 0), False)

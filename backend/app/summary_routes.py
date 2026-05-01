@@ -15,6 +15,7 @@ from app.services.entitlements import (
     consume_summary_quota,
     get_usage_summary,
     refund_summary_quota,
+    refund_summary_quota_for_user_id,
 )
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
@@ -80,6 +81,7 @@ def _run_summary(
         if refund_user is not None:
             try:
                 refund_summary_quota(refund_user)
+                summary_store.mark_quota_refunded(summary_id)
             except Exception:
                 pass
         summary_store.fail_task(summary_id, _friendly_summary_error(exc))
@@ -114,11 +116,28 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
     except QuotaExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    task = summary_store.create_task(payload.url, title=payload.title, language=payload.language)
-    refund_user = None if usage.membership_active else user
+    quota_user_id = None if usage.membership_active else user.id
+    task = summary_store.create_task(
+        payload.url,
+        title=payload.title,
+        language=payload.language,
+        quota_user_id=quota_user_id,
+    )
+    refund_user = None if quota_user_id is None else user
     worker = threading.Thread(target=_run_summary, args=(task.id, payload, seed_result, refund_user), daemon=True)
     worker.start()
     return {"summary_id": task.id, "cache_hit": False, "status": task.status, "usage": usage.as_dict()}
+
+
+def refund_interrupted_summary_quotas() -> None:
+    for task in summary_store.pending_quota_refunds():
+        if not task.quota_user_id:
+            continue
+        try:
+            refund_summary_quota_for_user_id(task.quota_user_id)
+            summary_store.mark_quota_refunded(task.id)
+        except Exception:
+            continue
 
 
 @router.get("/{summary_id}")

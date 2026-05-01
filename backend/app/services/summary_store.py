@@ -49,6 +49,8 @@ class SummarySnapshot:
     streamed_text: str = ""
     markdown_url: str | None = None
     error: str | None = None
+    quota_user_id: str | None = None
+    quota_refunded_at: float | None = None
     created_at: float = field(default_factory=time)
     updated_at: float = field(default_factory=time)
 
@@ -86,6 +88,8 @@ class SummarySnapshot:
             streamed_text=str(data.get("streamed_text") or ""),
             markdown_url=data.get("markdown_url") if isinstance(data.get("markdown_url"), str) else None,
             error=data.get("error") if isinstance(data.get("error"), str) else None,
+            quota_user_id=data.get("quota_user_id") if isinstance(data.get("quota_user_id"), str) else None,
+            quota_refunded_at=float(data["quota_refunded_at"]) if data.get("quota_refunded_at") is not None else None,
             created_at=float(data.get("created_at") or time()),
             updated_at=float(data.get("updated_at") or time()),
         )
@@ -108,6 +112,7 @@ class SummaryStore:
         title: str | None = None,
         language: str = "zh-CN",
         cache_key: str | None = None,
+        quota_user_id: str | None = None,
     ) -> SummarySnapshot:
         task = SummarySnapshot(
             id=f"summary_{secrets.token_urlsafe(10)}",
@@ -115,6 +120,7 @@ class SummaryStore:
             title=title,
             language=language or "zh-CN",
             cache_key=cache_key or build_summary_cache_key(url, language=language),
+            quota_user_id=quota_user_id,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -195,6 +201,24 @@ class SummaryStore:
                 if task.status in {"queued", "transcribing", "summarizing"}
             }
 
+    def pending_quota_refunds(self) -> list[SummarySnapshot]:
+        with self._lock:
+            return [
+                task
+                for task in self._tasks.values()
+                if task.status == "failed" and task.quota_user_id and task.quota_refunded_at is None
+            ]
+
+    def mark_quota_refunded(self, task_id: str) -> SummarySnapshot | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.quota_refunded_at is not None:
+                return task
+            task.quota_refunded_at = time()
+            task.updated_at = time()
+            self._save_task_locked(task)
+            return task
+
     def _task_dir(self, task_id: str) -> Path:
         return self.base_dir / task_id
 
@@ -239,6 +263,8 @@ class SummaryStore:
             **task.as_dict(),
             "cache_key": task.cache_key,
             "prompt_version": SUMMARY_PROMPT_VERSION,
+            "quota_refunded_at": task.quota_refunded_at,
+            "quota_user_id": task.quota_user_id,
         }
         if markdown_path is not None:
             record["markdown_path"] = self._serialize_markdown_path(task.id, markdown_path)

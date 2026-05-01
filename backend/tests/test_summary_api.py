@@ -55,6 +55,14 @@ class FailingSummaryService:
         raise RuntimeError("summary boom")
 
 
+class StartFailingThread:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def start(self):
+        raise RuntimeError("thread start boom")
+
+
 @pytest.fixture()
 def isolated_summary_store(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
@@ -256,6 +264,43 @@ def test_failed_summary_refunds_consumed_quota(monkeypatch, isolated_summary_sto
 
     assert response.status_code == 200
     assert snapshot["status"] == "failed"
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+
+
+def test_task_creation_failure_after_reservation_refunds_quota(monkeypatch, isolated_summary_store):
+    def fail_create_task(*args, **kwargs):
+        raise RuntimeError("create task boom")
+
+    monkeypatch.setattr(summary_routes.summary_store, "create_task", fail_create_task)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/create-task-fails", "title": "Demo", "language": "zh-CN"},
+    )
+    usage = client.get("/api/me").json()["usage"]
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "AI 总结任务创建失败，请稍后重试。"
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+
+
+def test_worker_start_failure_after_task_creation_refunds_quota(monkeypatch, isolated_summary_store):
+    monkeypatch.setattr(summary_routes.threading, "Thread", StartFailingThread)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/worker-start-fails", "title": "Demo", "language": "zh-CN"},
+    )
+    usage = client.get("/api/me").json()["usage"]
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "AI 总结任务创建失败，请稍后重试。"
     assert usage["used_today"] == 0
     assert usage["remaining_today"] == 3
 

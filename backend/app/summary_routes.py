@@ -118,19 +118,31 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
     quota_user_id = None if usage.membership_active else user.id
-    task = summary_store.create_task(
-        payload.url,
-        title=payload.title,
-        language=payload.language,
-        quota_user_id=quota_user_id,
-        task_id=summary_id,
-    )
-    worker = threading.Thread(
-        target=_run_summary,
-        args=(task.id, payload, seed_result, quota_user_id is not None),
-        daemon=True,
-    )
-    worker.start()
+    task = None
+    try:
+        task = summary_store.create_task(
+            payload.url,
+            title=payload.title,
+            language=payload.language,
+            quota_user_id=quota_user_id,
+            task_id=summary_id,
+        )
+        worker = threading.Thread(
+            target=_run_summary,
+            args=(task.id, payload, seed_result, quota_user_id is not None),
+            daemon=True,
+        )
+        worker.start()
+    except Exception as exc:
+        if quota_user_id is not None:
+            try:
+                refund_summary_quota_reservation(summary_id)
+                summary_store.mark_quota_refunded(summary_id)
+            except Exception:
+                pass
+        if task is not None:
+            summary_store.fail_task(task.id, "AI 总结任务创建失败，请稍后重试。")
+        raise HTTPException(status_code=500, detail="AI 总结任务创建失败，请稍后重试。") from exc
     return {"summary_id": task.id, "cache_hit": False, "status": task.status, "usage": usage.as_dict()}
 
 

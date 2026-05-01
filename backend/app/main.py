@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.auth_routes import router as auth_router
+from app.billing_routes import router as billing_router
 from app.services.asset_store import asset_store
 from app.services.database import initialize_database
 from app.services.geo_monitor import append_geo_access_log
@@ -73,6 +74,7 @@ if (FRONTEND_DIST / "assets").exists():
 
 app.include_router(summary_router)
 app.include_router(auth_router)
+app.include_router(billing_router)
 
 service = YtDlpService()
 

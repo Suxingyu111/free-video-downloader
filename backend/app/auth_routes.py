@@ -16,6 +16,7 @@ from app.services.auth_service import (
     reset_password,
     revoke_session,
 )
+from app.services.billing_service import get_membership
 
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -62,14 +63,12 @@ def optional_user(request: Request) -> User | None:
 
 
 def _me_payload(user: User) -> dict:
+    membership = get_membership(user.id)
+    limit = load_config().free_summary_daily_limit
     return {
         "user": user.as_dict(),
-        "membership": {"plan": "free", "status": "free", "active": False},
-        "usage": {
-            "daily_free_limit": load_config().free_summary_daily_limit,
-            "used_today": 0,
-            "remaining_today": load_config().free_summary_daily_limit,
-        },
+        "membership": membership.as_dict(),
+        "usage": {"daily_free_limit": limit, "used_today": 0, "remaining_today": limit},
     }
 
 

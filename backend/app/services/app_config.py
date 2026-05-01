@@ -20,6 +20,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
 class AppConfig:
     db_path: Path
     billing_mode: str
+    dev_mode: bool
     free_summary_daily_limit: int
     session_cookie_name: str
     session_days: int
@@ -37,6 +38,7 @@ def load_config() -> AppConfig:
     return AppConfig(
         db_path=Path(os.getenv("SAVEANY_DB_PATH", RUNTIME_DIR / "saveany.db")),
         billing_mode=billing_mode,
+        dev_mode=_bool_env("SAVEANY_DEV_MODE", False),
         free_summary_daily_limit=int(os.getenv("FREE_SUMMARY_DAILY_LIMIT", "3")),
         session_cookie_name=os.getenv("SAVEANY_SESSION_COOKIE", "saveany_session"),
         session_days=int(os.getenv("SAVEANY_SESSION_DAYS", "30")),

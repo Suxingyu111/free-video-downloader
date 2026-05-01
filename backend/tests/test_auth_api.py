@@ -53,6 +53,26 @@ def test_login_rejects_wrong_password(monkeypatch, tmp_path):
     assert response.json()["detail"] == "邮箱或密码错误"
 
 
+def test_register_rejects_duplicate_email(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    first = client.post(
+        "/api/auth/register",
+        json={"email": "user@example.com", "password": "correct horse battery staple"},
+    )
+    assert first.status_code == 200
+
+    duplicate = client.post(
+        "/api/auth/register",
+        json={"email": "USER@example.com", "password": "another correct horse battery staple"},
+    )
+
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "邮箱已被注册"
+    assert "UNIQUE" not in duplicate.text
+
+
 def test_logout_requires_authentication(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")
@@ -64,8 +84,27 @@ def test_logout_requires_authentication(monkeypatch, tmp_path):
     assert response.json()["detail"] == "请先登录"
 
 
+def test_password_reset_request_hides_token_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "user@example.com", "password": "old-password-123"},
+    )
+
+    response = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "user@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
 def test_password_reset_token_is_single_use(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEV_MODE", "true")
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
     client.post(

@@ -57,8 +57,11 @@ def create_user(email: str, password: str) -> User:
 
 def authenticate_user(email: str, password: str) -> User | None:
     normalized = normalize_email(email)
-    with connect() as conn:
+    conn = connect()
+    try:
         row = conn.execute("select * from users where email = ?", (normalized,)).fetchone()
+    finally:
+        conn.close()
     if row is None:
         return None
     try:
@@ -127,8 +130,11 @@ def revoke_session(token: str | None) -> None:
 
 def create_password_reset_token(email: str) -> str | None:
     normalized = normalize_email(email)
-    with connect() as conn:
+    conn = connect()
+    try:
         user = conn.execute("select * from users where email = ?", (normalized,)).fetchone()
+    finally:
+        conn.close()
     if user is None:
         return None
     token = secrets.token_urlsafe(32)

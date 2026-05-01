@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
@@ -75,8 +77,12 @@ def _me_payload(user: User) -> dict:
 def register(payload: AuthRequest, response: Response) -> dict:
     try:
         user = create_user(payload.email, payload.password)
-    except Exception as exc:
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=400, detail="邮箱已被注册") from exc
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="注册失败") from exc
     _set_session_cookie(response, create_session(user.id))
     return _me_payload(user)
 
@@ -107,7 +113,7 @@ def me(user: User = Depends(current_user)) -> dict:
 def request_password_reset(payload: PasswordResetRequest) -> dict:
     token = create_password_reset_token(payload.email)
     response = {"ok": True}
-    if token:
+    if token and load_config().dev_mode:
         response["reset_token"] = token
     return response
 

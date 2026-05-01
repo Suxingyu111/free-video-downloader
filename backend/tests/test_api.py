@@ -85,6 +85,20 @@ def test_demo_analyze_result_is_env_gated(monkeypatch):
     assert result["extractor"] == "demo"
 
 
+def test_demo_download_file_is_env_gated(monkeypatch, tmp_path):
+    monkeypatch.delenv("SAVEANY_DEMO_MODE", raising=False)
+
+    assert main.demo_download_file("https://demo.saveany.local/video", tmp_path) is None
+
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+
+    output = main.demo_download_file("https://demo.saveany.local/video", tmp_path)
+
+    assert output is not None
+    assert output.name == "saveany-demo-video.mp4"
+    assert output.read_bytes().startswith(b"SaveAny demo video placeholder")
+
+
 def test_frontend_dist_serves_geo_assets_and_real_404(monkeypatch, tmp_path):
     monkeypatch.delenv("SEO_CANONICAL_REDIRECTS", raising=False)
     dist = tmp_path / "dist"

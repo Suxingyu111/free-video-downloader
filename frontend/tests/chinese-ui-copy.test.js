@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
+const authSessionSource = readFileSync(new URL("../src/services/authSession.js", import.meta.url), "utf8");
 const summarySource = [
   "../src/components/summary/SummaryPanel.vue",
   "../src/components/summary/SummaryOverview.vue",
@@ -13,6 +14,7 @@ const summarySource = [
   .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
   .join("\n");
 const uiSource = `${appSource}\n${summarySource}`;
+const membershipSource = `${appSource}\n${authSessionSource}`;
 
 test("home page copy is Chinese-first and explains the universal downloader", () => {
   const requiredPhrases = [
@@ -73,4 +75,30 @@ test("mind map view keeps hierarchy and distinct visual structure", () => {
   assert.match(summarySource, /下载思维导图 PNG/);
   assert.match(summarySource, /下载思维导图 SVG/);
   assert.match(summarySource, /全屏查看思维导图/);
+});
+
+test("membership UI exposes account billing and quota copy", () => {
+  const requiredPhrases = [
+    "登录 / 注册",
+    "邮箱",
+    "密码",
+    "忘记密码",
+    "重置密码",
+    "退出登录",
+    "免费版",
+    "专业版会员",
+    "今日还可免费总结",
+    "开通专业版 ¥29/月",
+    "管理订阅",
+    "今日免费 AI 总结额度已用完",
+    "正在确认会员状态",
+    "模拟开通",
+    "模拟取消",
+    "模拟过期",
+    "模拟付款失败"
+  ];
+
+  for (const phrase of requiredPhrases) {
+    assert.match(membershipSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
 });

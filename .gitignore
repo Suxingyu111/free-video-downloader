@@ -1,5 +1,6 @@
 backend/.venv/
 backend/config/ai.config.json
+backend/config/stripe.env
 frontend/node_modules/
 frontend/dist/
 frontend/.seo/

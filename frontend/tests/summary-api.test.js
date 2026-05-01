@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { askSummaryQuestion, connectSummaryEvents, createSummaryTask, getSummary } from "../src/services/api.js";
+import {
+  askSummaryQuestion,
+  connectSummaryEvents,
+  createBillingCheckout,
+  createBillingPortal,
+  createSummaryTask,
+  getBillingStatus,
+  getMe,
+  getSummary,
+  loginAccount,
+  logoutAccount,
+  mockBillingAction,
+  registerAccount,
+  requestPasswordReset,
+  confirmPasswordReset
+} from "../src/services/api.js";
 
 
 test("createSummaryTask posts to summary API", async () => {
@@ -19,7 +34,63 @@ test("createSummaryTask posts to summary API", async () => {
   assert.deepEqual(result, { summary_id: "summary_123" });
   assert.equal(calls[0][0], "/api/summaries");
   assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].credentials, "include");
   assert.equal(JSON.parse(calls[0][1].body).title, "Demo");
+});
+
+
+test("auth API helpers include browser credentials", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options]);
+    return {
+      ok: true,
+      json: async () => ({ ok: true, user: { email: "user@example.com" } })
+    };
+  };
+
+  await getMe();
+  await registerAccount({ email: "user@example.com", password: "password-123" });
+  await loginAccount({ email: "user@example.com", password: "password-123" });
+  await logoutAccount();
+  await requestPasswordReset({ email: "user@example.com" });
+  await confirmPasswordReset({ token: "reset-token", password: "password-456" });
+
+  assert.deepEqual(
+    calls.map(([url]) => url),
+    [
+      "/api/me",
+      "/api/auth/register",
+      "/api/auth/login",
+      "/api/auth/logout",
+      "/api/auth/password-reset/request",
+      "/api/auth/password-reset/confirm"
+    ]
+  );
+  assert.equal(calls.every(([, options]) => options.credentials === "include"), true);
+});
+
+
+test("billing API helpers include browser credentials", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options]);
+    return {
+      ok: true,
+      json: async () => ({ mode: "mock", url: "/#pricing" })
+    };
+  };
+
+  await getBillingStatus();
+  await createBillingCheckout();
+  await createBillingPortal();
+  await mockBillingAction("activate");
+
+  assert.deepEqual(
+    calls.map(([url]) => url),
+    ["/api/billing/status", "/api/billing/checkout", "/api/billing/portal", "/api/billing/mock/activate"]
+  );
+  assert.equal(calls.every(([, options]) => options.credentials === "include"), true);
 });
 
 

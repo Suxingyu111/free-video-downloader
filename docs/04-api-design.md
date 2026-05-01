@@ -107,3 +107,45 @@ Rules:
 ## `GET /files/{token}`
 
 Returns the completed file for a known token. Unknown tokens return 404.
+
+## Authentication
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/me`
+- `POST /api/auth/password-reset/request`
+- `POST /api/auth/password-reset/confirm`
+
+Authentication uses an HttpOnly session cookie named by `SAVEANY_SESSION_COOKIE` and defaults to `saveany_session`. Frontend code must use `credentials: "include"` and must not read the cookie directly.
+
+Registration, login failures, and password reset requests use short-window rate limits keyed by client IP and normalized email. Defaults are 5 attempts per 300 seconds.
+
+`GET /api/me` returns the current user, membership state, and today's AI summary usage:
+
+```json
+{
+  "user": { "id": "user_123", "email": "user@example.com", "status": "active" },
+  "membership": { "plan": "free", "status": "free", "active": false },
+  "usage": { "daily_free_limit": 3, "used_today": 1, "remaining_today": 2, "membership_active": false }
+}
+```
+
+## Billing
+
+- `GET /api/billing/status`
+- `POST /api/billing/checkout`
+- `POST /api/billing/portal`
+- `POST /api/billing/webhook`
+- `POST /api/billing/mock/activate`
+- `POST /api/billing/mock/cancel`
+- `POST /api/billing/mock/expire`
+- `POST /api/billing/mock/payment-failed`
+
+`BILLING_MODE=mock` returns local checkout and portal URLs and lets the frontend simulate subscription transitions against the same SQLite membership tables.
+
+`BILLING_MODE=stripe` creates Stripe Checkout subscription sessions and Customer Portal sessions. The webhook route verifies the Stripe signature from the raw request body, records Stripe event IDs idempotently, and updates membership from subscription and invoice events.
+
+## AI Summary Entitlements
+
+`POST /api/summaries` requires a logged-in user. Free users can create up to the configured daily limit, default `3`, and Pro members do not consume the free daily quota. If the free quota is exhausted, the API returns `402` with an upgrade message.

@@ -18,6 +18,12 @@ from app.services.auth_service import (
 )
 from app.services.billing_service import get_membership
 from app.services.entitlements import get_usage_summary
+from app.services.rate_limit import (
+    RateLimitExceeded,
+    assert_rate_limit_allowed,
+    clear_rate_limit,
+    record_rate_limit_hit,
+)
 
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -35,6 +41,46 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     password: str
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or "unknown"
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+def _rate_limit_keys(action: str, request: Request, email: str) -> list[str]:
+    normalized = email.strip().lower()
+    return [f"auth:{action}:ip:{_client_ip(request)}", f"auth:{action}:email:{normalized}"]
+
+
+def _assert_auth_rate_limit(action: str, request: Request, email: str) -> list[str]:
+    config = load_config()
+    keys = _rate_limit_keys(action, request, email)
+    try:
+        for key in keys:
+            assert_rate_limit_allowed(
+                key,
+                limit=config.auth_rate_limit_attempts,
+                window_seconds=config.auth_rate_limit_window_seconds,
+            )
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return keys
+
+
+def _record_auth_rate_limit(keys: list[str]) -> None:
+    config = load_config()
+    for key in keys:
+        record_rate_limit_hit(key, window_seconds=config.auth_rate_limit_window_seconds)
+
+
+def _clear_auth_rate_limit(keys: list[str]) -> None:
+    for key in keys:
+        clear_rate_limit(key)
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -74,7 +120,9 @@ def _me_payload(user: User) -> dict:
 
 
 @router.post("/auth/register")
-def register(payload: AuthRequest, response: Response) -> dict:
+def register(payload: AuthRequest, request: Request, response: Response) -> dict:
+    keys = _assert_auth_rate_limit("register", request, payload.email)
+    _record_auth_rate_limit(keys)
     try:
         user = create_user(payload.email, payload.password)
     except sqlite3.IntegrityError as exc:
@@ -88,10 +136,13 @@ def register(payload: AuthRequest, response: Response) -> dict:
 
 
 @router.post("/auth/login")
-def login(payload: AuthRequest, response: Response) -> dict:
+def login(payload: AuthRequest, request: Request, response: Response) -> dict:
+    keys = _assert_auth_rate_limit("login", request, payload.email)
     user = authenticate_user(payload.email, payload.password)
     if user is None:
+        _record_auth_rate_limit(keys)
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
+    _clear_auth_rate_limit(keys)
     _set_session_cookie(response, create_session(user.id))
     return _me_payload(user)
 
@@ -110,7 +161,9 @@ def me(user: User = Depends(current_user)) -> dict:
 
 
 @router.post("/auth/password-reset/request")
-def request_password_reset(payload: PasswordResetRequest) -> dict:
+def request_password_reset(payload: PasswordResetRequest, request: Request) -> dict:
+    keys = _assert_auth_rate_limit("password-reset", request, payload.email)
+    _record_auth_rate_limit(keys)
     token = create_password_reset_token(payload.email)
     response = {"ok": True}
     if token and load_config().dev_mode:

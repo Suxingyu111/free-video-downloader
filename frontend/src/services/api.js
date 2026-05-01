@@ -38,6 +38,7 @@ export async function createSummaryTask(payload) {
     headers: {
       "Content-Type": "application/json"
     },
+    credentials: "include",
     body: JSON.stringify(payload)
   });
 
@@ -47,6 +48,60 @@ export async function createSummaryTask(payload) {
   }
 
   return response.json();
+}
+
+export async function getMe() {
+  const response = await fetch("/api/me", { credentials: "include" });
+
+  if (!response.ok) {
+    const error = await readApiError(response);
+    throw new Error(error);
+  }
+
+  return response.json();
+}
+
+export async function registerAccount(payload) {
+  return postJson("/api/auth/register", payload);
+}
+
+export async function loginAccount(payload) {
+  return postJson("/api/auth/login", payload);
+}
+
+export async function logoutAccount() {
+  return postJson("/api/auth/logout");
+}
+
+export async function requestPasswordReset(payload) {
+  return postJson("/api/auth/password-reset/request", payload);
+}
+
+export async function confirmPasswordReset(payload) {
+  return postJson("/api/auth/password-reset/confirm", payload);
+}
+
+export async function getBillingStatus() {
+  const response = await fetch("/api/billing/status", { credentials: "include" });
+
+  if (!response.ok) {
+    const error = await readApiError(response);
+    throw new Error(error);
+  }
+
+  return response.json();
+}
+
+export async function createBillingCheckout() {
+  return postJson("/api/billing/checkout");
+}
+
+export async function createBillingPortal() {
+  return postJson("/api/billing/portal");
+}
+
+export async function mockBillingAction(action) {
+  return postJson(`/api/billing/mock/${action}`);
 }
 
 export async function getTask(taskId) {
@@ -125,4 +180,22 @@ async function readApiError(response) {
   } catch {
     return "请求失败";
   }
+}
+
+async function postJson(url, payload) {
+  const options = {
+    method: "POST",
+    credentials: "include"
+  };
+  if (payload !== undefined) {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(payload);
+  }
+
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const error = await readApiError(response);
+    throw new Error(error);
+  }
+  return response.json();
 }

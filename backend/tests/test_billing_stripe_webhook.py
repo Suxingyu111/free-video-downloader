@@ -110,6 +110,57 @@ def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
     assert rows[0]["count"] == 1
 
 
+def test_stripe_checkout_creates_new_session_after_open_attempt_expires(
+    monkeypatch, tmp_path
+):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "expired-checkout@example.com", "password": "checkout-password"},
+    )
+
+    first = client.post("/api/billing/checkout")
+    with transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            update billing_attempts
+            set updated_at = updated_at - 3600
+            where stripe_checkout_session_id = ?
+            """,
+            (first.json()["session_id"],),
+        )
+    second = client.post("/api/billing/checkout")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["session_id"] != second.json()["session_id"]
+    assert first.json()["url"] != second.json()["url"]
+    assert len(FakeStripeCustomer.created) == 1
+    assert len(FakeStripeCheckoutSession.created) == 2
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        attempts = conn.execute(
+            """
+            select stripe_checkout_session_id, status
+            from billing_attempts
+            order by created_at
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    assert [attempt["stripe_checkout_session_id"] for attempt in attempts] == [
+        first.json()["session_id"],
+        second.json()["session_id"],
+    ]
+    assert [attempt["status"] for attempt in attempts] == ["expired", "open"]
+
+
 def test_stripe_event_processing_claim_blocks_pending_duplicate(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
     database.initialize_database(tmp_path / "saveany.db")
@@ -375,6 +426,76 @@ def test_checkout_session_completed_webhook_links_subscription(monkeypatch, tmp_
     assert subscription["stripe_customer_id"] == "cus_complete"
     assert subscription["stripe_subscription_id"] == "sub_complete"
     assert subscription["status"] == "incomplete"
+
+
+def test_checkout_session_completed_preserves_active_subscription_when_it_arrives_late(
+    monkeypatch, tmp_path
+):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("late-checkout@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    subscription_event = {
+        "id": "evt_subscription_first",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_late",
+                "customer": "cus_late",
+                "status": "active",
+                "current_period_start": 1777600000,
+                "current_period_end": 1780278400,
+                "cancel_at_period_end": True,
+                "metadata": {"saveany_user_id": user.id},
+                "items": {"data": [{"price": {"id": "price_late"}}]},
+            }
+        },
+    }
+    checkout_event = {
+        "id": "evt_checkout_late",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_late",
+                "customer": "cus_late",
+                "subscription": "sub_late",
+                "payment_status": "paid",
+                "client_reference_id": user.id,
+                "metadata": {"saveany_user_id": user.id},
+            }
+        },
+    }
+
+    subscription_response = _post_event(client, subscription_event)
+    checkout_response = _post_event(client, checkout_event)
+
+    assert subscription_response.status_code == 200
+    assert checkout_response.status_code == 200
+    membership = get_membership(user.id)
+    assert membership.status == "active"
+    assert membership.active is True
+    assert membership.current_period_end == 1780278400
+    assert membership.cancel_at_period_end is True
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        subscription = conn.execute(
+            """
+            select status, stripe_customer_id, stripe_subscription_id, stripe_price_id,
+                   current_period_start, current_period_end, cancel_at_period_end
+            from subscriptions where user_id = ?
+            """,
+            (user.id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert subscription["status"] == "active"
+    assert subscription["stripe_customer_id"] == "cus_late"
+    assert subscription["stripe_subscription_id"] == "sub_late"
+    assert subscription["stripe_price_id"] == "price_late"
+    assert subscription["current_period_start"] == 1777600000
+    assert subscription["current_period_end"] == 1780278400
+    assert subscription["cancel_at_period_end"] == 1
 
 
 def test_invoice_paid_webhook_marks_subscription_active_and_updates_period(monkeypatch, tmp_path):

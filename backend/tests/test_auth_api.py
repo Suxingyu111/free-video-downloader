@@ -53,6 +53,63 @@ def test_login_rejects_wrong_password(monkeypatch, tmp_path):
     assert response.json()["detail"] == "邮箱或密码错误"
 
 
+def test_login_rate_limit_blocks_repeated_failures(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ATTEMPTS", "2")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "limited@example.com", "password": "correct horse battery staple"},
+    )
+
+    first = client.post(
+        "/api/auth/login",
+        json={"email": "limited@example.com", "password": "bad-password"},
+    )
+    second = client.post(
+        "/api/auth/login",
+        json={"email": "limited@example.com", "password": "bad-password"},
+    )
+    blocked = client.post(
+        "/api/auth/login",
+        json={"email": "limited@example.com", "password": "correct horse battery staple"},
+    )
+
+    assert first.status_code == 401
+    assert second.status_code == 401
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "操作太频繁，请稍后再试"
+
+
+def test_successful_login_clears_failed_login_rate_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ATTEMPTS", "2")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "clear@example.com", "password": "correct horse battery staple"},
+    )
+
+    failed = client.post(
+        "/api/auth/login",
+        json={"email": "clear@example.com", "password": "bad-password"},
+    )
+    success = client.post(
+        "/api/auth/login",
+        json={"email": "clear@example.com", "password": "correct horse battery staple"},
+    )
+    failed_again = client.post(
+        "/api/auth/login",
+        json={"email": "clear@example.com", "password": "bad-password"},
+    )
+
+    assert failed.status_code == 401
+    assert success.status_code == 200
+    assert failed_again.status_code == 401
+
+
 def test_register_rejects_duplicate_email(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")

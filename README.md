@@ -15,6 +15,9 @@ It is designed for public video learning, review, and personal knowledge organiz
 - Download public Douyin videos through the dedicated public resolver chain.
 - Generate AI video summaries, transcript views, mind maps, Q&A, and Markdown learning notes.
 - Fall back to local or cloud speech-to-text for public videos without usable subtitles.
+- Register and log in with email/password accounts.
+- Gate AI video summaries with a free daily quota and Pro membership.
+- Test membership offline with mock billing, or connect Stripe Checkout for real monthly subscriptions.
 - Publish crawlable GEO pages, `sitemap.xml`, `llms.txt`, `llms-full.txt`, and Markdown mirrors for AI search discovery.
 
 ## Safety Notes
@@ -42,6 +45,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
+
+Membership defaults to local mock billing:
+
+```bash
+BILLING_MODE=mock
+```
+
+For Stripe test mode, copy `backend/config/stripe.env.example` to `backend/config/stripe.env`, fill in the Stripe keys and recurring Price ID, then restart the backend. Shell environment variables still override the file for deployment. See `docs/11-membership-stripe-setup.md`.
+
+Account endpoints include a basic IP/email rate limit. Override it with `AUTH_RATE_LIMIT_ATTEMPTS` and `AUTH_RATE_LIMIT_WINDOW_SECONDS` when needed for local testing.
 
 Frontend:
 
@@ -76,4 +89,4 @@ See `docs/10-seo-deployment-checklist.md` for production domain, webmaster verif
 
 ## Documentation
 
-Start with `docs/01-requirements.md` and `docs/03-technical-architecture.md` before extending the project. See `docs/08-feature-summary.md` for the completed universal video downloader feature summary.
+Start with `docs/01-requirements.md` and `docs/03-technical-architecture.md` before extending the project. See `docs/08-feature-summary.md` for the completed universal video downloader feature summary, and `docs/11-membership-stripe-setup.md` for membership and Stripe setup.

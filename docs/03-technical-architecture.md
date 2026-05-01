@@ -10,6 +10,8 @@ The application is split into a Vue SPA frontend and a FastAPI backend. During d
 - yt-dlp service: metadata extraction, format normalization, subtitle normalization, download execution.
 - Douyin public resolver chain: F2 single-video resolver, douyinVd-compatible public page/sidecar resolver, and Playwright browser fallback for public video metadata.
 - task store: in-memory task state, progress updates, file token mapping.
+- auth and membership services: SQLite-backed email/password users, HttpOnly sessions, password reset tokens, short-window auth rate limits, subscriptions, Stripe events, daily AI summary usage, and quota reservations.
+- billing routes: mock billing for offline validation plus Stripe Checkout, Customer Portal, and signed webhook handling.
 - asset proxy store: in-memory mapping from safe asset tokens to remote thumbnails, with source-page `Referer` forwarding.
 - file service: temporary workspace paths and safe file response lookup.
 
@@ -17,24 +19,28 @@ The application is split into a Vue SPA frontend and a FastAPI backend. During d
 
 - Vue 3 SPA.
 - Tailwind CSS theme tokens.
-- API client for analyze, download, tasks, and SSE.
+- API client for analyze, download, tasks, summaries, auth, billing, and SSE.
 - Industrial console UI components.
+- Account, quota, pricing, Stripe checkout, portal, and mock billing controls.
 
 ## Data Storage
 
-V1 uses only local temporary files:
+Runtime data is local by default:
 
 - `runtime/downloads`: completed task outputs.
 - `runtime/tmp`: task working files.
+- `runtime/summaries`: AI summary snapshots, Markdown output, and cache index.
+- `runtime/saveany.db`: SQLite users, sessions, password reset tokens, subscriptions, Stripe events, billing attempts, daily usage, and quota reservations.
 
-The runtime directory is ignored by git and can be safely deleted between sessions.
+The runtime directory is ignored by git. Deleting it resets local task output, cached summaries, accounts, membership state, and usage history.
 
 ## Security and Privacy
 
 - API responses use file tokens, never absolute paths.
 - Remote thumbnails are exposed as backend-generated asset tokens, not arbitrary proxy URLs, to reduce hotlink failures without opening a public forward proxy.
 - The server does not ask users for cookies, does not offer QR login, and does not provide a shared account. Private, login-gated, CAPTCHA-blocked, region-limited, expired, or risk-controlled links fail with a public-video boundary message.
-- The service is intended for local/self-hosted use and should not be exposed publicly without authentication, rate limits, and stronger cleanup.
+- Account sessions use HttpOnly cookies, password hashes use Argon2, and Stripe webhook processing is based on signed raw request bodies plus idempotent event IDs.
+- The service is intended for local/self-hosted use. Public deployment still needs production SMTP, stronger abuse controls, operational monitoring, and legal/compliance review.
 
 ## Douyin Resolver Settings
 
@@ -46,7 +52,7 @@ F2 is a dynamically imported optional resolver. If it is not installed or is inc
 
 ## Future Architecture Extensions
 
-- Add SQLite/Postgres for task history and user accounts.
+- Consider Postgres if user, membership, and task history need multi-instance deployment.
 - Add Redis/RQ/Celery for durable background jobs.
 - Add object storage for completed files.
-- Add model providers for video summary and subtitle translation.
+- Add production SMTP for password reset delivery.

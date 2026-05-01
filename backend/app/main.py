@@ -269,6 +269,19 @@ def demo_analyze_result(url: str) -> dict | None:
     return None
 
 
+def demo_download_file(url: str, output_dir: Path) -> Path | None:
+    demo_enabled = os.getenv("SAVEANY_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not demo_enabled or not url.startswith("https://demo.saveany.local/"):
+        return None
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / "saveany-demo-video.mp4"
+    output_file.write_bytes(
+        b"SaveAny demo video placeholder for local QA. "
+        b"This file is generated only when SAVEANY_DEMO_MODE is enabled.\n"
+    )
+    return output_file
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "free-video-downloader"}
@@ -326,16 +339,18 @@ def _run_download(task_id: str, payload: DownloadRequest) -> None:
 
     try:
         task_store.update_task(task_id, status="downloading", progress=1.0, message="Starting download")
-        output_file = service.download(
-            url=payload.url,
-            output_dir=task_dir,
-            format_id=payload.format_id,
-            subtitle_langs=payload.subtitle_langs,
-            write_auto_subs=payload.write_auto_subs,
-            prefer_srt=payload.prefer_srt,
-            progress_hook=progress_hook,
-            entry_ids=payload.entry_ids,
-        )
+        output_file = demo_download_file(payload.url, task_dir)
+        if output_file is None:
+            output_file = service.download(
+                url=payload.url,
+                output_dir=task_dir,
+                format_id=payload.format_id,
+                subtitle_langs=payload.subtitle_langs,
+                write_auto_subs=payload.write_auto_subs,
+                prefer_srt=payload.prefer_srt,
+                progress_hook=progress_hook,
+                entry_ids=payload.entry_ids,
+            )
         token = task_store.register_file(output_file)
         task_store.update_task(
             task_id,

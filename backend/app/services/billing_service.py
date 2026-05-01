@@ -12,6 +12,7 @@ from app.services.database import connect, transaction
 
 ACTIVE_STATUSES = {"active", "trialing"}
 STRIPE_EVENT_PROCESSING_LEASE_SECONDS = 300
+STRIPE_CHECKOUT_ATTEMPT_TTL_SECONDS = 30 * 60
 
 
 class StripeEventInProgress(RuntimeError):
@@ -142,20 +143,31 @@ def create_mock_checkout(user: User) -> dict:
 
 
 def get_open_stripe_checkout_attempt(user_id: str) -> dict | None:
-    conn = connect()
-    try:
+    now = time()
+    cutoff = now - STRIPE_CHECKOUT_ATTEMPT_TTL_SECONDS
+    with transaction() as conn:
+        conn.execute(
+            """
+            update billing_attempts
+            set status = 'expired', updated_at = ?
+            where user_id = ? and mode = 'stripe' and status = 'open'
+              and updated_at < ?
+            """,
+            (now, user_id, cutoff),
+        )
         row = conn.execute(
             """
             select id, stripe_checkout_session_id, stripe_checkout_url
             from billing_attempts
             where user_id = ? and mode = 'stripe' and status = 'open'
+              and updated_at >= ?
+              and stripe_checkout_session_id is not null
+              and stripe_checkout_url is not null
             order by updated_at desc
             limit 1
             """,
-            (user_id,),
+            (user_id, cutoff),
         ).fetchone()
-    finally:
-        conn.close()
     if row is None:
         return None
     return dict(row)
@@ -200,7 +212,7 @@ def complete_stripe_checkout_attempt(session_id: str) -> None:
             """
             update billing_attempts
             set status = 'completed', updated_at = ?
-            where stripe_checkout_session_id = ? and status = 'open'
+            where stripe_checkout_session_id = ? and status != 'completed'
             """,
             (time(), session_id),
         )
@@ -384,33 +396,31 @@ def upsert_stripe_checkout_session(session: dict) -> Membership:
             ).fetchone()
         if existing:
             user_id = existing["user_id"]
-        values = (
-            user_id,
-            "pro",
-            "incomplete",
-            customer_id,
-            subscription_id,
-            None,
-            None,
-            None,
-            0,
-            now,
-        )
         if existing:
             conn.execute(
                 """
                 update subscriptions
-                set user_id = ?, plan = ?, status = ?, stripe_customer_id = ?,
+                set user_id = ?, plan = 'pro',
+                    stripe_customer_id = coalesce(?, stripe_customer_id),
                     stripe_subscription_id = coalesce(?, stripe_subscription_id),
-                    stripe_price_id = coalesce(?, stripe_price_id),
-                    current_period_start = coalesce(?, current_period_start),
-                    current_period_end = coalesce(?, current_period_end),
-                    cancel_at_period_end = ?, updated_at = ?
+                    updated_at = ?
                 where id = ?
                 """,
-                (*values, existing["id"]),
+                (user_id, customer_id, subscription_id, now, existing["id"]),
             )
         else:
+            values = (
+                user_id,
+                "pro",
+                "incomplete",
+                customer_id,
+                subscription_id,
+                None,
+                None,
+                None,
+                0,
+                now,
+            )
             conn.execute(
                 """
                 insert into subscriptions

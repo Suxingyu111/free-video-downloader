@@ -1,4 +1,4 @@
-from app.services.summary_store import SummaryStore, build_summary_cache_key
+from app.services.summary_store import SummaryStore, build_summary_cache_key, normalize_summary_url
 
 
 def test_summary_store_tracks_task_lifecycle_and_result(tmp_path):
@@ -42,6 +42,32 @@ def test_summary_store_exposes_streamed_text_during_generation(tmp_path):
     assert snapshot is not None
     assert snapshot.streamed_text == "一句话概览：正在生成内容\n- 核心知识点：第一条"
     assert snapshot.as_dict()["streamed_text"] == "一句话概览：正在生成内容\n- 核心知识点：第一条"
+
+
+def test_summary_store_persists_draft_result_before_final_summary(tmp_path):
+    store = SummaryStore(tmp_path)
+    task = store.create_task("https://example.com/watch", title="Demo")
+    draft = {
+        "overview": "快速版概览",
+        "outline": [{"time": "00:00", "title": "开场", "summary": "先显示可读草稿"}],
+        "key_points": ["先让用户看到内容"],
+    }
+
+    store.update_task(
+        task.id,
+        status="summarizing",
+        stage="summary",
+        progress=58,
+        message="Draft summary ready",
+        draft_result=draft,
+    )
+
+    restored = SummaryStore(tmp_path)
+    snapshot = restored.get_task(task.id)
+
+    assert snapshot is not None
+    assert snapshot.draft_result == draft
+    assert snapshot.as_dict()["draft_result"] == draft
 
 
 def test_summary_store_completes_with_markdown_url_without_exposing_path(tmp_path):
@@ -135,3 +161,11 @@ def test_summary_cache_key_includes_language():
         "https://example.com/watch",
         language="en-US",
     )
+
+
+def test_summary_cache_key_normalizes_bilibili_tracking_query():
+    first = "https://www.bilibili.com/video/BV14b411Z7QY/?spm_id_from=333.337.search-card.all.click&vd_source=abc"
+    second = "https://www.bilibili.com/video/BV14b411Z7QY/"
+
+    assert normalize_summary_url(first) == "https://www.bilibili.com/video/BV14b411Z7QY/"
+    assert build_summary_cache_key(first, language="zh-CN") == build_summary_cache_key(second, language="zh-CN")

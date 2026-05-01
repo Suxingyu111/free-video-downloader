@@ -159,6 +159,32 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
     assert len(fake.calls) == 1
 
 
+def test_create_summary_reuses_active_task_for_equivalent_bilibili_url(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    first = client.post(
+        "/api/summaries",
+        json={
+            "url": "https://www.bilibili.com/video/BV14b411Z7QY/?spm_id_from=333.337.search-card.all.click&vd_source=abc",
+            "title": "Demo",
+            "language": "zh-CN",
+        },
+    )
+    second = client.post(
+        "/api/summaries",
+        json={"url": "https://www.bilibili.com/video/BV14b411Z7QY/", "title": "Demo", "language": "zh-CN"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["summary_id"] == first.json()["summary_id"]
+    assert second.json()["cache_hit"] is True
+    assert len(fake.calls) == 1
+
+
 def test_cache_hit_does_not_consume_summary_quota(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)

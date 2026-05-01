@@ -264,7 +264,8 @@ const canSaveFile = computed(
 );
 const progressValue = computed(() => Math.min(currentTask.value?.progress || 0, 100));
 const isSummaryRunning = computed(() => ["queued", "transcribing", "summarizing"].includes(state.summaryTask?.status));
-const summaryResult = computed(() => state.summaryTask?.result || null);
+const summaryResult = computed(() => state.summaryTask?.result || state.summaryTask?.draft_result || null);
+const isSummaryDraft = computed(() => Boolean(state.summaryTask?.draft_result && !state.summaryTask?.result));
 const canExportMarkdown = computed(() => Boolean(state.summaryTask?.status === "completed" && state.summaryTask.markdown_url));
 const statusText = computed(() => {
   if (state.error) return "";
@@ -596,6 +597,7 @@ function registerSummary(summaryId, options = {}) {
     progress: 0,
     message: options.message || "AI 总结任务已排队",
     result: null,
+    draft_result: null,
     streamed_text: "",
     markdown_url: null,
     error: null
@@ -613,6 +615,7 @@ function resumeSummary(summaryId) {
       progress: 0,
       message: "正在恢复上次 AI 总结",
       result: null,
+      draft_result: null,
       streamed_text: "",
       markdown_url: null,
       error: null
@@ -802,7 +805,11 @@ function localizeSummaryStatus(message = "") {
     .replaceAll("Extracting subtitles", "正在提取字幕")
     .replaceAll("Reusing previous transcript", "正在复用上次字幕文本")
     .replaceAll("Extracting audio for speech-to-text", "正在提取音频")
+    .replaceAll("Preparing quick speech preview", "正在准备语音预览")
+    .replaceAll("Transcribing quick speech preview", "正在快速转写开头片段")
+    .replaceAll("Transcribing full audio", "正在继续完整语音转写")
     .replaceAll("Transcribing audio", "正在进行语音转写")
+    .replaceAll("Draft summary ready", "快速版已生成，完整总结正在完善中")
     .replaceAll("Streaming structured summary", "AI 正在逐行生成总结")
     .replaceAll("Generating structured summary", "正在生成结构化总结")
     .replaceAll("Summary complete", "AI 总结完成")
@@ -1054,6 +1061,7 @@ onBeforeUnmount(() => {
               v-else-if="state.summaryTask"
               :summary-task="state.summaryTask"
               :summary-result="summaryResult"
+              :is-draft-result="isSummaryDraft"
               :summary-status-text="summaryStatusText"
               :is-summary-running="isSummaryRunning"
               :can-export-markdown="canExportMarkdown"

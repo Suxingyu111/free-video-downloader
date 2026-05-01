@@ -16,6 +16,10 @@ const props = defineProps({
     type: Object,
     default: null
   },
+  isDraftResult: {
+    type: Boolean,
+    default: false
+  },
   summaryStatusText: {
     type: String,
     default: ""
@@ -104,6 +108,12 @@ watch(
 
 function moduleStatus(moduleId) {
   if (props.summaryResult) {
+    if (props.isDraftResult) {
+      if (moduleId === "summary") return "快速版";
+      if (moduleId === "transcript") return "已提取";
+      if (moduleId === "mindmap") return "预览中";
+      return "完整后可问";
+    }
     return moduleId === "qa" ? "可追问" : moduleId === "mindmap" ? "已生成" : "已完成";
   }
 
@@ -117,7 +127,7 @@ function moduleStatus(moduleId) {
   }
 
   if (moduleId === "summary") {
-    if (stage === "summary" || status === "summarizing") return "生成中";
+    if (stage === "summary" || status === "summarizing") return props.summaryTask?.draft_result ? "快速版" : "生成中";
     return "等待摘要";
   }
 
@@ -128,7 +138,7 @@ function moduleStatus(moduleId) {
 function moduleTone(moduleId) {
   const status = moduleStatus(moduleId);
   if (["已完成", "已生成", "可追问", "已提取"].includes(status)) return "done";
-  if (["生成中", "提取中", "构建中"].includes(status)) return "active";
+  if (["生成中", "提取中", "构建中", "快速版", "预览中"].includes(status)) return "active";
   return "waiting";
 }
 
@@ -211,6 +221,11 @@ onBeforeUnmount(() => {
       <span>{{ summaryStatusText }}</span>
     </div>
 
+    <div v-if="isDraftResult" class="summary-draft-note" aria-live="polite">
+      <strong>快速版</strong>
+      <span>已可先阅读，完整总结正在完善中。</span>
+    </div>
+
     <nav class="summary-module-grid" aria-label="AI 视频学习功能">
       <button
         v-for="card in moduleCards"
@@ -237,6 +252,18 @@ onBeforeUnmount(() => {
       <SummaryOverview v-if="summaryView === 'summary' && summaryResult" :summary-result="resultWithTitle" @use-question="useQuestion" />
       <SummaryTranscript v-else-if="summaryView === 'transcript' && summaryResult" :summary-result="resultWithTitle" />
       <SummaryMindMap v-else-if="summaryView === 'mindmap' && summaryResult" :summary-result="resultWithTitle" />
+      <section v-else-if="summaryView === 'qa' && isDraftResult" class="summary-loading-state" aria-live="polite">
+        <div class="summary-loading-shell" data-tone="waiting">
+          <span class="summary-loading-icon">
+            <MessageCircle :size="20" aria-hidden="true" />
+          </span>
+          <div class="summary-loading-copy">
+            <p class="summary-module-eyebrow">AI 问答</p>
+            <h4>完整总结完成后可追问</h4>
+            <p>现在可以先阅读快速版摘要和字幕文本，后台会继续生成可追问的完整结构。</p>
+          </div>
+        </div>
+      </section>
       <SummaryQa
         v-else-if="summaryView === 'qa' && summaryResult"
         :summary-result="resultWithTitle"

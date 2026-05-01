@@ -25,6 +25,8 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
     "解析视频",
     "立即下载",
     "AI 总结",
+    "快速版",
+    "完整总结正在完善中",
     "视频学习笔记",
     "总结内容",
     "字幕文本",

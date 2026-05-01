@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import time
 from typing import Literal
+from urllib.parse import parse_qs, urlparse
 
 
 SummaryStatus = Literal["queued", "transcribing", "summarizing", "completed", "failed"]
@@ -21,7 +23,28 @@ def default_summary_dir() -> Path:
 
 
 def normalize_summary_url(url: str) -> str:
-    return str(url or "").strip()
+    raw_url = str(url or "").strip()
+    if not raw_url:
+        return ""
+    parsed = urlparse(raw_url)
+    host = parsed.netloc.lower()
+    path = parsed.path or ""
+
+    bilibili_match = re.search(r"/video/(?P<bvid>BV[0-9A-Za-z]+)/?", path, flags=re.IGNORECASE)
+    if "bilibili.com" in host and bilibili_match:
+        return f"https://www.bilibili.com/video/{bilibili_match.group('bvid')}/"
+
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = path.strip("/").split("/", 1)[0]
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id}"
+
+    if host.endswith("youtube.com"):
+        video_id = parse_qs(parsed.query).get("v", [""])[0].strip()
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id}"
+
+    return raw_url
 
 
 def build_summary_cache_key(url: str, *, language: str = "zh-CN", prompt_version: str = SUMMARY_PROMPT_VERSION) -> str:
@@ -46,6 +69,7 @@ class SummarySnapshot:
     progress: float = 0.0
     message: str = "Queued"
     result: dict | None = None
+    draft_result: dict | None = None
     streamed_text: str = ""
     markdown_url: str | None = None
     error: str | None = None
@@ -65,6 +89,7 @@ class SummarySnapshot:
             "progress": self.progress,
             "message": self.message,
             "result": self.result,
+            "draft_result": self.draft_result,
             "streamed_text": self.streamed_text,
             "markdown_url": self.markdown_url,
             "error": self.error,
@@ -85,6 +110,7 @@ class SummarySnapshot:
             progress=float(data.get("progress") or 0.0),
             message=str(data.get("message") or "Queued"),
             result=data.get("result") if isinstance(data.get("result"), dict) else None,
+            draft_result=data.get("draft_result") if isinstance(data.get("draft_result"), dict) else None,
             streamed_text=str(data.get("streamed_text") or ""),
             markdown_url=data.get("markdown_url") if isinstance(data.get("markdown_url"), str) else None,
             error=data.get("error") if isinstance(data.get("error"), str) else None,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from pathlib import Path
 from time import monotonic
 from typing import Callable
@@ -94,7 +95,15 @@ class SummaryService:
                 emit_summary_progress(progress_hook, "speech_to_text", 30, "Extracting audio for speech-to-text")
             audio_path = self.audio_service.extract_audio(url, output_dir / "audio")
             if progress_hook:
-                emit_summary_progress(progress_hook, "speech_to_text", 48, "Transcribing audio")
+                preview_transcript = self._try_build_speech_preview_draft(
+                    audio_path=audio_path,
+                    output_dir=output_dir,
+                    title=safe_title,
+                    language=language,
+                    progress_hook=progress_hook,
+                )
+                message = "Transcribing full audio" if preview_transcript else "Transcribing audio"
+                emit_summary_progress(progress_hook, "speech_to_text", 48, message)
             transcribed_text = self.transcription_provider.transcribe_audio(audio_path, language)
             segments = segments_from_transcribed_text(transcribed_text)
             if not segments:
@@ -103,17 +112,23 @@ class SummaryService:
             source = transcript.source
             transcript_text = transcript_to_text(transcript.segments)
 
+        draft_result = build_draft_summary_result(
+            title=safe_title,
+            transcript=transcript,
+            transcript_text=transcript_text,
+            language=language,
+        )
         stream_hook = None
         if progress_hook:
-            draft_payload = build_fallback_summary_payload(title=safe_title, transcript=transcript_text)
-            draft_preview = build_stream_preview_from_payload(draft_payload, title=safe_title, transcript=transcript_text)
+            draft_preview = build_stream_preview_from_payload(draft_result, title=safe_title, transcript=transcript_text)
             draft_source = "转写文本" if source == "speech_to_text" else "字幕"
             if draft_preview:
                 emit_summary_progress(
                     progress_hook,
                     "summary",
-                    68,
-                    f"基于{draft_source}整理摘要草稿",
+                    58,
+                    f"快速版已生成，完整总结正在完善中（基于{draft_source}）",
+                    draft_result=draft_result,
                     streamed_text=draft_preview,
                 )
             emit_summary_progress(progress_hook, "summary", 72, "Generating structured summary")
@@ -165,6 +180,46 @@ class SummaryService:
             question=question,
             language=language,
         )
+
+    def _try_build_speech_preview_draft(
+        self,
+        *,
+        audio_path: Path,
+        output_dir: Path,
+        title: str,
+        language: str,
+        progress_hook: SummaryProgressHook,
+    ) -> Transcript | None:
+        emit_summary_progress(progress_hook, "speech_to_text", 36, "Preparing quick speech preview")
+        preview_path = create_audio_preview_clip(audio_path, output_dir / "audio-preview")
+        if preview_path is None:
+            return None
+        try:
+            emit_summary_progress(progress_hook, "speech_to_text", 40, "Transcribing quick speech preview")
+            preview_text = self.transcription_provider.transcribe_audio(preview_path, language)
+            segments = segments_from_transcribed_text(preview_text)
+        except Exception:
+            return None
+        if not segments:
+            return None
+        transcript = Transcript(source="speech_to_text", language=language, segments=segments)
+        transcript_text = transcript_to_text(transcript.segments)
+        draft_result = build_draft_summary_result(
+            title=title,
+            transcript=transcript,
+            transcript_text=transcript_text,
+            language=language,
+        )
+        preview = build_stream_preview_from_payload(draft_result, title=title, transcript=transcript_text)
+        emit_summary_progress(
+            progress_hook,
+            "speech_to_text",
+            44,
+            "快速版已生成，完整转写正在继续",
+            draft_result=draft_result,
+            streamed_text=preview,
+        )
+        return transcript
 
 
 def emit_summary_progress(
@@ -227,6 +282,59 @@ def serialize_transcript_segments(segments: list[TranscriptSegment]) -> list[dic
         }
         for segment in segments
     ]
+
+
+def build_draft_summary_result(
+    *,
+    title: str,
+    transcript: Transcript,
+    transcript_text: str,
+    language: str,
+) -> dict:
+    draft = normalize_summary_payload(
+        build_fallback_summary_payload(title=title, transcript=transcript_text),
+        title=title,
+        transcript=transcript_text,
+    )
+    draft["transcript_source"] = transcript.source
+    draft["language"] = language
+    draft["transcript_language"] = transcript.language
+    draft["transcript_text"] = transcript_text
+    draft["transcript_segments"] = serialize_transcript_segments(transcript.segments)
+    draft["summary_quality"] = "draft"
+    return draft
+
+
+def create_audio_preview_clip(audio_path: Path, output_dir: Path, *, seconds: int | None = None) -> Path | None:
+    preview_seconds = seconds or int(os.getenv("SUMMARY_DRAFT_AUDIO_SECONDS", "45") or "45")
+    if preview_seconds <= 0:
+        return None
+    output_dir.mkdir(parents=True, exist_ok=True)
+    preview_path = output_dir / "preview.wav"
+    command = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(audio_path),
+        "-t",
+        str(preview_seconds),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-acodec",
+        "pcm_s16le",
+        str(preview_path),
+    ]
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return preview_path if preview_path.exists() and preview_path.stat().st_size > 0 else None
 
 
 def transcript_from_summary_result(result: dict | None, *, language: str) -> Transcript | None:

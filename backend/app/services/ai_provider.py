@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from time import monotonic
 from typing import Callable, Protocol
 
 import httpx
@@ -166,6 +167,8 @@ class OpenAICompatibleProvider:
     ) -> str:
         content_parts: list[str] = []
         last_preview = ""
+        started_at = monotonic()
+        total_timeout = _summary_timeout_seconds(self.config)
         with self.client.stream(
             "POST",
             f"{self.config.base_url}/chat/completions",
@@ -175,6 +178,7 @@ class OpenAICompatibleProvider:
         ) as response:
             response.raise_for_status()
             for line in response.iter_lines():
+                _raise_if_stream_timed_out(started_at, total_timeout)
                 delta = _openai_stream_delta(line)
                 if not delta:
                     continue
@@ -325,6 +329,8 @@ class AnthropicCompatibleProvider:
     ) -> str:
         content_parts: list[str] = []
         last_preview = ""
+        started_at = monotonic()
+        total_timeout = _summary_timeout_seconds(self.config)
         with self.client.stream(
             "POST",
             f"{self.config.base_url}/v1/messages",
@@ -334,6 +340,7 @@ class AnthropicCompatibleProvider:
         ) as response:
             response.raise_for_status()
             for line in response.iter_lines():
+                _raise_if_stream_timed_out(started_at, total_timeout)
                 delta = _anthropic_stream_delta(line)
                 if not delta:
                     continue
@@ -1120,6 +1127,11 @@ def _summary_timeout_seconds(config: AIProviderConfig) -> float:
 
 def _question_timeout_seconds(config: AIProviderConfig) -> float:
     return min(float(config.timeout_seconds), 20.0)
+
+
+def _raise_if_stream_timed_out(started_at: float, timeout_seconds: float) -> None:
+    if monotonic() - started_at > timeout_seconds:
+        raise httpx.TimeoutException("AI summary stream exceeded total timeout")
 
 
 def normalize_summary_payload(payload: dict, *, title: str | None = None, transcript: str | None = None) -> dict:

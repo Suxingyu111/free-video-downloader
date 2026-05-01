@@ -169,6 +169,37 @@ def test_openai_provider_streams_readable_summary_preview_before_final_json():
     assert any("章节大纲" in preview for preview in previews)
 
 
+def test_openai_provider_falls_back_when_streaming_summary_exceeds_total_timeout(monkeypatch):
+    summary_content = (
+        '{"overview":"这是一段很慢的流式总结，模型长时间没有完成 JSON。",'
+        '"outline":[{"time":"00:00","title":"开场","summary":"介绍主题。"}],'
+        '"key_points":["第一条"],"highlights":[],"terms":[],"questions":[],"mind_map":{"title":"演示","children":[]},"qa_pairs":[]}'
+    )
+    client = FakeStreamingClient(chunks=[summary_content[:40], summary_content[40:80], summary_content[80:120]])
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.example.com/v1",
+            api_key="secret",
+            text_model="summary-model",
+            transcribe_model="speech-model",
+            timeout_seconds=120,
+        ),
+        client=client,
+    )
+    ticks = iter([0, 10, 50, 51])
+    monkeypatch.setattr("app.services.ai_provider.monotonic", lambda: next(ticks, 52))
+
+    result = provider.summarize_transcript(
+        title="Demo",
+        transcript="[00:00] 开场介绍主题\n[01:00] 解释关键步骤\n[02:00] 总结行动建议",
+        language="zh-CN",
+        stream_hook=lambda _preview: None,
+    )
+
+    assert "超过 45 秒" in result["overview"]
+    assert result["outline"]
+
+
 def test_build_stream_preview_from_summary_text_removes_json_scaffolding():
     preview = build_stream_preview_from_summary_text(
         '{"overview":"视频说明如何边生成边展示摘要。","key_points":["用户先看到概览","随后看到要点"]}',

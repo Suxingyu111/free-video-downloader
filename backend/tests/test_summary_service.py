@@ -180,6 +180,49 @@ def test_summary_service_emits_grounded_draft_and_stream_preview(tmp_path: Path)
     assert any("实时生成的要点" in event[3]["streamed_text"] for event in streamed_updates)
 
 
+def test_summary_service_emits_structured_draft_before_ai_summary_finishes(tmp_path: Path):
+    class SlowAIProvider(FakeAIProvider):
+        def summarize_transcript(self, *, title: str, transcript: str, language: str, stream_hook=None) -> dict:
+            draft_events = [event for event in events if event[3].get("draft_result")]
+            assert draft_events
+            assert draft_events[0][3]["draft_result"]["overview"]
+            assert draft_events[0][3]["draft_result"]["transcript_segments"][0]["text"] == "先显示快速版摘要。"
+            return super().summarize_transcript(
+                title=title,
+                transcript=transcript,
+                language=language,
+                stream_hook=stream_hook,
+            )
+
+    transcript = Transcript(
+        source="subtitle",
+        language="zh-CN",
+        segments=[
+            TranscriptSegment(start=0, end=20, text="先显示快速版摘要。"),
+            TranscriptSegment(start=40, end=70, text="后台继续生成完整总结。"),
+        ],
+    )
+    service = SummaryService(
+        transcript_service=FakeTranscriptService(transcript),
+        ai_provider=SlowAIProvider(),
+    )
+    events = []
+
+    result, _ = service.generate_summary(
+        url="https://example.com/video",
+        title="AI 课程",
+        language="zh-CN",
+        output_dir=tmp_path,
+        progress_hook=lambda stage, progress, message, **changes: events.append((stage, progress, message, changes)),
+    )
+
+    draft_event = next(event for event in events if event[3].get("draft_result"))
+    assert draft_event[0] == "summary"
+    assert draft_event[1] < 72
+    assert "快速版" in draft_event[2]
+    assert result["overview"] == "课程概览"
+
+
 def test_summary_service_falls_back_to_speech_to_text_without_subtitles(tmp_path: Path):
     ai = FakeAIProvider()
     audio = FakeAudioService(tmp_path / "audio.m4a")
@@ -204,6 +247,46 @@ def test_summary_service_falls_back_to_speech_to_text_without_subtitles(tmp_path
         {"start": 0.0, "end": 30.0, "time": "00:00", "text": "语音转写内容"}
     ]
     assert markdown_path.exists()
+
+
+def test_summary_service_emits_quick_draft_from_audio_preview_before_full_transcription(tmp_path: Path, monkeypatch):
+    class PreviewAwareProvider(FakeAIProvider):
+        def transcribe_audio(self, audio_path: Path, language: str) -> str:
+            self.transcribed.append((audio_path, language))
+            if audio_path.name == "preview.wav":
+                return "[00:00] 预览转写先产出快速摘要"
+            assert any(event[3].get("draft_result") for event in events)
+            return "[00:00] 完整转写包含开头\n[02:00] 完整转写覆盖中段\n[04:00] 完整转写覆盖结尾"
+
+    ai = PreviewAwareProvider()
+    audio = FakeAudioService(tmp_path / "audio.m4a")
+    service = SummaryService(
+        transcript_service=FakeTranscriptService(None),
+        audio_service=audio,
+        ai_provider=ai,
+    )
+    events = []
+    monkeypatch.setattr(
+        "app.services.summary_service.create_audio_preview_clip",
+        lambda audio_path, output_dir: tmp_path / "preview.wav",
+    )
+
+    result, _ = service.generate_summary(
+        url="https://example.com/video",
+        title="AI 课程",
+        language="zh-CN",
+        output_dir=tmp_path,
+        progress_hook=lambda stage, progress, message, **changes: events.append((stage, progress, message, changes)),
+    )
+
+    assert ai.transcribed[0][0] == tmp_path / "preview.wav"
+    assert ai.transcribed[1][0] == tmp_path / "audio.m4a"
+    draft_event = next(event for event in events if event[3].get("draft_result"))
+    assert draft_event[0] == "speech_to_text"
+    assert draft_event[1] < 48
+    assert "快速版" in draft_event[2]
+    assert draft_event[3]["draft_result"]["transcript_segments"][0]["text"] == "预览转写先产出快速摘要"
+    assert result["transcript_text"].endswith("完整转写覆盖结尾")
 
 
 def test_summary_service_falls_back_to_speech_to_text_when_bilibili_subtitles_need_login(tmp_path: Path, monkeypatch):

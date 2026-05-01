@@ -10,7 +10,12 @@ from pydantic import BaseModel
 
 from app.auth_routes import current_user
 from app.services.auth_service import User
-from app.services.entitlements import QuotaExceeded, consume_summary_quota
+from app.services.entitlements import (
+    QuotaExceeded,
+    consume_summary_quota,
+    get_usage_summary,
+    refund_summary_quota,
+)
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
 from app.services.ytdlp_service import friendly_error_message
@@ -41,7 +46,12 @@ def _friendly_summary_error(error: Exception | str) -> str:
     return friendly_error_message(text)
 
 
-def _run_summary(summary_id: str, payload: SummaryRequest, seed_result: dict | None = None) -> None:
+def _run_summary(
+    summary_id: str,
+    payload: SummaryRequest,
+    seed_result: dict | None = None,
+    refund_user: User | None = None,
+) -> None:
     output_dir = SUMMARY_DIR / summary_id
 
     def progress_hook(stage: str, progress: float, message: str, **changes: object) -> None:
@@ -67,6 +77,11 @@ def _run_summary(summary_id: str, payload: SummaryRequest, seed_result: dict | N
         )
         summary_store.complete_task(summary_id, result=result, markdown_path=markdown_path)
     except Exception as exc:
+        if refund_user is not None:
+            try:
+                refund_summary_quota(refund_user)
+            except Exception:
+                pass
         summary_store.fail_task(summary_id, _friendly_summary_error(exc))
 
 
@@ -79,15 +94,12 @@ def get_summary_service() -> SummaryService:
 
 @router.post("")
 def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) -> dict[str, object]:
-    try:
-        usage = consume_summary_quota(user)
-    except QuotaExceeded as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
     cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
     seed_result = None
     if cached_task is not None:
         if not payload.force:
+            usage = get_usage_summary(user)
             return {
                 "summary_id": cached_task.id,
                 "cache_hit": True,
@@ -97,8 +109,14 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
         if cached_task.status == "completed" and cached_task.result:
             seed_result = cached_task.result
 
+    try:
+        usage = consume_summary_quota(user)
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
     task = summary_store.create_task(payload.url, title=payload.title, language=payload.language)
-    worker = threading.Thread(target=_run_summary, args=(task.id, payload, seed_result), daemon=True)
+    refund_user = None if usage.membership_active else user
+    worker = threading.Thread(target=_run_summary, args=(task.id, payload, seed_result, refund_user), daemon=True)
     worker.start()
     return {"summary_id": task.id, "cache_hit": False, "status": task.status, "usage": usage.as_dict()}
 

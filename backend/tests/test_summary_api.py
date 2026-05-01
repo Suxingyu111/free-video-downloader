@@ -3,6 +3,7 @@ import pytest
 
 from app.main import app
 from app import summary_routes
+from app.services import database
 from app.services.summary_store import SummaryStore
 
 
@@ -49,16 +50,37 @@ class FakeSummaryService:
 
 @pytest.fixture()
 def isolated_summary_store(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
     store = SummaryStore(tmp_path / "summaries")
     monkeypatch.setattr(summary_routes, "summary_store", store)
     monkeypatch.setattr(summary_routes, "SUMMARY_DIR", store.base_dir)
     return store
 
 
+def login(client):
+    client.post(
+        "/api/auth/register",
+        json={"email": "summary@example.com", "password": "summary-password"},
+    )
+
+
+def test_create_summary_requires_login(isolated_summary_store):
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
+    login(client)
 
     response = client.post(
         "/api/summaries",
@@ -96,6 +118,7 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
+    login(client)
 
     first = client.post(
         "/api/summaries",
@@ -123,6 +146,7 @@ def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summar
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
+    login(client)
 
     first = client.post(
         "/api/summaries",
@@ -156,6 +180,7 @@ def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
+    login(client)
 
     response = client.post(
         "/api/summaries",

@@ -4,10 +4,13 @@ import asyncio
 import json
 import threading
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app.auth_routes import current_user
+from app.services.auth_service import User
+from app.services.entitlements import QuotaExceeded, consume_summary_quota
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
 from app.services.ytdlp_service import friendly_error_message
@@ -75,7 +78,11 @@ def get_summary_service() -> SummaryService:
 
 
 @router.post("")
-def create_summary(payload: SummaryRequest) -> dict[str, object]:
+def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) -> dict[str, object]:
+    try:
+        usage = consume_summary_quota(user)
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
     cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
     seed_result = None
@@ -85,6 +92,7 @@ def create_summary(payload: SummaryRequest) -> dict[str, object]:
                 "summary_id": cached_task.id,
                 "cache_hit": True,
                 "status": cached_task.status,
+                "usage": usage.as_dict(),
             }
         if cached_task.status == "completed" and cached_task.result:
             seed_result = cached_task.result
@@ -92,7 +100,7 @@ def create_summary(payload: SummaryRequest) -> dict[str, object]:
     task = summary_store.create_task(payload.url, title=payload.title, language=payload.language)
     worker = threading.Thread(target=_run_summary, args=(task.id, payload, seed_result), daemon=True)
     worker.start()
-    return {"summary_id": task.id, "cache_hit": False, "status": task.status}
+    return {"summary_id": task.id, "cache_hit": False, "status": task.status, "usage": usage.as_dict()}
 
 
 @router.get("/{summary_id}")

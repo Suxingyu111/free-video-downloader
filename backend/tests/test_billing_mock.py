@@ -104,3 +104,31 @@ def test_mock_expire_clears_cancel_at_period_end(monkeypatch, tmp_path):
     assert expired.status_code == 200
     assert expired.json()["membership"]["status"] == "canceled"
     assert expired.json()["membership"]["cancel_at_period_end"] is False
+
+
+def test_stripe_portal_missing_secret_returns_503(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "stripe")
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    _login(client)
+    with transaction(tmp_path / "saveany.db") as conn:
+        user = conn.execute("select id from users where email = 'member@example.com'").fetchone()
+        conn.execute(
+            """
+            insert into subscriptions
+            (id, user_id, plan, status, stripe_customer_id, stripe_subscription_id,
+             current_period_start, current_period_end, cancel_at_period_end,
+             created_at, updated_at)
+            values ('portal_sub', ?, 'pro', 'active', 'cus_portal', 'sub_portal',
+                    strftime('%s', 'now'), strftime('%s', 'now') + 2592000, 0,
+                    strftime('%s', 'now'), strftime('%s', 'now'))
+            """,
+            (user["id"],),
+        )
+
+    response = client.post("/api/billing/portal")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Stripe 支付尚未配置"

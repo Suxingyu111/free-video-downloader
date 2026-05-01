@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import sqlite3
 from dataclasses import dataclass
 from time import time
 
@@ -146,11 +145,19 @@ def fail_mock_payment(user: User) -> Membership:
 
 
 def upsert_stripe_subscription(subscription: dict) -> Membership:
-    metadata = subscription.get("metadata") or {}
-    user_id = metadata.get("saveany_user_id")
-    if not user_id:
-        conn = connect()
-        try:
+    items = ((subscription.get("items") or {}).get("data") or [])
+    price_id = None
+    if items:
+        price_id = (items[0].get("price") or {}).get("id")
+    now = time()
+    with transaction() as conn:
+        existing = conn.execute(
+            "select id, user_id from subscriptions where stripe_subscription_id = ?",
+            (subscription.get("id"),),
+        ).fetchone()
+        metadata = subscription.get("metadata") or {}
+        user_id = existing["user_id"] if existing else metadata.get("saveany_user_id")
+        if not user_id:
             row = conn.execute(
                 """
                 select user_id from subscriptions
@@ -160,22 +167,10 @@ def upsert_stripe_subscription(subscription: dict) -> Membership:
                 """,
                 (subscription.get("customer"),),
             ).fetchone()
-        finally:
-            conn.close()
-        if row:
-            user_id = row["user_id"]
-    if not user_id:
-        raise ValueError("Stripe subscription is not linked to a SaveAny user")
-    items = ((subscription.get("items") or {}).get("data") or [])
-    price_id = None
-    if items:
-        price_id = (items[0].get("price") or {}).get("id")
-    now = time()
-    with transaction() as conn:
-        existing = conn.execute(
-            "select id from subscriptions where stripe_subscription_id = ?",
-            (subscription.get("id"),),
-        ).fetchone()
+            if row:
+                user_id = row["user_id"]
+        if not user_id:
+            raise ValueError("Stripe subscription is not linked to a SaveAny user")
         values = (
             user_id,
             "pro",
@@ -214,19 +209,42 @@ def upsert_stripe_subscription(subscription: dict) -> Membership:
     return get_membership(user_id)
 
 
-def record_stripe_event_once(event_id: str, event_type: str, payload: bytes) -> bool:
+def begin_stripe_event_processing(event_id: str, event_type: str, payload: bytes) -> bool:
     payload_hash = hashlib.sha256(payload).hexdigest()
-    try:
-        with transaction() as conn:
+    with transaction() as conn:
+        row = conn.execute(
+            "select status from stripe_events where event_id = ?",
+            (event_id,),
+        ).fetchone()
+        if row is None:
             conn.execute(
                 """
-                insert into stripe_events (event_id, event_type, processed_at, payload_hash)
-                values (?, ?, ?, ?)
+                insert into stripe_events (event_id, event_type, status, processed_at, payload_hash)
+                values (?, ?, 'pending', 0, ?)
                 """,
-                (event_id, event_type, time(), payload_hash),
+                (event_id, event_type, payload_hash),
             )
-        return True
-    except sqlite3.IntegrityError as exc:
-        if "stripe_events.event_id" in str(exc):
+            return True
+        if row["status"] == "processed":
             return False
-        raise
+        conn.execute(
+            """
+            update stripe_events
+            set event_type = ?, payload_hash = ?, status = 'pending'
+            where event_id = ?
+            """,
+            (event_type, payload_hash, event_id),
+        )
+        return True
+
+
+def mark_stripe_event_processed(event_id: str) -> None:
+    with transaction() as conn:
+        conn.execute(
+            """
+            update stripe_events
+            set status = 'processed', processed_at = ?
+            where event_id = ?
+            """,
+            (time(), event_id),
+        )

@@ -8,12 +8,13 @@ from app.services.app_config import load_config
 from app.services.auth_service import User
 from app.services.billing_service import (
     activate_mock_subscription,
+    begin_stripe_event_processing,
     cancel_mock_subscription,
     create_mock_checkout,
     expire_mock_subscription,
     fail_mock_payment,
     get_membership,
-    record_stripe_event_once,
+    mark_stripe_event_processed,
     upsert_stripe_subscription,
 )
 from app.services.database import connect
@@ -57,6 +58,8 @@ def billing_portal(user: User = Depends(current_user)) -> dict:
     config = load_config()
     if config.billing_mode == "mock":
         return {"mode": "mock", "url": "/#pricing"}
+    if not config.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
     membership = get_membership(user.id)
     conn = connect()
     try:
@@ -95,7 +98,7 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
     event_type = event.get("type")
     if not event_id or not event_type:
         raise HTTPException(status_code=400, detail="Stripe webhook 缺少事件 ID")
-    if not record_stripe_event_once(event_id, event_type, payload):
+    if not begin_stripe_event_processing(event_id, event_type, payload):
         return {"ok": True}
 
     if event_type in {
@@ -104,6 +107,7 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
         "customer.subscription.deleted",
     }:
         upsert_stripe_subscription(event["data"]["object"])
+    mark_stripe_event_processed(event_id)
     return {"ok": True}
 
 

@@ -57,6 +57,7 @@ create table if not exists subscriptions (
 create table if not exists stripe_events (
   event_id text primary key,
   event_type text not null,
+  status text not null default 'pending',
   processed_at real not null,
   payload_hash text not null
 );
@@ -109,9 +110,21 @@ def initialize_database(db_path: Path | str | None = None) -> None:
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        _migrate_stripe_events(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_stripe_events(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute("pragma table_info(stripe_events)").fetchall()
+    }
+    if "status" not in columns:
+        conn.execute(
+            "alter table stripe_events add column status text not null default 'processed'"
+        )
 
 
 @contextmanager

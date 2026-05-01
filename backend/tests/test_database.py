@@ -11,13 +11,16 @@ def test_initialize_database_creates_membership_tables(tmp_path, monkeypatch):
 
     database.initialize_database(db_path)
 
-    with database.connect(db_path) as conn:
+    conn = database.connect(db_path)
+    try:
         tables = {
             row["name"]
             for row in conn.execute(
                 "select name from sqlite_master where type = 'table'"
             ).fetchall()
         }
+    finally:
+        conn.close()
 
     assert {
         "users",
@@ -36,8 +39,11 @@ def test_database_uses_row_factory(tmp_path):
     db_path = tmp_path / "saveany.db"
     database.initialize_database(db_path)
 
-    with database.connect(db_path) as conn:
+    conn = database.connect(db_path)
+    try:
         row = conn.execute("select 1 as value").fetchone()
+    finally:
+        conn.close()
 
     assert row["value"] == 1
 
@@ -48,6 +54,13 @@ def test_initialize_database_closes_connection(monkeypatch):
 
         def executescript(self, _: str) -> None:
             pass
+
+        def execute(self, _: str):
+            class Result:
+                def fetchall(self):
+                    return [{"name": "status"}]
+
+            return Result()
 
         def commit(self) -> None:
             pass

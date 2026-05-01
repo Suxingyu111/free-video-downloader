@@ -11,10 +11,15 @@ from app.services.billing_service import (
     begin_stripe_event_processing,
     cancel_mock_subscription,
     create_mock_checkout,
+    ensure_stripe_customer_id,
     expire_mock_subscription,
     fail_mock_payment,
     get_membership,
+    mark_stripe_event_pending,
     mark_stripe_event_processed,
+    mark_stripe_invoice_payment_failed,
+    upsert_stripe_checkout_session,
+    upsert_stripe_invoice_paid,
     upsert_stripe_subscription,
 )
 from app.services.database import connect
@@ -40,8 +45,16 @@ def billing_checkout(user: User = Depends(current_user)) -> dict:
         if not config.stripe_secret_key or not config.stripe_pro_monthly_price_id:
             raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
         stripe.api_key = config.stripe_secret_key
+        customer_id = ensure_stripe_customer_id(
+            user,
+            lambda: stripe.Customer.create(
+                email=user.email,
+                metadata={"saveany_user_id": user.id},
+            ).id,
+        )
         session = stripe.checkout.Session.create(
             mode="subscription",
+            customer=customer_id,
             line_items=[{"price": config.stripe_pro_monthly_price_id, "quantity": 1}],
             success_url=f"{config.public_app_url}/#pricing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{config.public_app_url}/#pricing?checkout=cancel",
@@ -101,13 +114,23 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
     if not begin_stripe_event_processing(event_id, event_type, payload):
         return {"ok": True}
 
-    if event_type in {
-        "customer.subscription.created",
-        "customer.subscription.updated",
-        "customer.subscription.deleted",
-    }:
-        upsert_stripe_subscription(event["data"]["object"])
-    mark_stripe_event_processed(event_id)
+    try:
+        if event_type == "checkout.session.completed":
+            upsert_stripe_checkout_session(event["data"]["object"])
+        elif event_type in {
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        }:
+            upsert_stripe_subscription(event["data"]["object"])
+        elif event_type == "invoice.paid":
+            upsert_stripe_invoice_paid(event["data"]["object"])
+        elif event_type == "invoice.payment_failed":
+            mark_stripe_invoice_payment_failed(event["data"]["object"])
+        mark_stripe_event_processed(event_id)
+    except Exception:
+        mark_stripe_event_pending(event_id)
+        raise
     return {"ok": True}
 
 

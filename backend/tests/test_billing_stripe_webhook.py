@@ -7,7 +7,7 @@ from app import billing_routes
 from app.main import app
 from app.services import database
 from app.services.auth_service import create_user
-from app.services.billing_service import get_membership
+from app.services.billing_service import begin_stripe_event_processing, get_membership
 from app.services.database import transaction
 
 
@@ -20,6 +20,118 @@ class FakeStripeWebhook:
         if sig_header != "valid":
             raise ValueError("bad signature")
         return json.loads(payload)
+
+
+class FakeStripeCustomer:
+    created = []
+
+    @classmethod
+    def create(cls, **kwargs):
+        cls.created.append(kwargs)
+        return type("StripeCustomer", (), {"id": "cus_reused"})()
+
+
+class FakeStripeCheckoutSession:
+    created = []
+
+    @classmethod
+    def create(cls, **kwargs):
+        cls.created.append(kwargs)
+        return type(
+            "StripeCheckoutSession",
+            (),
+            {"id": f"cs_{len(cls.created)}", "url": f"https://checkout.test/{len(cls.created)}"},
+        )()
+
+
+class FakeStripeCheckout:
+    Session = FakeStripeCheckoutSession
+
+
+def _stripe_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "stripe")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_monthly")
+
+
+def _post_event(client, event):
+    return client.post(
+        "/api/billing/webhook",
+        content=json.dumps(event),
+        headers={"Stripe-Signature": "valid"},
+    )
+
+
+def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "checkout@example.com", "password": "checkout-password"},
+    )
+
+    first = client.post("/api/billing/checkout")
+    second = client.post("/api/billing/checkout")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert len(FakeStripeCustomer.created) == 1
+    assert FakeStripeCustomer.created[0]["email"] == "checkout@example.com"
+    assert FakeStripeCustomer.created[0]["metadata"]["saveany_user_id"]
+    assert [call["customer"] for call in FakeStripeCheckoutSession.created] == [
+        "cus_reused",
+        "cus_reused",
+    ]
+    assert FakeStripeCheckoutSession.created[0]["client_reference_id"]
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        rows = conn.execute(
+            """
+            select stripe_customer_id, count(*) as count
+            from subscriptions
+            group by stripe_customer_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    assert len(rows) == 1
+    assert rows[0]["stripe_customer_id"] == "cus_reused"
+    assert rows[0]["count"] == 1
+
+
+def test_stripe_event_processing_claim_blocks_pending_duplicate(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+
+    first = begin_stripe_event_processing(
+        "evt_lock",
+        "customer.subscription.updated",
+        b'{"id":"evt_lock"}',
+    )
+    duplicate = begin_stripe_event_processing(
+        "evt_lock",
+        "customer.subscription.updated",
+        b'{"id":"evt_lock"}',
+    )
+
+    assert first is True
+    assert duplicate is False
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        row = conn.execute(
+            "select status, processed_at from stripe_events where event_id = 'evt_lock'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["status"] == "processing"
+    assert row["processed_at"] == 0
 
 
 def test_webhook_rejects_bad_signature(monkeypatch, tmp_path):
@@ -100,6 +212,146 @@ def test_subscription_updated_webhook_is_idempotent(monkeypatch, tmp_path):
     assert subscription["stripe_subscription_id"] == "sub_123"
     assert subscription["stripe_price_id"] == "price_123"
     assert subscription["status"] == "active"
+
+
+def test_checkout_session_completed_webhook_links_subscription(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("checkout-complete@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_checkout_complete",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_complete",
+                "customer": "cus_complete",
+                "subscription": "sub_complete",
+                "payment_status": "paid",
+                "client_reference_id": user.id,
+                "metadata": {"saveany_user_id": user.id},
+            }
+        },
+    }
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    membership = get_membership(user.id)
+    assert membership.active is True
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        subscription = conn.execute(
+            """
+            select stripe_customer_id, stripe_subscription_id, status
+            from subscriptions where user_id = ?
+            """,
+            (user.id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert subscription["stripe_customer_id"] == "cus_complete"
+    assert subscription["stripe_subscription_id"] == "sub_complete"
+    assert subscription["status"] == "active"
+
+
+def test_invoice_paid_webhook_marks_subscription_active_and_updates_period(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("invoice-paid@example.com", "stripe-password")
+    now = time()
+    with transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into subscriptions
+            (id, user_id, plan, status, stripe_customer_id, current_period_start,
+             current_period_end, cancel_at_period_end, created_at, updated_at)
+            values ('local_invoice', ?, 'pro', 'incomplete', 'cus_invoice',
+                    ?, ?, 0, ?, ?)
+            """,
+            (user.id, now - 100, now + 100, now, now),
+        )
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_invoice_paid",
+        "type": "invoice.paid",
+        "data": {
+            "object": {
+                "id": "in_paid",
+                "customer": "cus_invoice",
+                "subscription": "sub_invoice",
+                "lines": {
+                    "data": [
+                        {
+                            "period": {"start": 1777600000, "end": 1780278400},
+                            "price": {"id": "price_monthly"},
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    membership = get_membership(user.id)
+    assert membership.active is True
+    assert membership.current_period_end == 1780278400
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        subscription = conn.execute(
+            """
+            select status, stripe_subscription_id, stripe_price_id
+            from subscriptions where id = 'local_invoice'
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+    assert subscription["status"] == "active"
+    assert subscription["stripe_subscription_id"] == "sub_invoice"
+    assert subscription["stripe_price_id"] == "price_monthly"
+
+
+def test_invoice_payment_failed_webhook_marks_subscription_past_due(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("invoice-failed@example.com", "stripe-password")
+    now = time()
+    with transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into subscriptions
+            (id, user_id, plan, status, stripe_customer_id, stripe_subscription_id,
+             current_period_start, current_period_end, cancel_at_period_end,
+             created_at, updated_at)
+            values ('local_failed', ?, 'pro', 'active', 'cus_failed', 'sub_failed',
+                    ?, ?, 0, ?, ?)
+            """,
+            (user.id, now - 100, now + 2592000, now, now),
+        )
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_invoice_failed",
+        "type": "invoice.payment_failed",
+        "data": {
+            "object": {
+                "id": "in_failed",
+                "customer": "cus_failed",
+                "subscription": "sub_failed",
+            }
+        },
+    }
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    membership = get_membership(user.id)
+    assert membership.status == "past_due"
+    assert membership.active is False
 
 
 def test_webhook_processing_failure_keeps_event_retryable(monkeypatch, tmp_path):

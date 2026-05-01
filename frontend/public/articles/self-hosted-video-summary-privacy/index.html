@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="description" content="自托管视频下载总结器隐私边界包括视频链接、下载任务、临时文件、AI 总结内容、浏览器缓存和文件 token，SaveAny 用本地部署降低数据暴露。" />
+    <meta name="keywords" content="自托管视频下载总结器隐私边界,自托管视频工具,视频总结隐私,本地部署,SaveAny" />
+    <meta name="author" content="万能视频下载总结器" />
+    <meta name="application-name" content="万能视频下载总结器" />
+    <meta name="theme-color" content="#2f7df4" />
+
+    <link rel="canonical" href="https://saveany.local/articles/self-hosted-video-summary-privacy/" />
+    <link rel="alternate" type="text/markdown" href="https://saveany.local/articles/self-hosted-video-summary-privacy/index.html.md" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="万能视频下载总结器" />
+    <meta property="og:title" content="自托管视频下载总结器隐私边界 - 数据处理说明" />
+    <meta property="og:description" content="自托管视频下载总结器隐私边界包括视频链接、下载任务、临时文件、AI 总结内容、浏览器缓存和文件 token，SaveAny 用本地部署降低数据暴露。" />
+    <meta property="og:url" content="https://saveany.local/articles/self-hosted-video-summary-privacy/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="自托管视频下载总结器隐私边界 - 数据处理说明" />
+    <meta name="twitter:description" content="自托管视频下载总结器隐私边界包括视频链接、下载任务、临时文件、AI 总结内容、浏览器缓存和文件 token，SaveAny 用本地部署降低数据暴露。" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BreadcrumbList","@id":"https://saveany.local/articles/self-hosted-video-summary-privacy/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"首页","item":"https://saveany.local/"},{"@type":"ListItem","position":2,"name":"自托管视频下载总结器隐私边界","item":"https://saveany.local/articles/self-hosted-video-summary-privacy/"}]},{"@type":"WebPage","@id":"https://saveany.local/articles/self-hosted-video-summary-privacy/#webpage","name":"自托管视频下载总结器隐私边界 - 数据处理说明","headline":"自托管视频下载总结器的隐私边界","description":"自托管视频下载总结器隐私边界包括视频链接、下载任务、临时文件、AI 总结内容、浏览器缓存和文件 token，SaveAny 用本地部署降低数据暴露。","url":"https://saveany.local/articles/self-hosted-video-summary-privacy/","inLanguage":"zh-CN","dateModified":"2026-04-30","isPartOf":{"@id":"https://saveany.local/#website"},"about":{"@id":"https://saveany.local/#webapp"},"breadcrumb":{"@id":"https://saveany.local/articles/self-hosted-video-summary-privacy/#breadcrumb"}},{"@type":"ItemList","@id":"https://saveany.local/articles/self-hosted-video-summary-privacy/#capabilities","name":"自托管视频下载总结器隐私边界核心能力","itemListElement":[{"@type":"ListItem","position":1,"name":"视频链接用于解析和创建任务，不应提交私密、付费或无授权内容。"},{"@type":"ListItem","position":2,"name":"完成文件通过后端临时 token 交付，避免浏览器直接暴露服务器真实文件路径。"},{"@type":"ListItem","position":3,"name":"AI 总结内容会发送到用户配置的模型服务，公开部署时应补充认证、限流、审计和清理策略。"}]},{"@type":"FAQPage","@id":"https://saveany.local/articles/self-hosted-video-summary-privacy/#faq","mainEntity":[{"@type":"Question","name":"自托管是否意味着完全没有隐私风险？","acceptedAnswer":{"@type":"Answer","text":"不是。自托管减少第三方托管暴露，但仍需要管理服务器权限、临时文件、浏览器缓存、日志和 AI 服务配置。"}},{"@type":"Question","name":"SaveAny 会暴露服务器真实文件路径吗？","acceptedAnswer":{"@type":"Answer","text":"不会。下载完成后通过后端临时 token 提供文件入口，浏览器看到的是 token URL，而不是服务器真实路径。"}}]}]}</script>
+    <title>自托管视频下载总结器隐私边界 - 数据处理说明</title>
+    <style>
+      :root { color-scheme: light; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #121826; background: #f7fbff; }
+      body { margin: 0; background: linear-gradient(180deg, #f1f7ff 0%, #fff 72%); }
+      main { width: min(100% - 40px, 980px); margin: 0 auto; padding: 56px 0; }
+      a { color: #1f6eea; text-decoration: none; }
+      .brand { font-size: 18px; font-weight: 900; color: #2f7df4; }
+      h1 { max-width: 820px; margin: 26px 0 0; font-size: clamp(34px, 5vw, 58px); line-height: 1.08; letter-spacing: 0; }
+      .lead, .summary { max-width: 780px; color: #4b5565; font-size: 18px; line-height: 1.8; }
+      .lead { margin: 20px 0 0; }
+      .summary { margin: 22px 0 0; border-left: 4px solid #2f7df4; padding-left: 16px; }
+      .cta { display: inline-flex; margin-top: 28px; border-radius: 999px; background: #2f7df4; padding: 14px 22px; color: #fff; font-weight: 850; }
+      section { margin-top: 46px; }
+      h2 { margin: 0; font-size: 26px; }
+      ul { display: grid; gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }
+      ol { display: grid; gap: 14px; margin: 18px 0 0; padding-left: 24px; }
+      ol li { list-style: decimal; }
+      li, article { border: 1px solid #dfe8f4; border-radius: 16px; background: rgba(255,255,255,.84); padding: 16px; color: #4b5565; line-height: 1.7; }
+      article h3 { margin: 0; color: #121826; font-size: 18px; }
+      article p { margin: 10px 0 0; }
+      li span { display: block; margin-top: 6px; }
+      .question-grid { display: grid; gap: 14px; margin-top: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .notice { border-color: #f1d7a5; background: #fff8e8; color: #75520c; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="https://saveany.local/">万能视频下载总结器 · SaveAny</a>
+      <h1>自托管视频下载总结器的隐私边界</h1>
+      <p class="lead">自托管可以让用户掌握下载任务、临时文件和总结结果的位置，但仍需要清楚理解浏览器、后端、AI 服务和公开部署之间的数据边界。</p>
+      <p class="summary">SaveAny 面向本地或自托管场景，后端用临时 token 交付文件，浏览器不会看到服务器真实路径，AI 总结数据则取决于用户配置的模型服务。</p>
+      <p>更新时间：2026-04-30</p>
+      <a class="cta" href="https://saveany.local/#download">打开下载总结器</a>
+      <section aria-labelledby="page-points">
+        <h2 id="page-points">核心能力</h2>
+        <ul>
+          <li>视频链接用于解析和创建任务，不应提交私密、付费或无授权内容。</li>
+          <li>完成文件通过后端临时 token 交付，避免浏览器直接暴露服务器真实文件路径。</li>
+          <li>AI 总结内容会发送到用户配置的模型服务，公开部署时应补充认证、限流、审计和清理策略。</li>
+        </ul>
+      </section>
+      <section aria-labelledby="use-cases">
+        <h2 id="use-cases">适用场景</h2>
+        <ul>
+          <li>个人把公开视频学习资料保存在自己的设备或服务器。</li>
+          <li>团队在内网部署视频总结工作台。</li>
+          <li>部署前评估临时文件、浏览器缓存和 AI 服务的数据边界。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="page-questions">
+        <h2 id="page-questions">常见问题</h2>
+        <div class="question-grid">
+          <article>
+            <h3>自托管是否意味着完全没有隐私风险？</h3>
+            <p>不是。自托管减少第三方托管暴露，但仍需要管理服务器权限、临时文件、浏览器缓存、日志和 AI 服务配置。</p>
+          </article>
+          <article>
+            <h3>SaveAny 会暴露服务器真实文件路径吗？</h3>
+            <p>不会。下载完成后通过后端临时 token 提供文件入口，浏览器看到的是 token URL，而不是服务器真实路径。</p>
+          </article>
+        </div>
+      </section>
+      <section aria-labelledby="related-pages">
+        <h2 id="related-pages">相关页面</h2>
+        <ul>
+          <li>
+            <a href="https://saveany.local/privacy/">隐私政策</a>
+            <span>SaveAny 隐私政策说明本地或自托管部署下的视频链接、下载任务、临时文件、AI 总结数据、浏览器工作区缓存和文件 token 如何处理。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/facts/">万能视频下载总结器事实页</a>
+            <span>万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/video-summary/">AI视频总结器</a>
+            <span>SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/terms/">使用条款</a>
+            <span>SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/online-video-downloader/">在线视频下载器</a>
+            <span>在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。</span>
+          </li>
+        </ul>
+      </section>
+      <section aria-labelledby="compliance">
+        <h2 id="compliance">合规边界</h2>
+        <ul>
+          <li class="notice">仅支持公开视频，不处理登录限定、付费、私密、DRM 或平台安全策略限制内容。</li>
+          <li class="notice">请在遵守版权和平台条款的前提下，用于学习、研究、个人备份和资料整理。</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

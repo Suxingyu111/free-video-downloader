@@ -1,4 +1,5 @@
 import inspect
+import json
 
 from fastapi.testclient import TestClient
 
@@ -82,3 +83,70 @@ def test_demo_analyze_result_is_env_gated(monkeypatch):
 
     assert result["title"] == "AI 视频总结演示课"
     assert result["extractor"] == "demo"
+
+
+def test_frontend_dist_serves_geo_assets_and_real_404(monkeypatch, tmp_path):
+    monkeypatch.delenv("SEO_CANONICAL_REDIRECTS", raising=False)
+    dist = tmp_path / "dist"
+    page_dir = dist / "video-summary"
+    page_dir.mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><div id='app'></div>", encoding="utf-8")
+    (dist / "404.html").write_text("<!doctype html><h1>页面未找到</h1>", encoding="utf-8")
+    (dist / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
+    (dist / "llms.txt").write_text("# 万能视频下载总结器\n", encoding="utf-8")
+    (page_dir / "index.html").write_text("<h1>AI视频总结器</h1>", encoding="utf-8")
+    (page_dir / "index.html.md").write_text("# AI视频总结器\n", encoding="utf-8")
+    monkeypatch.setattr(main, "FRONTEND_DIST", dist)
+    client = TestClient(app)
+
+    assert client.get("/robots.txt").status_code == 200
+    assert client.get("/llms.txt").text.startswith("# 万能视频下载总结器")
+    page_response = client.get("/video-summary/")
+    assert page_response.headers["cache-control"] == "no-cache"
+    assert "AI视频总结器" in page_response.text
+    slash_response = client.get("/video-summary", follow_redirects=False)
+    assert slash_response.status_code == 308
+    assert slash_response.headers["location"].endswith("/video-summary/")
+    assert client.get("/video-summary/index.html.md").headers["content-type"].startswith("text/markdown")
+    missing_route = client.get("/client-side-route")
+    assert missing_route.status_code == 404
+    assert "页面未找到" in missing_route.text
+    assert client.get("/missing.txt").status_code == 404
+
+
+def test_frontend_can_enforce_canonical_https_host(monkeypatch, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><div id='app'></div>", encoding="utf-8")
+    monkeypatch.setattr(main, "FRONTEND_DIST", dist)
+    monkeypatch.setenv("SEO_CANONICAL_REDIRECTS", "true")
+    monkeypatch.setenv("VITE_PUBLIC_SITE_URL", "https://www.saveany.example")
+    client = TestClient(app)
+
+    response = client.get(
+        "/?utm_source=test",
+        headers={"host": "saveany.example", "x-forwarded-proto": "http"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 308
+    assert response.headers["location"] == "https://www.saveany.example/?utm_source=test"
+
+
+def test_geo_access_monitor_logs_crawler_and_geo_assets(monkeypatch, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><div id='app'></div>", encoding="utf-8")
+    (dist / "llms.txt").write_text("# 万能视频下载总结器\n", encoding="utf-8")
+    log_file = tmp_path / "geo-access.jsonl"
+    monkeypatch.setattr(main, "FRONTEND_DIST", dist)
+    monkeypatch.setattr(main, "GEO_ACCESS_LOG", log_file)
+    client = TestClient(app)
+
+    response = client.get("/llms.txt?secret=not-logged", headers={"User-Agent": "OAI-SearchBot"})
+
+    assert response.status_code == 200
+    records = [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["path"] == "/llms.txt"
+    assert records[0]["crawler"] == "openai-search"
+    assert "secret" not in json.dumps(records[0])

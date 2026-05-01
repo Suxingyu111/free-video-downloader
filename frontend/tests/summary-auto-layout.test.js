@@ -40,21 +40,92 @@ test("hero search area uses compact vertical spacing so results enter the first 
   assert.match(mainCss, /\.analysis-workbench\s*\{[\s\S]*margin-top:\s*10px/);
 });
 
-test("top navigation switches between short hash pages instead of one long scrolling page", () => {
+test("top navigation scrolls to homepage sections while pricing remains a separate page", () => {
   assert.match(appSource, /const pageLinks = \[/);
+  assert.match(appSource, /const HOME_PAGE_ID = "download"/);
+  assert.match(appSource, /const PRICING_PAGE_ID = "pricing"/);
+  assert.match(appSource, /const HOME_DOWNLOAD_ANCHOR_ID = "download-console"/);
+  assert.match(appSource, /const homeAnchorIds = pageLinks\.filter/);
+  assert.match(appSource, /label:\s*"回到下载"/);
+  assert.match(appSource, /label:\s*"核心能力"/);
+  assert.match(appSource, /label:\s*"套餐方案"/);
   assert.match(appSource, /currentPage:\s*"download"/);
+  assert.match(appSource, /activeAnchor:\s*""/);
   assert.match(appSource, /const currentPage = computed\(\(\) => state\.currentPage\)/);
   assert.match(appSource, /function syncCurrentPageFromHash/);
   assert.match(appSource, /window\.addEventListener\("hashchange", syncCurrentPageFromHash\)/);
+  assert.match(appSource, /window\.addEventListener\("popstate", syncCurrentPageFromHash\)/);
   assert.match(appSource, /v-for="link in pageLinks"/);
-  assert.match(appSource, /:aria-current="currentPage === link\.id \? 'page' : undefined"/);
+  assert.match(appSource, /:aria-current="isNavLinkCurrent\(link\) \? 'page' : undefined"/);
+  assert.match(appSource, /@click\.prevent="navigateToNavLink\(link\)"/);
   assert.match(appSource, /<section[^>]*id="download"[^>]*v-show="currentPage === 'download'"/);
-  assert.match(appSource, /<section[^>]*id="platforms"[^>]*v-if="currentPage === 'platforms'"/);
-  assert.match(appSource, /<section[^>]*id="features"[^>]*v-if="currentPage === 'features'"/);
+  assert.match(appSource, /id="download-console"/);
+  assert.match(appSource, /id="home-highlights"/);
+  assert.match(appSource, /id="home-faq"/);
+  assert.doesNotMatch(appSource, /home-highlights-title/);
+  assert.doesNotMatch(appSource, /home-faq-title/);
+  assert.doesNotMatch(appSource, /id="home-pricing-preview"/);
+  assert.doesNotMatch(appSource, /id="home-use-cases"/);
+  assert.doesNotMatch(appSource, /id="home-ai-answers"/);
+  assert.doesNotMatch(appSource, /id="home-compliance"/);
   assert.match(appSource, /<section[^>]*id="pricing"[^>]*v-if="currentPage === 'pricing'"/);
+  assert.doesNotMatch(appSource, /const modulePages = \[/);
+  assert.doesNotMatch(appSource, /<template v-for="module in modulePages"/);
   assert.match(mainCss, /\.nav-links a\[aria-current="page"\]/);
+  assert.match(mainCss, /\.nav-cta:hover,\s*\n\.nav-cta:focus-visible,\s*\n\.nav-cta:active,\s*\n\.nav-cta\[aria-current="page"\]\s*\{[\s\S]*color:\s*var\(--primary-strong\)/);
+  assert.doesNotMatch(mainCss, /\.nav-cta\[aria-current="page"\]\s*\{[^}]*color:\s*#ffffff/);
   assert.match(mainCss, /@media \(max-width:\s*760px\)[\s\S]*\.nav-links\s*\{[\s\S]*overflow-x:\s*auto/);
   assert.doesNotMatch(mainCss, /\.nav-links a:not\(\.nav-cta\)[\s\S]*display:\s*none/);
+});
+
+test("homepage capability cards are compact and not navigation targets", () => {
+  for (const title of ["公开视频平台", "清晰度可选", "解析后自动总结", "手机浏览器可用"]) {
+    assert.match(appSource, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  assert.match(appSource, /v-for="highlight in homeHighlights"/);
+  assert.match(appSource, /class="highlight-card"/);
+  assert.match(appSource, /解析并自动总结/);
+  assert.match(appSource, /选择清晰度下载/);
+  assert.match(appSource, /AI 自动总结/);
+  assert.doesNotMatch(appSource, /先完成下载，再把视频整理成笔记/);
+  assert.doesNotMatch(appSource, /下载并自动总结/);
+  assert.doesNotMatch(appSource, /解析并选择清晰度/);
+  assert.doesNotMatch(appSource, /播放列表任务/);
+  assert.doesNotMatch(appSource, /长视频与播放列表工作流/);
+  assert.doesNotMatch(appSource, /:href="`#\$\{highlight\.id\}`"/);
+  assert.doesNotMatch(appSource, /@click\.prevent="navigateToPage\(highlight\.id\)"/);
+});
+
+test("pricing page keeps a three-tier package plan while homepage preview is removed", () => {
+  assert.match(appSource, /const pricingPlans = \[/);
+  assert.match(appSource, /name:\s*"免费版"/);
+  assert.match(appSource, /name:\s*"专业版"/);
+  assert.match(appSource, /name:\s*"团队版"/);
+  assert.match(appSource, /v-for="plan in pricingPlans"/);
+  assert.match(appSource, /class="pricing-grid"/);
+  assert.match(appSource, /class="plan-feature-list"/);
+  assert.match(mainCss, /\.pricing-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.doesNotMatch(appSource, /class="home-pricing-preview"/);
+  assert.doesNotMatch(appSource, /class="home-plan-card"/);
+  assert.doesNotMatch(appSource, /查看完整套餐方案/);
+  assert.doesNotMatch(mainCss, /\.home-pricing-grid\s*\{/);
+  assert.doesNotMatch(appSource, /每日\s*\d+\s*次解析任务/);
+  assert.doesNotMatch(appSource, /任务结果保留\s*\d+\s*天/);
+});
+
+test("homepage keeps SEO content compact while static pages own long-form discovery", () => {
+  assert.match(appSource, /compactFaqs = seoFaqs\.slice\(0,\s*3\)/);
+  assert.match(appSource, /compactCompliancePoints = seoCompliancePoints\.slice\(0,\s*3\)/);
+  assert.match(mainCss, /\.home-faq-summary\s*\{/);
+  assert.doesNotMatch(appSource, /首页只保留和真实工作流直接相关的信息/);
+  assert.doesNotMatch(appSource, /更完整的搜索落地页、AI 可读说明和专题内容继续由静态页面承接/);
+  assert.doesNotMatch(appSource, /只留下开始前必须知道的事/);
+  assert.doesNotMatch(appSource, /seoGeoAnswers/);
+  assert.doesNotMatch(appSource, /seoRelatedLinks/);
+  assert.doesNotMatch(appSource, /seoUseCases/);
+  assert.doesNotMatch(mainCss, /\.seo-content\s*\{/);
+  assert.doesNotMatch(mainCss, /\.seo-related-links\s*\{/);
 });
 
 test("video details and AI summary use a left-narrow right-wide workbench layout", () => {

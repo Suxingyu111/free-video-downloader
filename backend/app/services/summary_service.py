@@ -23,6 +23,7 @@ from app.services.transcript_service import (
     parse_timestamp,
     transcript_to_text,
 )
+from app.services.transcription_provider import TranscriptionProvider, build_transcription_provider_from_env
 
 
 SummaryProgressHook = Callable[..., None]
@@ -36,10 +37,17 @@ class SummaryService:
         transcript_service: TranscriptService | None = None,
         audio_service=None,
         ai_provider: AIProvider | None = None,
+        transcription_provider: TranscriptionProvider | None = None,
     ) -> None:
         self.transcript_service = transcript_service or TranscriptService()
         self.audio_service = audio_service or AudioExtractionService()
         self.ai_provider = ai_provider or build_ai_provider_from_env()
+        if transcription_provider is not None:
+            self.transcription_provider = transcription_provider
+        elif ai_provider is not None and hasattr(ai_provider, "transcribe_audio"):
+            self.transcription_provider = ai_provider
+        else:
+            self.transcription_provider = build_transcription_provider_from_env()
 
     def generate_summary(
         self,
@@ -87,7 +95,7 @@ class SummaryService:
             audio_path = self.audio_service.extract_audio(url, output_dir / "audio")
             if progress_hook:
                 emit_summary_progress(progress_hook, "speech_to_text", 48, "Transcribing audio")
-            transcribed_text = self.ai_provider.transcribe_audio(audio_path, language)
+            transcribed_text = self.transcription_provider.transcribe_audio(audio_path, language)
             segments = segments_from_transcribed_text(transcribed_text)
             if not segments:
                 raise RuntimeError("AI 语音转写服务未返回可用文本。")

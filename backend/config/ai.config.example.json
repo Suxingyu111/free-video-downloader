@@ -3,6 +3,11 @@
   "base_url": "https://api.openai.com/v1",
   "api_key": "",
   "text_model": "gpt-4o-mini",
-  "transcribe_model": "gpt-4o-mini-transcribe",
+  "transcribe_provider": "local-faster-whisper",
+  "transcribe_model": "small",
+  "transcribe_device": "cpu",
+  "transcribe_compute_type": "int8",
+  "transcribe_beam_size": 5,
+  "transcribe_vad_filter": true,
   "timeout_seconds": 120
 }

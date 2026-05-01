@@ -105,10 +105,10 @@ def describe_bilibili_transcript_unavailable(url: str) -> str | None:
     if metadata.get("subtitle_login_required"):
         return (
             "该 Bilibili 视频的字幕接口要求登录态。当前未使用 Cookie 时，yt-dlp 只能获取弹幕 XML，"
-            "不能获取可用于视频内容总结的人工字幕或自动字幕。"
+            "不能获取可用于视频内容总结的人工字幕或自动字幕，将尝试从公开音频语音转写。"
         )
     if not metadata.get("subtitles"):
-        return "该 Bilibili 视频公开接口没有返回可用字幕，当前版本仅支持已有字幕的视频总结。"
+        return "该 Bilibili 视频公开接口没有返回可用字幕，将尝试从公开音频语音转写。"
     return None
 
 

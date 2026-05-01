@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="description" content="SaveAny 视频字幕提取工具可从公开视频中整理字幕文本，配合 AI 总结生成摘要、问答、思维导图和 Markdown，适合学习笔记与内容复盘。" />
+    <meta name="keywords" content="视频字幕提取工具,SRT字幕导出,视频转字幕,字幕总结,视频转文字" />
+    <meta name="author" content="万能视频下载总结器" />
+    <meta name="application-name" content="万能视频下载总结器" />
+    <meta name="theme-color" content="#2f7df4" />
+
+    <link rel="canonical" href="https://saveany.local/subtitle-extractor/" />
+    <link rel="alternate" type="text/markdown" href="https://saveany.local/subtitle-extractor/index.html.md" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="万能视频下载总结器" />
+    <meta property="og:title" content="视频字幕提取工具 - SRT字幕导出与总结 | SaveAny" />
+    <meta property="og:description" content="SaveAny 视频字幕提取工具可从公开视频中整理字幕文本，配合 AI 总结生成摘要、问答、思维导图和 Markdown，适合学习笔记与内容复盘。" />
+    <meta property="og:url" content="https://saveany.local/subtitle-extractor/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="视频字幕提取工具 - SRT字幕导出与总结 | SaveAny" />
+    <meta name="twitter:description" content="SaveAny 视频字幕提取工具可从公开视频中整理字幕文本，配合 AI 总结生成摘要、问答、思维导图和 Markdown，适合学习笔记与内容复盘。" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BreadcrumbList","@id":"https://saveany.local/subtitle-extractor/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"首页","item":"https://saveany.local/"},{"@type":"ListItem","position":2,"name":"视频字幕提取工具","item":"https://saveany.local/subtitle-extractor/"}]},{"@type":"WebPage","@id":"https://saveany.local/subtitle-extractor/#webpage","name":"视频字幕提取工具 - SRT字幕导出与总结 | SaveAny","headline":"视频字幕提取工具，把内容变成可检索文本","description":"SaveAny 视频字幕提取工具可从公开视频中整理字幕文本，配合 AI 总结生成摘要、问答、思维导图和 Markdown，适合学习笔记与内容复盘。","url":"https://saveany.local/subtitle-extractor/","inLanguage":"zh-CN","dateModified":"2026-04-30","isPartOf":{"@id":"https://saveany.local/#website"},"about":{"@id":"https://saveany.local/#webapp"},"breadcrumb":{"@id":"https://saveany.local/subtitle-extractor/#breadcrumb"}},{"@type":"ItemList","@id":"https://saveany.local/subtitle-extractor/#capabilities","name":"视频字幕提取工具核心能力","itemListElement":[{"@type":"ListItem","position":1,"name":"适合外语学习、课程复习、访谈整理和会议复盘。"},{"@type":"ListItem","position":2,"name":"字幕和摘要可导出，便于放进知识库或文档系统。"},{"@type":"ListItem","position":3,"name":"优先尊重平台可访问边界，不处理受限内容。"}]},{"@type":"FAQPage","@id":"https://saveany.local/subtitle-extractor/#faq","mainEntity":[{"@type":"Question","name":"视频字幕提取工具可以导出什么？","acceptedAnswer":{"@type":"Answer","text":"SaveAny 可以在可用时整理字幕文本，并配合 AI 总结导出 Markdown 笔记；字幕和总结适合后续检索、复习和知识库归档。"}}]}]}</script>
+    <title>视频字幕提取工具 - SRT字幕导出与总结 | SaveAny</title>
+    <style>
+      :root { color-scheme: light; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #121826; background: #f7fbff; }
+      body { margin: 0; background: linear-gradient(180deg, #f1f7ff 0%, #fff 72%); }
+      main { width: min(100% - 40px, 980px); margin: 0 auto; padding: 56px 0; }
+      a { color: #1f6eea; text-decoration: none; }
+      .brand { font-size: 18px; font-weight: 900; color: #2f7df4; }
+      h1 { max-width: 820px; margin: 26px 0 0; font-size: clamp(34px, 5vw, 58px); line-height: 1.08; letter-spacing: 0; }
+      .lead, .summary { max-width: 780px; color: #4b5565; font-size: 18px; line-height: 1.8; }
+      .lead { margin: 20px 0 0; }
+      .summary { margin: 22px 0 0; border-left: 4px solid #2f7df4; padding-left: 16px; }
+      .cta { display: inline-flex; margin-top: 28px; border-radius: 999px; background: #2f7df4; padding: 14px 22px; color: #fff; font-weight: 850; }
+      section { margin-top: 46px; }
+      h2 { margin: 0; font-size: 26px; }
+      ul { display: grid; gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }
+      ol { display: grid; gap: 14px; margin: 18px 0 0; padding-left: 24px; }
+      ol li { list-style: decimal; }
+      li, article { border: 1px solid #dfe8f4; border-radius: 16px; background: rgba(255,255,255,.84); padding: 16px; color: #4b5565; line-height: 1.7; }
+      article h3 { margin: 0; color: #121826; font-size: 18px; }
+      article p { margin: 10px 0 0; }
+      li span { display: block; margin-top: 6px; }
+      .question-grid { display: grid; gap: 14px; margin-top: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .notice { border-color: #f1d7a5; background: #fff8e8; color: #75520c; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="https://saveany.local/">万能视频下载总结器 · SaveAny</a>
+      <h1>视频字幕提取工具，把内容变成可检索文本</h1>
+      <p class="lead">当公开视频存在字幕或可转写音频时，SaveAny 可以整理字幕文本，并进一步生成摘要、章节和问答。</p>
+      <p class="summary">视频字幕提取工具把公开视频内容转换为可检索文本，再配合 AI 总结生成摘要、问答、术语解释和 Markdown 学习笔记。</p>
+      <p>更新时间：2026-04-30</p>
+      <a class="cta" href="https://saveany.local/#download">打开下载总结器</a>
+      <section aria-labelledby="page-points">
+        <h2 id="page-points">核心能力</h2>
+        <ul>
+          <li>适合外语学习、课程复习、访谈整理和会议复盘。</li>
+          <li>字幕和摘要可导出，便于放进知识库或文档系统。</li>
+          <li>优先尊重平台可访问边界，不处理受限内容。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="page-questions">
+        <h2 id="page-questions">常见问题</h2>
+        <div class="question-grid">
+          <article>
+            <h3>视频字幕提取工具可以导出什么？</h3>
+            <p>SaveAny 可以在可用时整理字幕文本，并配合 AI 总结导出 Markdown 笔记；字幕和总结适合后续检索、复习和知识库归档。</p>
+          </article>
+        </div>
+      </section>
+      <section aria-labelledby="related-pages">
+        <h2 id="related-pages">相关页面</h2>
+        <ul>
+          <li>
+            <a href="https://saveany.local/video-summary/">AI视频总结器</a>
+            <span>SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/youtube-video-downloader/">YouTube视频下载器</a>
+            <span>SaveAny YouTube视频下载器支持公开视频链接解析，自动识别标题、封面、清晰度和字幕，提供高清 MP4 保存、播放列表处理与 AI 视频总结。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/bilibili-video-downloader/">B站视频下载器</a>
+            <span>SaveAny B站视频下载器支持哔哩哔哩公开视频解析和高清保存，可整理课程、合集、字幕与 AI 摘要，帮助学习者建立可复习、可导出的本地资料。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/douyin-video-downloader/">抖音视频下载器</a>
+            <span>SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。</span>
+          </li>
+          <li>
+            <a href="https://saveany.local/tiktok-video-downloader/">TikTok视频下载器</a>
+            <span>SaveAny TikTok视频下载器支持 TikTok 公开视频解析，提供短视频保存、清晰度选择、字幕提取和 AI 总结，方便内容运营与学习归档。</span>
+          </li>
+        </ul>
+      </section>
+      <section aria-labelledby="compliance">
+        <h2 id="compliance">合规边界</h2>
+        <ul>
+          <li class="notice">仅支持公开视频，不处理登录限定、付费、私密、DRM 或平台安全策略限制内容。</li>
+          <li class="notice">请在遵守版权和平台条款的前提下，用于学习、研究、个人备份和资料整理。</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

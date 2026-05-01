@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Download,
   FileVideo2,
-  Gauge,
   Globe2,
   Link2,
   Loader2,
@@ -16,53 +15,43 @@ import {
   Sparkles,
   Star,
   XCircle,
-  Zap
 } from "lucide-vue-next";
-import { computed, onBeforeUnmount, onMounted, reactive, watch } from "vue";
-import SummaryPanel from "./components/summary/SummaryPanel.vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, watch } from "vue";
 import { analyzeUrl, askSummaryQuestion, connectSummaryEvents, connectTaskEvents, createDownloadTask, createSummaryTask, getSummary, getTask } from "./services/api";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT, resolveDownloadFormat } from "./services/formats";
 import { applyWorkspaceSnapshot, loadWorkspaceSnapshot, pickWorkspaceSnapshot, saveWorkspaceSnapshot } from "./services/workspacePersistence";
+import { seoCompliancePoints, seoFaqs } from "./seo/pages";
 
-const platforms = ["YouTube", "Bilibili", "TikTok", "Instagram", "X / Twitter", "Vimeo", "Facebook", "小红书", "抖音", "Reddit"];
-const features = [
-  ["主流平台全覆盖", "支持 YouTube、Bilibili、TikTok、Instagram 等主流平台，常见公开视频直接粘贴即可解析。"],
-  ["清晰度自由选择", "自动识别标题、封面、时长和可用格式，按需选择稳定 MP4 或原始最高画质。"],
-  ["列表与长视频更省心", "遇到合集、课程、播客或播放列表时，可一次创建任务，后台持续处理进度。"],
-  ["本地部署更安心", "解析与下载任务在自己的服务中完成，减少广告跳转、弹窗劫持和不透明的第三方中转。"]
-];
+const SummaryPanel = defineAsyncComponent(() => import("./components/summary/SummaryPanel.vue"));
+
+const HOME_PAGE_ID = "download";
+const PRICING_PAGE_ID = "pricing";
+const HOME_DOWNLOAD_ANCHOR_ID = "download-console";
 const homeHighlights = [
   {
-    title: "支持 1800+ 平台",
-    description: "覆盖 YouTube、Bilibili、抖音、TikTok、Instagram 等主流视频来源，公开视频链接直接粘贴即可解析。",
+    title: "公开视频平台",
+    description: "支持 YouTube、Bilibili、TikTok、Instagram 等主流平台，也覆盖抖音、小红书等视频来源；抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。",
     icon: Globe2,
     metric: "1800+",
     tone: "sky"
   },
   {
-    title: "极速解析下载",
-    description: "自动识别视频信息和可用格式，选择清晰度后一键开始下载，流程简单直接。",
-    icon: Gauge,
-    metric: "1 步",
-    tone: "amber",
-    featured: true
-  },
-  {
-    title: "多种清晰度选择",
-    description: "支持稳定 MP4 和原始最高画质，满足普通保存、高清收藏、素材整理等不同需求。",
+    title: "清晰度可选",
+    description: "自动识别标题、封面、时长和可用格式，按需选择稳定 MP4 或原始最高画质。",
     icon: SlidersHorizontal,
     metric: "MP4",
     tone: "green"
   },
   {
-    title: "AI 视频总结",
-    description: "自动生成摘要、字幕、思维导图和问答，把视频变成可复习、可导出的学习笔记。",
+    title: "解析后自动总结",
+    description: "解析完成后自动生成摘要、字幕、思维导图和 AI 问答，把视频变成可复习的学习笔记。",
     icon: BrainCircuit,
     metric: "AI",
-    tone: "orange"
+    tone: "orange",
+    featured: true
   },
   {
-    title: "手机也能使用",
+    title: "手机浏览器可用",
     description: "无需安装 App，手机浏览器打开即可粘贴链接、解析视频、查看总结和下载内容。",
     icon: MonitorSmartphone,
     metric: "Web",
@@ -71,21 +60,67 @@ const homeHighlights = [
 ];
 
 const pageLinks = [
-  { id: "download", label: "视频下载" },
-  { id: "features", label: "功能特性" },
-  { id: "platforms", label: "支持平台" },
-  { id: "pricing", label: "套餐价格", accent: true }
+  { id: HOME_DOWNLOAD_ANCHOR_ID, label: "回到下载", type: "anchor" },
+  { id: "home-highlights", label: "核心能力", type: "anchor" },
+  { id: "home-faq", label: "常见问题", type: "anchor" },
+  { id: PRICING_PAGE_ID, label: "套餐方案", type: "page", accent: true }
 ];
-const pageIds = pageLinks.map((link) => link.id);
+const pageIds = [HOME_PAGE_ID, PRICING_PAGE_ID];
+const homeAnchorIds = pageLinks.filter((link) => link.type === "anchor").map((link) => link.id);
 const quickLinks = ["YouTube", "Bilibili", "抖音"];
+const pricingPlans = [
+  {
+    id: "free",
+    badge: "轻量体验",
+    name: "免费版",
+    price: "¥0",
+    cycle: "永久免费",
+    description: "适合偶尔保存公开视频、体验 AI 总结和验证本地工作流。",
+    features: ["稳定 MP4 下载体验", "少量 AI 总结试用", "浏览器本地工作区缓存", "适合验证自托管流程"],
+    cta: "开始免费使用",
+    target: "download"
+  },
+  {
+    id: "pro",
+    badge: "推荐",
+    name: "专业版",
+    price: "¥29",
+    cycle: "/月",
+    description: "适合学习者、创作者和内容运营，把下载、字幕和总结变成高频工作流。",
+    features: ["更高频的解析与总结方案", "长视频解析与字幕整理", "AI 摘要、字幕、思维导图导出", "适合个人知识库沉淀"],
+    cta: "查看专业方案",
+    target: "download",
+    featured: true
+  },
+  {
+    id: "team",
+    badge: "团队协作",
+    name: "团队版",
+    price: "¥99",
+    cycle: "/月起",
+    description: "适合课程团队、MCN 和资料整理小组，共享公开视频素材与学习笔记。",
+    features: ["多人共享工作区规划", "团队级 AI 总结额度方案", "自托管部署建议", "基础用量与任务报表规划"],
+    cta: "咨询团队版",
+    target: "download"
+  }
+];
+const pricingGuarantees = ["只处理用户有权访问的公开视频", "不托管登录态或付费绕过能力", "账号、配额与团队能力会随后续模块逐步落地"];
+const compactFaqs = seoFaqs.slice(0, 3);
+const compactCompliancePoints = seoCompliancePoints.slice(0, 3);
 
 function normalizePageHash(hash = "") {
   const pageId = hash.replace(/^#/, "").trim();
-  return pageIds.includes(pageId) ? pageId : "download";
+  return pageIds.includes(pageId) ? pageId : HOME_PAGE_ID;
+}
+
+function normalizeHomeAnchorHash(hash = "") {
+  const anchorId = hash.replace(/^#/, "").trim();
+  return homeAnchorIds.includes(anchorId) ? anchorId : "";
 }
 
 const state = reactive({
   currentPage: "download",
+  activeAnchor: "",
   url: "",
   analyzedUrl: "",
   selectedFormatId: RELIABLE_MP4_FORMAT,
@@ -110,6 +145,7 @@ applyWorkspaceSnapshot(state, loadWorkspaceSnapshot());
 
 if (typeof window !== "undefined") {
   state.currentPage = normalizePageHash(window.location.hash);
+  state.activeAnchor = state.currentPage === HOME_PAGE_ID ? normalizeHomeAnchorHash(window.location.hash) : "";
 }
 
 watch(
@@ -185,23 +221,77 @@ function scrollPageToTop(behavior = "auto") {
   }
 }
 
-function syncCurrentPageFromHash() {
-  if (typeof window === "undefined") return;
-  state.currentPage = normalizePageHash(window.location.hash);
-  scrollPageToTop("auto");
+function scrollToHomeAnchor(anchorId, behavior = "auto") {
+  if (typeof window === "undefined" || !anchorId) return;
+  const scroll = () => {
+    const target = document.getElementById(anchorId);
+    if (!target) return;
+    const topbarOffset = 88;
+    const targetTop = target.getBoundingClientRect().top + window.scrollY - topbarOffset;
+    window.scrollTo({ top: Math.max(targetTop, 0), behavior });
+  };
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(scroll);
+  } else {
+    scroll();
+  }
 }
 
-function navigateToPage(pageId) {
+function updateHash(hash) {
+  if (typeof window === "undefined" || window.location.hash === hash) return;
+  window.history.pushState(null, "", hash);
+}
+
+async function syncCurrentPageFromHash() {
+  if (typeof window === "undefined") return;
+  const nextPage = normalizePageHash(window.location.hash);
+  const nextAnchor = nextPage === HOME_PAGE_ID ? normalizeHomeAnchorHash(window.location.hash) : "";
+  state.currentPage = nextPage;
+  state.activeAnchor = nextAnchor;
+  await nextTick();
+  if (nextAnchor) {
+    scrollToHomeAnchor(nextAnchor, "auto");
+  } else {
+    scrollPageToTop("auto");
+  }
+}
+
+async function navigateToHomeAnchor(anchorId) {
+  const nextAnchor = normalizeHomeAnchorHash(`#${anchorId}`);
+  if (!nextAnchor) return;
+  state.currentPage = HOME_PAGE_ID;
+  state.activeAnchor = nextAnchor;
+  await nextTick();
+  updateHash(`#${nextAnchor}`);
+  scrollToHomeAnchor(nextAnchor, "smooth");
+}
+
+function navigateToNavLink(link) {
+  if (link.type === "page") {
+    navigateToPage(link.id);
+  } else {
+    navigateToHomeAnchor(link.id);
+  }
+}
+
+async function navigateToPage(pageId) {
   const nextPage = normalizePageHash(`#${pageId}`);
   state.currentPage = nextPage;
+  state.activeAnchor = "";
   if (typeof window === "undefined") return;
 
   const nextHash = `#${nextPage}`;
-  if (window.location.hash !== nextHash) {
-    window.location.hash = nextHash;
-  } else {
-    scrollPageToTop("smooth");
+  updateHash(nextHash);
+  await nextTick();
+  scrollPageToTop("smooth");
+}
+
+function isNavLinkCurrent(link) {
+  if (link.id === HOME_DOWNLOAD_ANCHOR_ID) {
+    return state.currentPage === HOME_PAGE_ID && (!state.activeAnchor || state.activeAnchor === HOME_DOWNLOAD_ANCHOR_ID);
   }
+  if (link.type === "page") return state.currentPage === link.id && !state.activeAnchor;
+  return state.currentPage === HOME_PAGE_ID && state.activeAnchor === link.id;
 }
 
 async function handleAnalyze() {
@@ -560,11 +650,15 @@ function formatDuration(seconds) {
 onMounted(() => {
   syncCurrentPageFromHash();
   window.addEventListener("hashchange", syncCurrentPageFromHash);
+  window.addEventListener("popstate", syncCurrentPageFromHash);
   resumePersistedWorkspace();
 });
 
 onBeforeUnmount(() => {
-  if (typeof window !== "undefined") window.removeEventListener("hashchange", syncCurrentPageFromHash);
+  if (typeof window !== "undefined") {
+    window.removeEventListener("hashchange", syncCurrentPageFromHash);
+    window.removeEventListener("popstate", syncCurrentPageFromHash);
+  }
   disconnectors.forEach((disconnect) => disconnect());
   pollers.forEach((poller) => window.clearInterval(poller));
   summaryDisconnectors.forEach((disconnect) => disconnect());
@@ -575,10 +669,10 @@ onBeforeUnmount(() => {
 <template>
   <main class="page">
     <header class="topbar">
-      <a class="brand" href="#download" aria-label="万能视频下载器首页" @click.prevent="navigateToPage('download')">
+      <a class="brand" href="#download" aria-label="万能视频下载器首页" :aria-current="currentPage === HOME_PAGE_ID && !state.activeAnchor ? 'page' : undefined" @click.prevent="navigateToPage(HOME_PAGE_ID)">
         <span class="brand-mark" aria-hidden="true"><FileVideo2 :size="21" /></span>
         <span class="brand-name">SaveAny</span>
-        <span class="brand-pill">万能视频下载</span>
+        <span class="brand-pill">万能视频下载总结</span>
       </a>
       <nav class="nav-links" aria-label="主导航">
         <a
@@ -586,8 +680,8 @@ onBeforeUnmount(() => {
           :key="link.id"
           :class="{ 'nav-cta': link.accent }"
           :href="`#${link.id}`"
-          :aria-current="currentPage === link.id ? 'page' : undefined"
-          @click.prevent="navigateToPage(link.id)"
+          :aria-current="isNavLinkCurrent(link) ? 'page' : undefined"
+          @click.prevent="navigateToNavLink(link)"
         >
           <Star v-if="link.accent" :size="18" aria-hidden="true" />
           <span>{{ link.label }}</span>
@@ -597,14 +691,14 @@ onBeforeUnmount(() => {
 
     <section id="download" class="hero" v-show="currentPage === 'download'" aria-labelledby="page-title">
       <div class="hero-copy-block">
-        <p class="kicker"><span aria-hidden="true"></span>支持 1800+ 平台，永久免费使用</p>
-        <h1 id="page-title" aria-label="复制链接，一键保存高清视频">
-          <span class="title-main">万能视频下载器，</span><span>一键保存</span>
+        <p class="kicker"><span aria-hidden="true"></span>支持 1800+ 平台，解析后自动总结</p>
+        <h1 id="page-title" aria-label="复制链接，一键保存高清视频并生成视频学习笔记">
+          <span class="title-main">万能视频下载总结器，</span><span>一键保存并总结</span>
         </h1>
-        <p class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 随时随地，想下就下。</p>
+        <p class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 下载、字幕、AI 总结和思维导图一次完成。</p>
       </div>
 
-      <section class="console" aria-label="视频下载控制台">
+      <section id="download-console" class="console" aria-label="视频下载控制台">
         <form class="search-panel" @submit.prevent="handleAnalyze">
           <label class="sr-only" for="video-url">视频链接</label>
           <div class="url-field">
@@ -724,19 +818,21 @@ onBeforeUnmount(() => {
 
         <ol v-if="!hasResult" class="workflow" aria-label="下载流程">
           <li><span>1</span>粘贴链接</li>
-          <li><span>2</span>智能解析</li>
-          <li><span>3</span>选择清晰度</li>
-          <li><span>4</span>一键保存</li>
+          <li><span>2</span>解析并自动总结</li>
+          <li><span>3</span>选择清晰度下载</li>
         </ol>
       </section>
 
       <div class="trust-strip" aria-label="产品亮点">
         <span><ShieldCheck :size="18" />无广告跳转</span>
-        <span><Zap :size="18" />批量任务</span>
+        <span><BrainCircuit :size="18" />AI 自动总结</span>
         <span><Sparkles :size="18" />高清画质</span>
       </div>
 
-      <section class="home-highlights" aria-label="核心亮点">
+      <section id="home-highlights" class="home-highlights" aria-label="核心能力">
+        <div class="home-section-header">
+          <p class="section-eyebrow">核心能力</p>
+        </div>
         <div class="highlights-grid">
           <article
             v-for="highlight in homeHighlights"
@@ -756,38 +852,62 @@ onBeforeUnmount(() => {
           </article>
         </div>
       </section>
-    </section>
 
-    <section id="platforms" class="section page-view" v-if="currentPage === 'platforms'">
-      <p class="kicker">覆盖你每天会遇到的视频来源</p>
-      <h2>从长视频到短视频，从公开视频到播放列表</h2>
-      <div class="platform-grid">
-        <span v-for="platform in platforms" :key="platform">{{ platform }}</span>
-      </div>
-      <p class="section-copy">抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。其他平台兼容能力基于 yt-dlp 的站点解析器，遇到登录态、地区限制或平台风控时，请稍后重试或改用公开视频链接。</p>
-    </section>
-
-    <section id="features" class="section page-view" v-if="currentPage === 'features'">
-      <p class="kicker">为什么它看起来值得付费</p>
-      <h2>不只是“能下”，而是把下载变成可靠工作流</h2>
-      <div class="feature-grid">
-        <article v-for="[title, text] in features" :key="title">
-          <CheckCircle2 :size="22" aria-hidden="true" />
-          <h3>{{ title }}</h3>
-          <p>{{ text }}</p>
-        </article>
-      </div>
+      <section id="home-faq" class="home-faq-summary" aria-label="常见问题与边界">
+        <div class="home-section-header">
+          <p class="section-eyebrow">常见问题与边界</p>
+        </div>
+        <div class="home-faq-grid">
+          <div class="compact-faq-list">
+            <article v-for="faq in compactFaqs" :key="faq.question" class="compact-faq-card">
+              <h3>{{ faq.question }}</h3>
+              <p>{{ faq.answer }}</p>
+            </article>
+          </div>
+          <aside class="compliance-summary" aria-labelledby="compliance-summary-title">
+            <ShieldCheck :size="24" aria-hidden="true" />
+            <div>
+              <h3 id="compliance-summary-title">公开视频和版权边界</h3>
+              <ul>
+                <li v-for="point in compactCompliancePoints" :key="point">{{ point }}</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
     </section>
 
     <section id="pricing" class="section pricing-section page-view" v-if="currentPage === 'pricing'">
-      <p class="kicker">轻量开始，需要时再升级</p>
-      <h2>免费版覆盖常用下载，高频任务可以切到 VIP 队列</h2>
-      <div class="pricing-card">
-        <div>
-          <h3>SaveAny VIP</h3>
-          <p>更高并发、批量队列、长视频优先处理，适合素材整理和内容运营。</p>
-        </div>
-        <a class="primary-button" href="#download" @click.prevent="navigateToPage('download')"><Star :size="20" aria-hidden="true" />开通 VIP</a>
+      <p class="kicker"><span aria-hidden="true"></span>轻量开始，需要时再升级</p>
+      <h2>按使用频率选择套餐，下载、字幕和 AI 总结一起规划</h2>
+      <p class="section-copy">套餐方案围绕公开视频处理量、AI 总结额度和团队协作设计。个人可以从免费版开始，高频学习和内容整理再升级。</p>
+
+      <div class="pricing-grid" aria-label="套餐方案">
+        <article v-for="plan in pricingPlans" :key="plan.id" class="pricing-card" :class="{ featured: plan.featured }" :data-plan="plan.id">
+          <div class="pricing-card-head">
+            <span class="plan-badge">{{ plan.badge }}</span>
+            <h3>{{ plan.name }}</h3>
+            <p>{{ plan.description }}</p>
+          </div>
+          <div class="plan-price">
+            <strong>{{ plan.price }}</strong>
+            <span>{{ plan.cycle }}</span>
+          </div>
+          <ul class="plan-feature-list">
+            <li v-for="feature in plan.features" :key="feature">
+              <CheckCircle2 :size="18" aria-hidden="true" />
+              <span>{{ feature }}</span>
+            </li>
+          </ul>
+          <a :class="plan.featured ? 'primary-button' : 'secondary-button'" :href="`#${plan.target}`" @click.prevent="navigateToPage(plan.target)">
+            <Star v-if="plan.featured" :size="20" aria-hidden="true" />
+            <span>{{ plan.cta }}</span>
+          </a>
+        </article>
+      </div>
+
+      <div class="pricing-assurance" aria-label="套餐边界说明">
+        <span v-for="item in pricingGuarantees" :key="item"><ShieldCheck :size="18" aria-hidden="true" />{{ item }}</span>
       </div>
     </section>
   </main>

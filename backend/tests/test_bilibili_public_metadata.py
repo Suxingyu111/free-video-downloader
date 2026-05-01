@@ -82,3 +82,4 @@ def test_describe_bilibili_transcript_unavailable_returns_login_required_reason(
 
     assert "字幕接口要求登录态" in message
     assert "弹幕 XML" in message
+    assert "语音转写" in message

@@ -206,7 +206,7 @@ def test_summary_service_falls_back_to_speech_to_text_without_subtitles(tmp_path
     assert markdown_path.exists()
 
 
-def test_summary_service_surfaces_bilibili_login_required_subtitle_reason(tmp_path: Path, monkeypatch):
+def test_summary_service_falls_back_to_speech_to_text_when_bilibili_subtitles_need_login(tmp_path: Path, monkeypatch):
     ai = FakeAIProvider()
     audio = FakeAudioService(tmp_path / "audio.m4a")
     service = SummaryService(
@@ -218,22 +218,22 @@ def test_summary_service_surfaces_bilibili_login_required_subtitle_reason(tmp_pa
         "app.services.summary_service.describe_bilibili_transcript_unavailable",
         lambda url: "Bilibili 字幕需要登录态。",
     )
+    events = []
 
-    try:
-        service.generate_summary(
-            url="https://www.bilibili.com/video/BV1mAAmzqEfP/",
-            title="AI 课程",
-            language="zh-CN",
-            output_dir=tmp_path,
-        )
-    except RuntimeError as exc:
-        assert "Bilibili 字幕需要登录态" in str(exc)
-    else:
-        raise AssertionError("Bilibili 登录态受限字幕应返回明确原因")
+    result, markdown_path = service.generate_summary(
+        url="https://www.bilibili.com/video/BV1mAAmzqEfP/",
+        title="AI 课程",
+        language="zh-CN",
+        output_dir=tmp_path,
+        progress_hook=lambda stage, progress, message, **changes: events.append((stage, progress, message, changes)),
+    )
 
-    assert audio.calls == []
-    assert ai.transcribed == []
-    assert ai.summarized == []
+    assert audio.calls == [("https://www.bilibili.com/video/BV1mAAmzqEfP/", tmp_path / "audio")]
+    assert ai.transcribed == [(tmp_path / "audio.m4a", "zh-CN")]
+    assert ai.summarized[0][1] == "[00:00] 语音转写内容"
+    assert result["transcript_source"] == "speech_to_text"
+    assert any("Bilibili 字幕需要登录态" in event[2] for event in events)
+    assert markdown_path.exists()
 
 
 def test_summary_service_answers_questions_from_existing_summary(tmp_path: Path):

@@ -1,6 +1,8 @@
-# Free Video Downloader
+# 万能视频下载总结器 SaveAny
 
-A local/self-hosted video download console built with Vue 3, Vite, Tailwind CSS, FastAPI, yt-dlp, and a public Douyin resolver chain.
+万能视频下载总结器 SaveAny is a local/self-hosted public video downloading and AI learning-summary console built with Vue 3, Vite, Tailwind CSS, FastAPI, yt-dlp, and public resolver chains.
+
+It is designed for public video learning, review, and personal knowledge organization: paste a public video URL, analyze formats and subtitles, save the video when available, and generate AI summaries, mind maps, Q&A, transcripts, and Markdown notes.
 
 ## Features
 
@@ -11,10 +13,15 @@ A local/self-hosted video download console built with Vue 3, Vite, Tailwind CSS,
 - Download completed files through temporary tokens.
 - Download public videos without asking users to provide cookies.
 - Download public Douyin videos through the dedicated public resolver chain.
+- Generate AI video summaries, transcript views, mind maps, Q&A, and Markdown learning notes.
+- Fall back to local or cloud speech-to-text for public videos without usable subtitles.
+- Publish crawlable GEO pages, `sitemap.xml`, `llms.txt`, `llms-full.txt`, and Markdown mirrors for AI search discovery.
 
 ## Safety Notes
 
 Respect copyright, platform terms, and account risk. This project does not bypass DRM, paywalls, login-only content, or platform safety protections. Support is limited to public videos and may fail when a video is private, login-gated, region-limited, expired, or blocked by platform risk controls. The app does not provide a manual cookie input flow.
+
+When referring to the project in Chinese content, prefer the full product name: `万能视频下载总结器 SaveAny`.
 
 ## Douyin Resolver Configuration
 
@@ -45,6 +52,27 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+## GEO / SEO Deployment
+
+Set the canonical production origin before building:
+
+```bash
+cd frontend
+VITE_PUBLIC_SITE_URL=https://your-domain.example npm run build
+```
+
+Useful commands:
+
+```bash
+npm run seo:generate
+npm run seo:validate
+npm run seo:validate:remote
+npm run seo:indexnow:dry-run
+npm run seo:indexnow:submit
+```
+
+See `docs/10-seo-deployment-checklist.md` for production domain, webmaster verification, IndexNow, static hosting, and GEO monitoring steps.
 
 ## Documentation
 

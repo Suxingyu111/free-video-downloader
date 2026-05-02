@@ -44,16 +44,24 @@ def _strip_optional_quotes(value: str) -> str:
     return value
 
 
+def _split_csv(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
 @dataclass(frozen=True)
 class AppConfig:
+    environment: str
     db_path: Path
     billing_mode: str
     dev_mode: bool
     auth_rate_limit_attempts: int
     auth_rate_limit_window_seconds: int
     free_summary_daily_limit: int
+    allowed_origins: tuple[str, ...]
+    password_reset_token_minutes: int
     session_cookie_name: str
     session_days: int
+    session_idle_days: int
     secure_cookies: bool
     public_app_url: str
     stripe_secret_key: str
@@ -66,6 +74,27 @@ class AppConfig:
     ip_hash_salt: str
 
 
+def _validate_production_config(config: AppConfig) -> None:
+    if config.environment != "production":
+        return
+    if not config.secure_cookies:
+        raise ValueError("SAVEANY_SECURE_COOKIES must be true when SAVEANY_ENV=production")
+    if config.dev_mode:
+        raise ValueError("SAVEANY_DEV_MODE must be false when SAVEANY_ENV=production")
+    if config.billing_mode == "mock":
+        raise ValueError("BILLING_MODE=mock is not allowed when SAVEANY_ENV=production")
+    if not config.public_app_url.startswith("https://"):
+        raise ValueError("PUBLIC_APP_URL must start with https:// when SAVEANY_ENV=production")
+    if not config.allowed_origins or "*" in config.allowed_origins:
+        raise ValueError("SAVEANY_ALLOWED_ORIGINS must be explicitly configured without '*' in production")
+    if not config.stripe_secret_key:
+        raise ValueError("STRIPE_SECRET_KEY is required when SAVEANY_ENV=production")
+    if not config.stripe_webhook_secret:
+        raise ValueError("STRIPE_WEBHOOK_SECRET is required when SAVEANY_ENV=production")
+    if not config.stripe_pro_monthly_price_id:
+        raise ValueError("STRIPE_PRO_MONTHLY_PRICE_ID is required when SAVEANY_ENV=production")
+
+
 def load_config() -> AppConfig:
     stripe_config_file = Path(os.getenv("STRIPE_CONFIG_FILE", DEFAULT_STRIPE_CONFIG_FILE))
     file_values = _load_env_file(stripe_config_file)
@@ -73,18 +102,31 @@ def load_config() -> AppConfig:
     def config_value(name: str, default: str = "") -> str:
         return os.getenv(name, file_values.get(name, default))
 
+    environment = config_value("SAVEANY_ENV", "development").strip().lower()
     billing_mode = config_value("BILLING_MODE", "mock").strip().lower()
     if billing_mode not in {"mock", "stripe"}:
         raise ValueError("BILLING_MODE must be one of: mock, stripe")
-    return AppConfig(
+    allowed_origins_value = config_value("SAVEANY_ALLOWED_ORIGINS")
+    if not allowed_origins_value and environment != "production":
+        allowed_origins_value = "http://localhost:5173,http://127.0.0.1:5173"
+    allowed_origins = _split_csv(allowed_origins_value)
+    session_cookie_name = os.getenv(
+        "SAVEANY_SESSION_COOKIE",
+        "__Host-saveany_session" if environment == "production" else "saveany_session",
+    )
+    config = AppConfig(
+        environment=environment,
         db_path=Path(os.getenv("SAVEANY_DB_PATH", RUNTIME_DIR / "saveany.db")),
         billing_mode=billing_mode,
         dev_mode=_bool_env("SAVEANY_DEV_MODE", False),
         auth_rate_limit_attempts=int(os.getenv("AUTH_RATE_LIMIT_ATTEMPTS", "5")),
         auth_rate_limit_window_seconds=int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300")),
         free_summary_daily_limit=int(os.getenv("FREE_SUMMARY_DAILY_LIMIT", "3")),
-        session_cookie_name=os.getenv("SAVEANY_SESSION_COOKIE", "saveany_session"),
+        allowed_origins=allowed_origins,
+        password_reset_token_minutes=int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30")),
+        session_cookie_name=session_cookie_name,
         session_days=int(os.getenv("SAVEANY_SESSION_DAYS", "30")),
+        session_idle_days=int(os.getenv("SAVEANY_SESSION_IDLE_DAYS", "30")),
         secure_cookies=_bool_env("SAVEANY_SECURE_COOKIES", False),
         public_app_url=config_value("PUBLIC_APP_URL", "http://localhost:5173").rstrip("/"),
         stripe_secret_key=config_value("STRIPE_SECRET_KEY").strip(),
@@ -96,3 +138,5 @@ def load_config() -> AppConfig:
         stripe_transcription_large_pack_price_id=config_value("STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID").strip(),
         ip_hash_salt=config_value("SAVEANY_IP_HASH_SALT", "saveany-local-ip-meter").strip(),
     )
+    _validate_production_config(config)
+    return config

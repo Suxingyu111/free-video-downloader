@@ -7,6 +7,7 @@ from app.services import database
 from app.services.auth_service import create_user, get_user_by_id
 from app.services.billing_service import activate_mock_subscription
 from app.services.entitlements import get_usage_summary, reserve_summary_quota
+from app.services.analysis_store import analysis_store
 from app.services.summary_store import SummaryStore
 
 
@@ -107,8 +108,23 @@ def register(client, email):
     )
 
 
-def summary_payload(url, **overrides):
-    payload = {"url": url, "title": "Demo", "language": "zh-CN", "duration": 120}
+def seed_analysis_snapshot(url, *, duration=120, webpage_url=None):
+    analysis_store.create(
+        url,
+        {
+            "kind": "video",
+            "id": "summary-test-video",
+            "title": "Demo",
+            "webpage_url": webpage_url or url,
+            "duration": duration,
+            "entries": [],
+        },
+    )
+
+
+def summary_payload(url, *, server_duration=120, webpage_url=None, **overrides):
+    seed_analysis_snapshot(url, duration=server_duration, webpage_url=webpage_url)
+    payload = {"url": url, "title": "Demo", "language": "zh-CN"}
     payload.update(overrides)
     return payload
 
@@ -200,12 +216,9 @@ def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkey
 
     first = client.post(
         "/api/summaries",
-        json={
-            "url": "https://www.bilibili.com/video/BV14b411Z7QY/?spm_id_from=333.337.search-card.all.click&vd_source=abc",
-            "title": "Demo",
-            "language": "zh-CN",
-            "duration": 120,
-        },
+        json=summary_payload(
+            "https://www.bilibili.com/video/BV14b411Z7QY/?spm_id_from=333.337.search-card.all.click&vd_source=abc"
+        ),
     )
     first_summary_id = first.json()["summary_id"]
     wait_for_status(client, first_summary_id, "completed")
@@ -294,6 +307,50 @@ def test_uncached_summary_without_duration_returns_400_without_consuming_quota(m
     assert usage["used_today"] == 0
     assert usage["remaining_today"] == 3
     assert fake.calls == []
+
+
+def test_summary_uses_server_analysis_duration_not_client_duration(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload(
+            "https://example.com/spoofed-short-duration",
+            server_duration=31 * 60,
+            duration=1,
+        ),
+    )
+    usage = client.get("/api/me").json()["usage"]
+
+    assert response.status_code == 402
+    assert "30 分钟" in response.json()["detail"]
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+    assert fake.calls == []
+
+
+def test_summary_can_use_canonical_url_from_analysis_snapshot_without_duration(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+    submitted_url = "https://example.com/watch?id=raw"
+    canonical_url = "https://example.com/watch/canonical"
+    seed_analysis_snapshot(submitted_url, duration=120, webpage_url=canonical_url)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": canonical_url, "title": "Demo", "language": "zh-CN"},
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    assert response.status_code == 200
+    assert response.json()["cache_hit"] is False
+    assert fake.calls[0][0] == canonical_url
 
 
 def test_cached_summary_remains_accessible_after_free_quota_exhausted(monkeypatch, isolated_summary_store):
@@ -639,6 +696,35 @@ def test_second_user_cannot_ask_question_on_owned_summary(monkeypatch, isolated_
     assert answer.json()["detail"] == "无权访问这个 AI 总结。"
 
 
+def test_second_user_does_not_receive_first_users_cached_summary(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+    url = "https://example.com/shared-owned-cache"
+
+    first = client.post(
+        "/api/summaries",
+        json=summary_payload(url),
+    )
+    first_summary_id = first.json()["summary_id"]
+    wait_for_status(client, first_summary_id, "completed")
+    client.post("/api/auth/logout")
+    register(client, "summary-cache-other@example.com")
+
+    second = client.post(
+        "/api/summaries",
+        json={"url": url, "title": "Demo", "language": "zh-CN"},
+    )
+    second_summary_id = second.json()["summary_id"]
+    wait_for_status(client, second_summary_id, "completed")
+
+    assert second.status_code == 200
+    assert second.json()["cache_hit"] is False
+    assert second_summary_id != first_summary_id
+    assert len(fake.calls) == 2
+
+
 def test_free_user_summary_duration_limit(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
@@ -647,7 +733,7 @@ def test_free_user_summary_duration_limit(monkeypatch, isolated_summary_store):
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/long-free-video", "title": "Demo", "language": "zh-CN", "duration": 31 * 60},
+        json=summary_payload("https://example.com/long-free-video", server_duration=31 * 60),
     )
 
     assert response.status_code == 402

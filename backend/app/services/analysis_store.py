@@ -38,6 +38,17 @@ class AnalysisStore:
             self._prune_locked(now)
             return self._items.get(token)
 
+    def find_by_url(self, url: str | None) -> AnalysisSnapshot | None:
+        if not url:
+            return None
+        now = time()
+        with self._lock:
+            self._prune_locked(now)
+            for item in reversed(list(self._items.values())):
+                if item.url == url or item.result.get("webpage_url") == url:
+                    return item
+        return None
+
     def _prune_locked(self, now: float) -> None:
         expired = [token for token, item in self._items.items() if now - item.created_at > ANALYSIS_TOKEN_TTL_SECONDS]
         for token in expired:

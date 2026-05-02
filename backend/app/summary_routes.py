@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.auth_routes import current_user
 from app.services.auth_service import User
+from app.services.analysis_store import analysis_store
 from app.services.entitlements import (
     QuotaExceeded,
     get_usage_summary,
@@ -101,15 +102,21 @@ def get_summary_service() -> SummaryService:
     return summary_service
 
 
-def _summary_duration_seconds(payload: SummaryRequest, seed_result: dict | None) -> float | None:
-    if payload.duration is not None:
-        return payload.duration
-    if seed_result is None:
+def _numeric_duration(value: object) -> float | None:
+    if not isinstance(value, int | float) or isinstance(value, bool):
         return None
-    duration = seed_result.get("duration")
-    if isinstance(duration, int | float) and not isinstance(duration, bool):
-        return float(duration)
-    return None
+    return float(value)
+
+
+def _summary_duration_seconds(payload: SummaryRequest, seed_result: dict | None) -> float | None:
+    if seed_result is not None:
+        duration = _numeric_duration(seed_result.get("duration"))
+        if duration is not None:
+            return duration
+    snapshot = analysis_store.find_by_url(payload.url)
+    if snapshot is None:
+        return None
+    return _numeric_duration(snapshot.result.get("duration"))
 
 
 @router.post("")
@@ -118,7 +125,8 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
     cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
     seed_result = None
     if cached_task is not None:
-        if not payload.force:
+        cached_owned_by_other = bool(cached_task.owner_user_id and cached_task.owner_user_id != user.id)
+        if not payload.force and not cached_owned_by_other:
             usage = get_usage_summary(user)
             return {
                 "summary_id": cached_task.id,
@@ -126,7 +134,9 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
                 "status": cached_task.status,
                 "usage": usage.as_dict(),
             }
-        if cached_task.status == "completed" and cached_task.result:
+        if cached_owned_by_other:
+            cached_task = None
+        elif cached_task.status == "completed" and cached_task.result:
             seed_result = cached_task.result
 
     summary_id = f"summary_{secrets.token_urlsafe(10)}"

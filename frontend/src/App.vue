@@ -177,6 +177,7 @@ const state = reactive({
   summaryGate: "",
   tasks: [],
   checkoutStatus: "",
+  checkoutPurchaseType: "",
   checkoutConfirming: false,
   checkoutConfirmedSessionId: "",
   billingBusy: false,
@@ -203,6 +204,7 @@ if (typeof window !== "undefined") {
   state.currentPage = normalizePageHash(window.location.hash);
   state.activeAnchor = state.currentPage === HOME_PAGE_ID ? normalizeHomeAnchorHash(window.location.hash) : "";
   state.checkoutStatus = hashParams(window.location.hash).get("checkout") || "";
+  state.checkoutPurchaseType = hashParams(window.location.hash).get("purchase_type") || "";
 }
 
 watch(
@@ -240,6 +242,8 @@ const authSubmitLabel = computed(() => {
   return "登录";
 });
 const checkoutNotice = computed(() => {
+  if (state.checkoutStatus === "success" && state.checkoutPurchaseType === "credit_pack") return "按量包支付已返回，额度会自动同步。";
+  if (state.checkoutStatus === "cancel" && state.checkoutPurchaseType === "credit_pack") return "已取消按量包支付，可以稍后重新购买。";
   if (state.checkoutStatus === "success" && state.checkoutConfirming) return "正在确认支付，请稍等。";
   if (state.checkoutStatus === "success" && auth.membership?.active) return "专业版已开通。";
   if (state.checkoutStatus === "success") return "正在确认会员状态，请稍等几秒。";
@@ -373,9 +377,14 @@ async function syncCurrentPageFromHash() {
   state.currentPage = nextPage;
   state.activeAnchor = nextAnchor;
   state.checkoutStatus = params.get("checkout") || "";
+  state.checkoutPurchaseType = params.get("purchase_type") || "";
   if (state.checkoutStatus === "success") {
-    await refreshMe({ silent: true });
-    await confirmCheckoutReturn();
+    if (state.checkoutPurchaseType === "credit_pack") {
+      await handleCreditPackCheckoutReturn();
+    } else {
+      await refreshMe({ silent: true });
+      await confirmCheckoutReturn();
+    }
   }
   await nextTick();
   if (nextAnchor) {
@@ -410,6 +419,7 @@ async function navigateToPage(pageId) {
   state.currentPage = nextPage;
   state.activeAnchor = "";
   state.checkoutStatus = "";
+  state.checkoutPurchaseType = "";
   if (typeof window === "undefined") return;
 
   const nextHash = `#${nextPage}`;
@@ -526,7 +536,11 @@ async function submitAuth() {
     await refreshMe({ silent: true });
     state.billingMessage = "";
     if (state.checkoutStatus === "success") {
-      await confirmCheckoutReturn({ force: true });
+      if (state.checkoutPurchaseType === "credit_pack") {
+        await handleCreditPackCheckoutReturn({ force: true });
+      } else {
+        await confirmCheckoutReturn({ force: true });
+      }
     }
     authForm.open = false;
     authForm.password = "";
@@ -548,6 +562,7 @@ async function logout() {
   } finally {
     state.billingMessage = "";
     state.checkoutStatus = "";
+    state.checkoutPurchaseType = "";
     state.checkoutConfirming = false;
     state.checkoutConfirmedSessionId = "";
     if (typeof window !== "undefined" && hashParams(window.location.hash).get("checkout")) updateHash("#pricing");
@@ -639,6 +654,8 @@ async function handleProPlanAction() {
 async function confirmCheckoutReturn({ force = false } = {}) {
   if (typeof window === "undefined") return;
   const params = hashParams(window.location.hash);
+  state.checkoutPurchaseType = params.get("purchase_type") || state.checkoutPurchaseType;
+  if (state.checkoutPurchaseType === "credit_pack") return;
   const sessionId = params.get("session_id") || "";
   if (state.checkoutStatus !== "success" || !sessionId) return;
   if (!force && state.checkoutConfirmedSessionId === sessionId) return;
@@ -681,6 +698,18 @@ async function confirmCheckoutReturn({ force = false } = {}) {
     state.checkoutConfirming = false;
     state.billingBusy = false;
   }
+}
+
+async function handleCreditPackCheckoutReturn({ force = false } = {}) {
+  if (typeof window === "undefined") return;
+  const params = hashParams(window.location.hash);
+  const sessionId = params.get("session_id") || "";
+  if (!force && sessionId && state.checkoutConfirmedSessionId === sessionId) return;
+  await refreshMe({ silent: true });
+  if (sessionId) state.checkoutConfirmedSessionId = sessionId;
+  state.checkoutConfirming = false;
+  state.billingBusy = false;
+  state.billingMessage = "按量包支付已返回，额度会自动同步。";
 }
 
 async function runMockBilling(action) {

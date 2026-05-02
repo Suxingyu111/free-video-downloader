@@ -260,6 +260,20 @@ test("quota and billing feedback are unified into status panels", () => {
   assert.match(mainCss, /\.summary-upgrade-card\s*\{/);
 });
 
+test("credit pack checkout return skips subscription confirmation", () => {
+  assert.match(appSource, /checkoutPurchaseType:\s*""/);
+  assert.match(appSource, /state\.checkoutPurchaseType = params\.get\("purchase_type"\) \|\| ""/);
+  assert.match(appSource, /async function handleCreditPackCheckoutReturn/);
+  assert.match(appSource, /state\.checkoutPurchaseType === "credit_pack"[\s\S]*await handleCreditPackCheckoutReturn\(\)/);
+  assert.match(appSource, /if \(state\.checkoutPurchaseType === "credit_pack"\) return/);
+  assert.match(appSource, /按量包支付已返回，额度会自动同步。/);
+  assert.match(appSource, /已取消按量包支付，可以稍后重新购买。/);
+  assert.doesNotMatch(
+    appSource,
+    /state\.checkoutPurchaseType === "credit_pack"[\s\S]{0,200}confirmBillingCheckout/
+  );
+});
+
 test("completed downloads stay bound to the selected format", () => {
   assert.match(appSource, /currentTask\.value\.format_id === state\.selectedFormatId/);
   assert.match(appSource, /registerTask\(taskId,\s*state\.selectedFormatId\)/);

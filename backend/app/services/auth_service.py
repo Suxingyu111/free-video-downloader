@@ -203,6 +203,22 @@ def revoke_session(token: str | None, reason: str | None = None) -> None:
         )
 
 
+def _revoke_user_sessions(conn, user_id: str, reason: str, revoked_at: float) -> None:
+    conn.execute(
+        """
+        update sessions
+        set revoked_at = ?, revoked_reason = ?
+        where user_id = ? and revoked_at is null
+        """,
+        (revoked_at, reason, user_id),
+    )
+
+
+def revoke_user_sessions(user_id: str, reason: str) -> None:
+    with transaction() as conn:
+        _revoke_user_sessions(conn, user_id, reason, time())
+
+
 def create_password_reset_token(email: str) -> str | None:
     normalized = normalize_email(email)
     conn = connect()
@@ -217,6 +233,16 @@ def create_password_reset_token(email: str) -> str | None:
     with transaction() as conn:
         conn.execute(
             """
+            update password_reset_tokens
+            set revoked_at = ?
+            where user_id = ?
+              and used_at is null
+              and revoked_at is null
+            """,
+            (now, user["id"]),
+        )
+        conn.execute(
+            """
             insert into password_reset_tokens (id, user_id, token_hash, expires_at, created_at)
             values (?, ?, ?, ?, ?)
             """,
@@ -224,7 +250,7 @@ def create_password_reset_token(email: str) -> str | None:
                 f"reset_{secrets.token_urlsafe(12)}",
                 user["id"],
                 _hash_token(token),
-                now + 3600,
+                now + load_config().password_reset_token_minutes * 60,
                 now,
             ),
         )
@@ -240,7 +266,10 @@ def reset_password(token: str, password: str) -> bool:
         row = conn.execute(
             """
             select * from password_reset_tokens
-            where token_hash = ? and used_at is null and expires_at > ?
+            where token_hash = ?
+              and used_at is null
+              and revoked_at is null
+              and expires_at > ?
             """,
             (token_hash, now),
         ).fetchone()
@@ -254,4 +283,5 @@ def reset_password(token: str, password: str) -> bool:
             "update password_reset_tokens set used_at = ? where token_hash = ?",
             (now, token_hash),
         )
+        _revoke_user_sessions(conn, row["user_id"], "password_reset", now)
     return True

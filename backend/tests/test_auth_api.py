@@ -345,3 +345,127 @@ def test_password_reset_token_is_single_use(monkeypatch, tmp_path):
 
     assert first.status_code == 200
     assert second.status_code == 400
+
+
+def test_password_reset_token_ttl_follows_config(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    monkeypatch.setenv("SAVEANY_DEV_MODE", "true")
+    monkeypatch.setenv("PASSWORD_RESET_TOKEN_MINUTES", "2")
+    database.initialize_database(db_path)
+    client = TestClient(app)
+    register_with_csrf(client, "user@example.com", "old-password-123")
+
+    response = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "user@example.com"},
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    conn = database.connect(db_path)
+    try:
+        row = conn.execute(
+            "select created_at, expires_at from password_reset_tokens"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["expires_at"] - row["created_at"] == 120
+
+
+def test_password_reset_revokes_existing_sessions(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    monkeypatch.setenv("SAVEANY_DEV_MODE", "true")
+    database.initialize_database(db_path)
+    client = TestClient(app)
+    register_with_csrf(client, "user@example.com", "old-password-123")
+
+    request = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "user@example.com"},
+        headers=csrf_headers(client),
+    )
+    assert request.status_code == 200
+    token = request.json()["reset_token"]
+
+    confirm = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": token, "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+
+    assert confirm.status_code == 200
+    assert client.get("/api/me").status_code == 401
+    conn = database.connect(db_path)
+    try:
+        row = conn.execute(
+            "select revoked_at, revoked_reason from sessions"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["revoked_at"] is not None
+    assert row["revoked_reason"] == "password_reset"
+
+
+def test_password_reset_confirm_is_rate_limited(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ATTEMPTS", "2")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": "bad-token", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+    second = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": "bad-token", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+    blocked = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": "bad-token", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+
+    assert first.status_code == 400
+    assert second.status_code == 400
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "操作太频繁，请稍后再试"
+
+
+def test_password_reset_request_revokes_previous_unused_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEV_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    register_with_csrf(client, "user@example.com", "old-password-123")
+
+    first_request = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "user@example.com"},
+        headers=csrf_headers(client),
+    )
+    second_request = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "user@example.com"},
+        headers=csrf_headers(client),
+    )
+    assert first_request.status_code == 200
+    assert second_request.status_code == 200
+
+    revoked_confirm = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": first_request.json()["reset_token"], "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+    current_confirm = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": second_request.json()["reset_token"], "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+
+    assert revoked_confirm.status_code == 400
+    assert current_confirm.status_code == 200

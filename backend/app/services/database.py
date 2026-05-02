@@ -42,6 +42,7 @@ create table if not exists password_reset_tokens (
   token_hash text not null unique,
   expires_at real not null,
   used_at real,
+  revoked_at real,
   created_at real not null
 );
 
@@ -122,6 +123,7 @@ def initialize_database(db_path: Path | str | None = None) -> None:
         _migrate_stripe_events(conn)
         _migrate_billing_attempts(conn)
         _migrate_sessions(conn)
+        _migrate_password_reset_tokens(conn)
         conn.commit()
     finally:
         conn.close()
@@ -171,6 +173,15 @@ def _migrate_sessions(conn: sqlite3.Connection) -> None:
         conn.execute("alter table sessions add column user_agent_hash text")
     if "rotated_from_session_id" not in columns:
         conn.execute("alter table sessions add column rotated_from_session_id text")
+
+
+def _migrate_password_reset_tokens(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute("pragma table_info(password_reset_tokens)").fetchall()
+    }
+    if "revoked_at" not in columns:
+        conn.execute("alter table password_reset_tokens add column revoked_at real")
 
 
 @contextmanager

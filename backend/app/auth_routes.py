@@ -64,6 +64,11 @@ def _rate_limit_keys(action: str, request: Request, email: str) -> list[str]:
     return [f"auth:{action}:ip:{_client_ip(request)}", f"auth:{action}:email:{normalized}"]
 
 
+def _password_reset_confirm_rate_limit_keys(request: Request, token: str) -> list[str]:
+    token_prefix = token[:12] or "empty"
+    return [f"auth:password-reset-confirm:ip-token:{_client_ip(request)}:{token_prefix}"]
+
+
 def _assert_auth_rate_limit(action: str, request: Request, email: str) -> list[str]:
     config = load_config()
     keys = _rate_limit_keys(action, request, email)
@@ -218,10 +223,24 @@ def request_password_reset(payload: PasswordResetRequest, request: Request) -> d
 @router.post("/auth/password-reset/confirm")
 def confirm_password_reset(payload: PasswordResetConfirm, request: Request) -> dict[str, bool]:
     _assert_prelogin_csrf(request)
+    keys = _password_reset_confirm_rate_limit_keys(request, payload.token)
+    config = load_config()
+    try:
+        for key in keys:
+            assert_rate_limit_allowed(
+                key,
+                limit=config.auth_rate_limit_attempts,
+                window_seconds=config.auth_rate_limit_window_seconds,
+            )
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     try:
         changed = reset_password(payload.token, payload.password)
     except ValueError as exc:
+        _record_auth_rate_limit(keys)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not changed:
+        _record_auth_rate_limit(keys)
         raise HTTPException(status_code=400, detail="重置链接无效或已过期")
+    _clear_auth_rate_limit(keys)
     return {"ok": True}

@@ -1,14 +1,18 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 import pytest
 
 from app.main import app
 from app import summary_routes
-from app.services import database
+from app.services import database, summary_service as summary_service_module
 from app.services.auth_service import create_user, get_user_by_id
 from app.services.billing_service import activate_mock_subscription
 from app.services.entitlements import get_usage_summary, reserve_summary_quota
 from app.services.analysis_store import analysis_store
+from app.services.plan_catalog import MeterType
 from app.services.summary_store import SummaryStore
+from app.services.usage_meter import entitlement_status, reserve_user_meter
 
 
 class FakeSummaryService:
@@ -76,6 +80,22 @@ class SpeechToTextSummaryService(FakeSummaryService):
         )
 
 
+class SpeechToTextFailingSummaryService(FakeSummaryService):
+    def __init__(self, transcription_seconds=125):
+        super().__init__()
+        self.transcription_seconds = transcription_seconds
+
+    def generate_summary(self, *, url, title, language, output_dir, progress_hook=None, seed_result=None):
+        if progress_hook:
+            progress_hook(
+                "speech_to_text",
+                30,
+                "Extracting audio for speech-to-text",
+                transcription_seconds=self.transcription_seconds,
+            )
+        raise RuntimeError("summary boom")
+
+
 class FailingSummaryService:
     def generate_summary(self, **_kwargs):
         raise RuntimeError("summary boom")
@@ -105,6 +125,45 @@ class StartFailingThread:
 
     def start(self):
         raise RuntimeError("thread start boom")
+
+
+class NoTranscriptService:
+    def fetch_transcript(self, url, output_dir):
+        return None
+
+
+class FakeAudioService:
+    def extract_audio(self, url, output_dir):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = output_dir / "audio.wav"
+        audio_path.write_bytes(b"fake audio")
+        return audio_path
+
+
+class CountingTranscriptionProvider:
+    def __init__(self):
+        self.calls = []
+
+    def transcribe_audio(self, audio_path, language):
+        self.calls.append((Path(audio_path).name, language))
+        return "[00:01] 测试转写"
+
+
+class FakeAIProvider:
+    def summarize_transcript(self, *, title, transcript, language, stream_hook=None):
+        return {
+            "overview": "测试概览",
+            "outline": [],
+            "key_points": ["测试要点"],
+            "highlights": [],
+            "terms": [],
+            "questions": [],
+            "mind_map": {"title": "测试概览", "children": []},
+            "qa_pairs": [],
+        }
+
+    def answer_question(self, *, title, transcript, summary, question, language):
+        return f"回答：{question}"
 
 
 @pytest.fixture()
@@ -588,6 +647,49 @@ def test_interrupted_summary_quota_refund_is_idempotent(monkeypatch, isolated_su
     assert reservation["refunded_at"] is not None
 
 
+def test_interrupted_summary_refunds_transcription_reservation_idempotently(monkeypatch, isolated_summary_store):
+    user = create_user("restart-transcription@example.com", "summary-password")
+    summary_id = "summary_interrupted_transcription_video"
+    transcription_reservation_id = f"{summary_id}_transcription"
+    reserve_summary_quota(user, summary_id)
+    reserve_user_meter(
+        user,
+        MeterType.TRANSCRIPTION_MINUTES,
+        4,
+        reservation_id=transcription_reservation_id,
+    )
+
+    task = isolated_summary_store.create_task(
+        "https://example.com/interrupted-transcription-video",
+        title="Demo",
+        language="zh-CN",
+        quota_user_id=user.id,
+        task_id=summary_id,
+    )
+    isolated_summary_store.update_task(task.id, status="summarizing", stage="summary")
+
+    restarted_store = SummaryStore(isolated_summary_store.base_dir)
+    monkeypatch.setattr(summary_routes, "summary_store", restarted_store)
+
+    summary_routes.refund_interrupted_summary_quotas()
+    summary_routes.refund_interrupted_summary_quotas()
+
+    status = entitlement_status(user)
+    restarted_task = restarted_store.get_task(task.id)
+
+    assert restarted_task.quota_refunded_at is not None
+    assert status["meters"]["summary"]["used"] == 0
+    assert status["meters"]["transcription_minutes"]["used"] == 0
+    assert status["meters"]["transcription_minutes"]["remaining"] == 30
+    with database.connect() as conn:
+        reservation = conn.execute(
+            "select status, refunded_at from meter_reservations where reservation_id = ?",
+            (transcription_reservation_id,),
+        ).fetchone()
+    assert reservation["status"] == "refunded"
+    assert reservation["refunded_at"] is not None
+
+
 def test_summary_response_hides_internal_quota_metadata(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
@@ -887,6 +989,96 @@ def test_speech_to_text_fractional_seconds_round_up_minutes(monkeypatch, isolate
 
     assert usage["meters"]["transcription_minutes"]["used"] == 2
     assert usage["meters"]["transcription_minutes"]["remaining"] == 28
+
+
+def test_speech_to_text_quota_failure_blocks_preview_and_full_transcription(monkeypatch, isolated_summary_store):
+    transcription_provider = CountingTranscriptionProvider()
+    service = summary_service_module.SummaryService(
+        transcript_service=NoTranscriptService(),
+        audio_service=FakeAudioService(),
+        ai_provider=FakeAIProvider(),
+        transcription_provider=transcription_provider,
+    )
+
+    def create_preview(audio_path, output_dir, *, seconds=None):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        preview_path = output_dir / "preview.wav"
+        preview_path.write_bytes(b"fake preview")
+        return preview_path
+
+    monkeypatch.setattr(summary_routes, "summary_service", service)
+    monkeypatch.setattr(summary_service_module, "create_audio_preview_clip", create_preview)
+    monkeypatch.setattr(summary_service_module, "estimate_audio_duration_seconds", lambda audio_path: 31 * 60)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/stt-quota-exceeded-before-preview", server_duration=120),
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(client, summary_id, "failed")
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 200
+    assert snapshot["status"] == "failed"
+    assert transcription_provider.calls == []
+    assert status["meters"]["summary"]["used"] == 0
+    assert status["meters"]["transcription_minutes"]["used"] == 0
+    with database.connect() as conn:
+        reservation = conn.execute(
+            "select status from meter_reservations where reservation_id = ?",
+            (f"{summary_id}_transcription",),
+        ).fetchone()
+    assert reservation is None
+
+
+def test_speech_to_text_summary_failure_refunds_summary_and_transcription_minutes(monkeypatch, isolated_summary_store):
+    monkeypatch.setattr(summary_routes, "summary_service", SpeechToTextFailingSummaryService(125))
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/stt-summary-fails-after-reservation", server_duration=125),
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(client, summary_id, "failed")
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 200
+    assert snapshot["status"] == "failed"
+    assert status["meters"]["summary"]["used"] == 0
+    assert status["meters"]["transcription_minutes"]["used"] == 0
+    assert status["meters"]["transcription_minutes"]["remaining"] == 30
+    with database.connect() as conn:
+        reservation = conn.execute(
+            "select status, refunded_at from meter_reservations where reservation_id = ?",
+            (f"{summary_id}_transcription",),
+        ).fetchone()
+    assert reservation["status"] == "refunded"
+    assert reservation["refunded_at"] is not None
+
+
+@pytest.mark.parametrize("raw_duration", ["nan", "inf"])
+def test_transcription_duration_estimate_non_finite_values_fall_back_to_one_minute(
+    monkeypatch,
+    tmp_path,
+    raw_duration,
+):
+    class Result:
+        stdout = raw_duration
+
+    monkeypatch.setattr(
+        summary_service_module.subprocess,
+        "run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    seconds = summary_service_module.estimate_audio_duration_seconds(tmp_path / "audio.wav")
+
+    assert seconds == 1.0
+    assert summary_routes._transcription_minutes_from_seconds(seconds) == 1
 
 
 def test_unknown_summary_task_returns_404():

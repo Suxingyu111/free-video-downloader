@@ -217,6 +217,10 @@ def refund_interrupted_summary_quotas() -> None:
         if not task.quota_user_id:
             continue
         try:
+            refund_reservation(f"{task.id}_transcription")
+        except Exception:
+            pass
+        try:
             refund_summary_quota_reservation(task.id)
             summary_store.mark_quota_refunded(task.id)
         except Exception:

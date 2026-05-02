@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -96,6 +97,13 @@ class SummaryService:
             audio_path = self.audio_service.extract_audio(url, output_dir / "audio")
             transcription_seconds = estimate_audio_duration_seconds(audio_path)
             if progress_hook:
+                emit_summary_progress(
+                    progress_hook,
+                    "speech_to_text",
+                    32,
+                    "Speech-to-text minutes required",
+                    transcription_seconds=transcription_seconds,
+                )
                 preview_transcript = self._try_build_speech_preview_draft(
                     audio_path=audio_path,
                     output_dir=output_dir,
@@ -104,13 +112,6 @@ class SummaryService:
                     progress_hook=progress_hook,
                 )
                 message = "Transcribing full audio" if preview_transcript else "Transcribing audio"
-                emit_summary_progress(
-                    progress_hook,
-                    "speech_to_text",
-                    46,
-                    "Speech-to-text minutes required",
-                    transcription_seconds=transcription_seconds,
-                )
                 emit_summary_progress(progress_hook, "speech_to_text", 48, message)
             transcribed_text = self.transcription_provider.transcribe_audio(audio_path, language)
             segments = segments_from_transcribed_text(transcribed_text)
@@ -358,7 +359,10 @@ def estimate_audio_duration_seconds(audio_path: Path) -> float:
     ]
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=20)
-        return max(float(result.stdout.strip() or "0"), 1.0)
+        duration = float(result.stdout.strip() or "0")
+        if not math.isfinite(duration) or duration <= 0:
+            return 1.0
+        return max(duration, 1.0)
     except (OSError, ValueError, subprocess.SubprocessError):
         return 1.0
 

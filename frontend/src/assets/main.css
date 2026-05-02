@@ -334,10 +334,25 @@ textarea:focus-visible {
 
 .account-quota-track span {
   display: block;
-  width: 62%;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--color-accent), rgba(249, 115, 22, 0.5));
+}
+
+.account-quota-list {
+  display: grid;
+  gap: 10px;
+}
+
+.account-quota-row {
+  display: grid;
+  gap: 6px;
+}
+
+.account-quota-row > span {
+  color: var(--color-paper-muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .account-menu-row {
@@ -1318,8 +1333,8 @@ select {
 .pricing-grid {
   display: grid;
   margin-top: 34px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
   align-items: stretch;
 }
 
@@ -1351,11 +1366,6 @@ select {
 .pricing-card[data-plan="pro"] .plan-badge {
   background: var(--color-bg);
   color: var(--color-accent);
-}
-
-.pricing-card[data-plan="team"] .plan-badge {
-  background: rgba(71, 85, 105, 0.12);
-  color: #334155;
 }
 
 .pricing-card-head {
@@ -1490,6 +1500,64 @@ select {
 
 .pricing-assurance svg {
   color: #4d7c0f;
+}
+
+.credit-pack-section {
+  width: min(100%, 1180px);
+  margin: 28px auto 0;
+}
+
+.credit-pack-head {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.credit-pack-head h3 {
+  margin: 0;
+  color: var(--color-paper-text);
+  font-size: 1.15rem;
+}
+
+.credit-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.credit-pack-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-paper-line);
+  border-radius: 8px;
+  background: var(--color-paper-surface);
+  padding: 16px;
+}
+
+.credit-pack-card h4,
+.credit-pack-card p {
+  margin: 0;
+}
+
+.credit-pack-card h4 {
+  color: var(--color-paper-text);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.credit-pack-card strong {
+  color: var(--color-paper-text);
+  font-size: 1.55rem;
+}
+
+.credit-pack-card p {
+  color: var(--color-paper-muted);
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.credit-pack-card small {
+  color: var(--color-muted);
 }
 
 .billing-status-panel {
@@ -1703,6 +1771,13 @@ select {
   .summary-upgrade-card .primary-button,
   .summary-gate-actions {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .pricing-grid,
+  .credit-pack-grid {
+    grid-template-columns: 1fr;
   }
 }
 

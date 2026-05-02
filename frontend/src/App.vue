@@ -33,6 +33,7 @@ import {
   createDownloadTask,
   createSummaryTask,
   getBillingStatus,
+  getEntitlementStatus,
   getMe,
   getSummary,
   getTask,
@@ -42,7 +43,16 @@ import {
   registerAccount,
   requestPasswordReset
 } from "./services/api";
-import { authInitialState, clearAuthState, membershipLabel, membershipStatusText, remainingSummaryText, updateAuthState } from "./services/authSession";
+import {
+  authInitialState,
+  clearAuthState,
+  membershipLabel,
+  membershipStatusText,
+  quotaMeterRatio,
+  quotaMeterText,
+  remainingSummaryText,
+  updateAuthState
+} from "./services/authSession";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT, resolveDownloadFormat } from "./services/formats";
 import { applyWorkspaceSnapshot, loadWorkspaceSnapshot, pickWorkspaceSnapshot, saveWorkspaceSnapshot } from "./services/workspacePersistence";
 import { seoCompliancePoints, seoFaqs } from "./seo/pages";
@@ -52,7 +62,7 @@ const SummaryPanel = defineAsyncComponent(() => import("./components/summary/Sum
 const HOME_PAGE_ID = "download";
 const PRICING_PAGE_ID = "pricing";
 const HOME_DOWNLOAD_ANCHOR_ID = "download-console";
-const FREE_QUOTA_EXHAUSTED_MESSAGE = "今日免费 AI 总结额度已用完，请开通专业版继续使用。";
+const FREE_QUOTA_EXHAUSTED_MESSAGE = "今日免费 AI 总结额度已用完，请开通 Pro 个人版或购买按量包继续使用。";
 const homeHighlights = [
   {
     title: "公开视频平台",
@@ -97,38 +107,33 @@ const quickLinks = ["YouTube", "Bilibili", "抖音"];
 const pricingPlans = [
   {
     id: "free",
-    badge: "轻量体验",
+    badge: "免费开始",
     name: "免费版",
     price: "¥0",
-    cycle: "永久免费",
-    description: "适合偶尔保存公开视频、体验 AI 总结和验证本地工作流。",
-    features: ["稳定 MP4 下载体验", "少量 AI 总结试用", "浏览器本地工作区缓存", "适合验证自托管流程"],
+    cycle: "登录后额度更多",
+    description: "适合偶尔保存公开视频、试用 AI 总结，把几个视频整理成可复习笔记。",
+    features: ["每天 30 次视频解析", "每天 10 次视频下载", "每天 3 次 AI 总结", "每月 30 分钟语音转写试用", "单视频总结 30 分钟以内"],
     cta: "开始免费使用",
     target: "download"
   },
   {
     id: "pro",
     badge: "推荐",
-    name: "专业版",
-    price: "¥29",
+    name: "Pro 个人版",
+    price: "¥19",
     cycle: "/月",
-    description: "适合学习者、创作者和内容运营，把下载、字幕和总结变成高频工作流。",
-    features: ["更高频的解析与总结方案", "长视频解析与字幕整理", "AI 摘要、字幕、思维导图导出", "适合个人知识库沉淀"],
-    cta: "查看专业方案",
+    description: "适合高频学习、课程整理、播客复习和创作者素材笔记。",
+    features: ["每月 120 次 AI 总结", "每月 600 分钟语音转写", "单视频总结 120 分钟以内", "单视频下载 180 分钟以内", "每个总结 20 次 AI 追问"],
+    cta: "开通 Pro",
     target: "download",
     featured: true
-  },
-  {
-    id: "team",
-    badge: "团队协作",
-    name: "团队版",
-    price: "¥99",
-    cycle: "/月起",
-    description: "适合课程团队、MCN 和资料整理小组，共享公开视频素材与学习笔记。",
-    features: ["多人共享工作区规划", "团队级 AI 总结额度方案", "自托管部署建议", "基础用量与任务报表规划"],
-    cta: "咨询团队版",
-    target: "download"
   }
+];
+const creditPacks = [
+  { id: "summary_small", group: "AI 总结次数包", name: "总结小包", price: "¥6", amount: "20 次 AI 总结", validity: "90 天有效" },
+  { id: "summary_large", group: "AI 总结次数包", name: "总结大包", price: "¥19", amount: "100 次 AI 总结", validity: "180 天有效" },
+  { id: "transcription_small", group: "语音转写分钟包", name: "转写小包", price: "¥8", amount: "120 分钟语音转写", validity: "90 天有效" },
+  { id: "transcription_large", group: "语音转写分钟包", name: "转写大包", price: "¥29", amount: "600 分钟语音转写", validity: "180 天有效" }
 ];
 const pricingGuarantees = ["只处理用户有权访问的公开视频", "不托管登录态或付费绕过能力", "会员状态以服务端和 Stripe webhook 为准"];
 const compactFaqs = seoFaqs.slice(0, 3);
@@ -221,9 +226,13 @@ let workspaceRestoreTimer = null;
 let accountMenuCloseTimer = null;
 
 const currentPage = computed(() => state.currentPage);
-const authMembershipLabel = computed(() => membershipLabel(auth));
-const authUsageText = computed(() => remainingSummaryText(auth));
-const billingStateText = computed(() => membershipStatusText(auth));
+const authMembershipLabel = computed(() => membershipLabel(auth).replace("专业版", "Pro 个人版"));
+const authUsageText = computed(() => remainingSummaryText(auth).replace("专业版", "Pro 个人版"));
+const summaryQuotaText = computed(() => quotaMeterText(auth, "summary") || authUsageText.value);
+const transcriptionQuotaText = computed(() => quotaMeterText(auth, "transcription_minutes"));
+const summaryQuotaRatio = computed(() => quotaMeterRatio(auth, "summary"));
+const transcriptionQuotaRatio = computed(() => quotaMeterRatio(auth, "transcription_minutes"));
+const billingStateText = computed(() => membershipStatusText(auth).replace("专业版", "Pro 个人版"));
 const accountAvatarLabel = computed(() => {
   const emailPrefix = (auth.user?.email || "用户").split("@")[0].trim();
   return (emailPrefix || "用户").slice(0, 2).toUpperCase();
@@ -245,15 +254,15 @@ const checkoutNotice = computed(() => {
   if (state.checkoutStatus === "success" && state.checkoutPurchaseType === "credit_pack") return "按量包支付已返回，额度会自动同步。";
   if (state.checkoutStatus === "cancel" && state.checkoutPurchaseType === "credit_pack") return "已取消按量包支付，可以稍后重新购买。";
   if (state.checkoutStatus === "success" && state.checkoutConfirming) return "正在确认支付，请稍等。";
-  if (state.checkoutStatus === "success" && auth.membership?.active) return "专业版已开通。";
+  if (state.checkoutStatus === "success" && auth.membership?.active) return "Pro 个人版已开通。";
   if (state.checkoutStatus === "success") return "正在确认会员状态，请稍等几秒。";
-  if (state.checkoutStatus === "cancel") return "已取消支付，可以稍后继续开通专业版。";
+  if (state.checkoutStatus === "cancel") return "已取消支付，可以稍后继续开通 Pro 个人版。";
   return "";
 });
 const proPlanButtonLabel = computed(() => {
   if (auth.membership?.active || auth.membership?.status === "past_due") return "管理订阅";
-  if (auth.membership?.plan === "pro") return "重新选择专业版 ¥29/月";
-  return "选择专业版并支付 ¥29/月";
+  if (auth.membership?.plan === "pro") return "重新选择 Pro ¥19/月";
+  return "开通 Pro ¥19/月";
 });
 const hasSummaryQuotaError = computed(() => state.summaryError.includes(FREE_QUOTA_EXHAUSTED_MESSAGE.slice(0, 14)));
 const hasResult = computed(() => Boolean(state.result && state.analyzedUrl === state.url.trim()));
@@ -499,6 +508,16 @@ async function refreshMe({ silent = false } = {}) {
     } catch {
       auth.billingMode = "";
     }
+    try {
+      const entitlements = await getEntitlementStatus();
+      auth.usage = {
+        ...(auth.usage || {}),
+        meters: entitlements.meters || {},
+        credit_packs: entitlements.credit_packs || {}
+      };
+    } catch {
+      // Keep legacy /api/me usage when entitlement status is unavailable.
+    }
   } catch {
     clearAuthState(auth);
   } finally {
@@ -588,6 +607,33 @@ async function startCheckout() {
   }
 }
 
+async function startCreditPackCheckout(packId) {
+  if (!auth.user) {
+    openAuth("login");
+    return;
+  }
+  state.billingBusy = true;
+  state.billingMessage = "";
+  try {
+    const returnOrigin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const result = await createBillingCheckout({
+      return_url: returnOrigin,
+      purchase_type: "credit_pack",
+      pack_id: packId
+    });
+    if (result.credit_pack) {
+      state.billingMessage = "按量包已加入账号。";
+      await refreshMe({ silent: true });
+      return;
+    }
+    if (result.url && typeof window !== "undefined") window.location.href = result.url;
+  } catch (error) {
+    state.billingMessage = localizeStatus(error.message);
+  } finally {
+    state.billingBusy = false;
+  }
+}
+
 async function openBillingPortal() {
   if (!auth.user) {
     openAuth("login");
@@ -634,12 +680,12 @@ function pricingPlanStatusCopy(plan) {
   if (auth.membership?.active && auth.membership?.cancel_at_period_end) return "已取消续费，本周期内仍可使用";
   if (auth.membership?.active) return "当前已开通";
   if (auth.membership?.status === "past_due") return "付款失败，请更新支付方式";
-  if (isProPlanRecord()) return "专业版已过期，可重新开通恢复高频 AI 总结。";
+  if (isProPlanRecord()) return "Pro 个人版已过期，可重新开通恢复高频 AI 总结。";
   return "选择这个套餐后再进入支付页面，支付成功会自动回到这里确认状态。";
 }
 
 async function goToPricingForUpgrade() {
-  state.billingMessage = "请选择专业版套餐，确认后再进入支付页面。";
+  state.billingMessage = "请选择 Pro 个人版套餐，确认后再进入支付页面。";
   await navigateToPage(PRICING_PAGE_ID);
 }
 
@@ -681,7 +727,7 @@ async function confirmCheckoutReturn({ force = false } = {}) {
         auth.billingMode = result.mode || auth.billingMode;
         state.checkoutConfirmedSessionId = sessionId;
         await refreshMe({ silent: true });
-        state.billingMessage = "专业版已开通。";
+        state.billingMessage = "Pro 个人版已开通。";
         return;
       } catch (error) {
         if (error.status === 409 && attempt < retryDelays.length - 1) continue;
@@ -814,6 +860,7 @@ async function handleDownload() {
       url: state.result.webpage_url || state.url.trim(),
       entry_ids: entryIds,
       format_id: state.selectedFormatId,
+      analysis_token: state.result.analysis_token,
       subtitle_langs: [],
       write_auto_subs: false,
       prefer_srt: true
@@ -1038,6 +1085,7 @@ function applyTaskSnapshot(taskId, snapshot) {
 
 function localizeSummaryStatus(message = "") {
   return message
+    .replaceAll("今日免费 AI 总结额度已用完，请开通专业版继续使用。", FREE_QUOTA_EXHAUSTED_MESSAGE)
     .replaceAll("Queued", "排队中")
     .replaceAll("Restored summary from cache", "已恢复上次 AI 总结")
     .replaceAll("Preparing transcript", "正在准备字幕文本")
@@ -1102,6 +1150,8 @@ async function restoreWorkspaceSnapshot() {
 }
 
 function localizeStatus(message = "") {
+  if (message.includes("访客解析次数已用完")) return "今天的访客解析次数已用完，登录后可获得更多免费额度。";
+  if (message.includes("访客下载次数已用完")) return "今天的访客下载次数已用完，登录后可获得更多免费额度。";
   return message
     .replaceAll("Queued", "排队中")
     .replaceAll("Starting download", "正在启动下载")
@@ -1244,10 +1294,19 @@ onBeforeUnmount(() => {
               <span class="account-avatar account-avatar-large" aria-hidden="true">{{ accountAvatarLabel }}</span>
               <div>
                 <strong>{{ auth.user.email }}</strong>
-                <span>{{ authMembershipLabel }} · {{ authUsageText }}</span>
+                <span>{{ authMembershipLabel }} · {{ summaryQuotaText }}</span>
               </div>
             </div>
-            <div class="account-quota-track" aria-hidden="true"><span></span></div>
+            <div class="account-quota-list">
+              <div class="account-quota-row">
+                <span>{{ summaryQuotaText }}</span>
+                <div class="account-quota-track"><span :style="{ width: `${summaryQuotaRatio}%` }"></span></div>
+              </div>
+              <div v-if="transcriptionQuotaText" class="account-quota-row">
+                <span>{{ transcriptionQuotaText }}</span>
+                <div class="account-quota-track"><span :style="{ width: `${transcriptionQuotaRatio}%` }"></span></div>
+              </div>
+            </div>
             <button class="account-menu-row" role="menuitem" type="button" @click="openAccountCenter">
               <UserRound :size="20" aria-hidden="true" />
               <span>个人中心</span>
@@ -1513,7 +1572,7 @@ onBeforeUnmount(() => {
     <section id="pricing" class="section pricing-section page-view" v-if="currentPage === 'pricing'">
       <p class="kicker"><span aria-hidden="true"></span>轻量开始，需要时再升级</p>
       <h2>按使用频率选择套餐，下载、字幕和 AI 总结一起规划</h2>
-      <p class="section-copy">套餐方案围绕公开视频处理量、AI 总结额度和团队协作设计。个人可以从免费版开始，高频学习和内容整理再升级。</p>
+      <p class="section-copy">套餐方案围绕公开视频处理量、AI 总结额度和语音转写分钟数设计。个人可以从免费版开始，高频学习和内容整理再升级。</p>
 
       <div class="pricing-grid" aria-label="套餐方案">
         <article v-for="plan in pricingPlans" :key="plan.id" class="pricing-card" :class="{ featured: plan.featured }" :data-plan="plan.id">
@@ -1557,6 +1616,26 @@ onBeforeUnmount(() => {
         <span v-for="item in pricingGuarantees" :key="item"><ShieldCheck :size="18" aria-hidden="true" />{{ item }}</span>
       </div>
 
+      <section class="credit-pack-section" aria-label="按量包">
+        <div class="credit-pack-head">
+          <p class="section-eyebrow">额度不够时再买</p>
+          <h3>按量包不会强迫升级，更适合偶尔的长视频和课程整理高峰</h3>
+        </div>
+        <div class="credit-pack-grid">
+          <article v-for="pack in creditPacks" :key="pack.id" class="credit-pack-card">
+            <span class="plan-badge">{{ pack.group }}</span>
+            <h4>{{ pack.name }}</h4>
+            <strong>{{ pack.price }}</strong>
+            <p>{{ pack.amount }}</p>
+            <small>{{ pack.validity }}</small>
+            <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="startCreditPackCheckout(pack.id)">
+              <CreditCard :size="18" aria-hidden="true" />
+              <span>购买按量包</span>
+            </button>
+          </article>
+        </div>
+      </section>
+
       <section v-if="billingPanelVisible" class="billing-status-panel" aria-label="会员账单状态">
         <div class="billing-status-copy">
           <CreditCard :size="20" aria-hidden="true" />
@@ -1565,7 +1644,10 @@ onBeforeUnmount(() => {
             <strong v-if="state.billingMessage">{{ state.billingMessage }}</strong>
             <strong v-else-if="checkoutNotice">{{ checkoutNotice }}</strong>
             <strong v-else>{{ billingStateText }}</strong>
-            <span>{{ authMembershipLabel }} · {{ authUsageText }}</span>
+            <span>
+              {{ authMembershipLabel }} · {{ summaryQuotaText }}
+              <template v-if="transcriptionQuotaText"> · {{ transcriptionQuotaText }}</template>
+            </span>
           </div>
         </div>
         <div v-if="showMockBilling" class="mock-billing-panel" aria-label="本地模拟支付">

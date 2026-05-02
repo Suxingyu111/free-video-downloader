@@ -299,6 +299,57 @@ def test_anonymous_demo_download_blocks_video_over_duration_limit(monkeypatch, t
     assert "30 分钟" in response.json()["detail"]
 
 
+def test_anonymous_download_blocks_selected_playlist_entry_over_duration_limit(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    url = "https://example.com/playlist-duration"
+    token = main.analysis_store.create(
+        url,
+        {
+            "kind": "playlist",
+            "webpage_url": url,
+            "entries": [
+                {"id": "short", "url": "https://example.com/playlist-duration/short", "duration": 120},
+                {"id": "long", "url": "https://example.com/playlist-duration/long", "duration": 31 * 60},
+            ],
+        },
+    )
+
+    class NoopThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(main.threading, "Thread", NoopThread)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "analysis_token": token,
+            "format_id": "best",
+            "entry_ids": ["long"],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute("select coalesce(sum(download_count), 0) as used from anonymous_usage").fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 402
+    assert "30 分钟" in response.json()["detail"]
+    assert int(usage["used"]) == 0
+
+
 def test_anonymous_multi_entry_download_limit_is_atomic(monkeypatch, tmp_path):
     db_path = tmp_path / "saveany.db"
     monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))

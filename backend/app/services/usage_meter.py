@@ -354,6 +354,29 @@ def reserve_summary_question(user: User, summary_id: str) -> dict:
     return {"limit": limit, "used": next_used, "remaining": max(limit - next_used, 0)}
 
 
+def refund_summary_question(user: User, summary_id: str) -> dict:
+    limits = get_plan_limits(active_plan_id(user))
+    limit = limits.questions_per_summary or 0
+    now = time()
+    with transaction() as conn:
+        row = conn.execute(
+            "select question_count from summary_questions where summary_id = ? and user_id = ?",
+            (summary_id, user.id),
+        ).fetchone()
+        used = int(row["question_count"]) if row else 0
+        next_used = max(used - 1, 0)
+        if row is not None:
+            conn.execute(
+                """
+                update summary_questions
+                set question_count = ?, updated_at = ?
+                where summary_id = ? and user_id = ?
+                """,
+                (next_used, now, summary_id, user.id),
+            )
+    return {"limit": limit, "used": next_used, "remaining": max(limit - next_used, 0)}
+
+
 def _consume_credit_packs(
     conn, user_id: str, meter_type: MeterType, amount: int, now: float
 ) -> list[tuple[str, int]]:

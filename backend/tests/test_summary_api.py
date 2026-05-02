@@ -39,6 +39,7 @@ class FakeSummaryService:
                 "questions": [],
                 "mind_map": {"title": "测试概览", "children": []},
                 "qa_pairs": [],
+                "duration": 120,
                 "transcript_text": "[00:01] 测试字幕",
                 "transcript_segments": [{"start": 1, "end": 2, "time": "00:01", "text": "测试字幕"}],
                 "transcript_source": "subtitle",
@@ -54,6 +55,24 @@ class FakeSummaryService:
 class FailingSummaryService:
     def generate_summary(self, **_kwargs):
         raise RuntimeError("summary boom")
+
+
+class FailingOnceQuestionService(FakeSummaryService):
+    def __init__(self):
+        super().__init__()
+        self.fail_next_question = True
+
+    def answer_question(self, *, title, transcript, summary, question, language):
+        if self.fail_next_question:
+            self.fail_next_question = False
+            raise RuntimeError("question boom")
+        return super().answer_question(
+            title=title,
+            transcript=transcript,
+            summary=summary,
+            question=question,
+            language=language,
+        )
 
 
 class StartFailingThread:
@@ -81,6 +100,19 @@ def login(client):
     )
 
 
+def register(client, email):
+    client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "summary-password"},
+    )
+
+
+def summary_payload(url, **overrides):
+    payload = {"url": url, "title": "Demo", "language": "zh-CN", "duration": 120}
+    payload.update(overrides)
+    return payload
+
+
 def wait_for_status(client, summary_id, status):
     for _ in range(20):
         snapshot = client.get(f"/api/summaries/{summary_id}").json()
@@ -94,7 +126,7 @@ def test_create_summary_requires_login(isolated_summary_store):
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/video"),
     )
 
     assert response.status_code == 401
@@ -108,7 +140,7 @@ def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isol
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/video"),
     )
 
     assert response.status_code == 200
@@ -143,7 +175,7 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
 
     first = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/cached-video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/cached-video"),
     )
     summary_id = first.json()["summary_id"]
 
@@ -172,6 +204,7 @@ def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkey
             "url": "https://www.bilibili.com/video/BV14b411Z7QY/?spm_id_from=333.337.search-card.all.click&vd_source=abc",
             "title": "Demo",
             "language": "zh-CN",
+            "duration": 120,
         },
     )
     first_summary_id = first.json()["summary_id"]
@@ -205,7 +238,7 @@ def test_create_summary_does_not_reuse_active_task(monkeypatch, isolated_summary
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/active-cache-video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/active-cache-video"),
     )
 
     assert response.status_code == 200
@@ -224,7 +257,7 @@ def test_cache_hit_does_not_consume_summary_quota(monkeypatch, isolated_summary_
 
     first = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/quota-cache", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/quota-cache"),
     )
     summary_id = first.json()["summary_id"]
     assert first.json()["usage"]["used_today"] == 1
@@ -244,6 +277,25 @@ def test_cache_hit_does_not_consume_summary_quota(monkeypatch, isolated_summary_
     assert len(fake.calls) == 1
 
 
+def test_uncached_summary_without_duration_returns_400_without_consuming_quota(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/missing-duration", "title": "Demo", "language": "zh-CN"},
+    )
+    usage = client.get("/api/me").json()["usage"]
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "请先解析视频后再生成 AI 总结。"
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+    assert fake.calls == []
+
+
 def test_cached_summary_remains_accessible_after_free_quota_exhausted(monkeypatch, isolated_summary_store):
     monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "1")
     fake = FakeSummaryService()
@@ -253,14 +305,14 @@ def test_cached_summary_remains_accessible_after_free_quota_exhausted(monkeypatc
 
     first = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/only-free-summary", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/only-free-summary"),
     )
     summary_id = first.json()["summary_id"]
     wait_for_status(client, summary_id, "completed")
 
     uncached = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/second-summary", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/second-summary"),
     )
     cached = client.post(
         "/api/summaries",
@@ -283,7 +335,7 @@ def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summar
 
     first = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/force-video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/force-video"),
     )
     first_summary_id = first.json()["summary_id"]
 
@@ -312,7 +364,7 @@ def test_failed_summary_refunds_consumed_quota(monkeypatch, isolated_summary_sto
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/failing-video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/failing-video"),
     )
     summary_id = response.json()["summary_id"]
 
@@ -335,7 +387,7 @@ def test_failed_pro_summary_refunds_metered_quota(monkeypatch, isolated_summary_
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/failing-pro-video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/failing-pro-video"),
     )
     summary_id = response.json()["summary_id"]
 
@@ -359,7 +411,7 @@ def test_task_creation_failure_after_reservation_refunds_quota(monkeypatch, isol
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/create-task-fails", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/create-task-fails"),
     )
     usage = client.get("/api/me").json()["usage"]
 
@@ -376,7 +428,7 @@ def test_worker_start_failure_after_task_creation_refunds_quota(monkeypatch, iso
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/worker-start-fails", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/worker-start-fails"),
     )
     usage = client.get("/api/me").json()["usage"]
 
@@ -464,13 +516,35 @@ def test_summary_response_hides_internal_quota_metadata(monkeypatch, isolated_su
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/private-quota-metadata", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/private-quota-metadata"),
     )
     summary_id = response.json()["summary_id"]
     snapshot = wait_for_status(client, summary_id, "completed")
 
     assert "quota_user_id" not in snapshot
     assert "quota_refunded_at" not in snapshot
+
+
+def test_summary_owner_is_persisted_but_not_exposed(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+    user_id = client.get("/api/me").json()["user"]["id"]
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/owner-persisted"),
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(client, summary_id, "completed")
+    restored_store = SummaryStore(isolated_summary_store.base_dir)
+    restored = restored_store.get_task(summary_id)
+
+    assert isolated_summary_store.get_task(summary_id).owner_user_id == user_id
+    assert restored is not None
+    assert restored.owner_user_id == user_id
+    assert "owner_user_id" not in snapshot
 
 
 def test_create_summary_quota_exhaustion_returns_upgrade_message(monkeypatch, isolated_summary_store):
@@ -482,13 +556,13 @@ def test_create_summary_quota_exhaustion_returns_upgrade_message(monkeypatch, is
 
     first = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/one", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/one"),
     )
     wait_for_status(client, first.json()["summary_id"], "completed")
 
     second = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/two", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/two"),
     )
 
     assert second.status_code == 402
@@ -503,7 +577,7 @@ def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
+        json=summary_payload("https://example.com/video"),
     )
     summary_id = response.json()["summary_id"]
 
@@ -527,7 +601,7 @@ def test_summary_task_records_owner_and_question_requires_login(monkeypatch, iso
 
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/owned-video", "title": "Demo", "language": "zh-CN", "duration": 120},
+        json=summary_payload("https://example.com/owned-video"),
     )
     summary_id = response.json()["summary_id"]
     wait_for_status(client, summary_id, "completed")
@@ -539,6 +613,30 @@ def test_summary_task_records_owner_and_question_requires_login(monkeypatch, iso
     )
 
     assert answer.status_code == 401
+
+
+def test_second_user_cannot_ask_question_on_owned_summary(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/owned-by-first-user"),
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+    client.post("/api/auth/logout")
+    register(client, "summary-other@example.com")
+
+    answer = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "能访问吗？", "language": "zh-CN"},
+    )
+
+    assert answer.status_code == 403
+    assert answer.json()["detail"] == "无权访问这个 AI 总结。"
 
 
 def test_free_user_summary_duration_limit(monkeypatch, isolated_summary_store):
@@ -563,7 +661,7 @@ def test_free_user_question_limit(monkeypatch, isolated_summary_store):
     login(client)
     response = client.post(
         "/api/summaries",
-        json={"url": "https://example.com/questions", "title": "Demo", "language": "zh-CN", "duration": 120},
+        json=summary_payload("https://example.com/questions"),
     )
     summary_id = response.json()["summary_id"]
     wait_for_status(client, summary_id, "completed")
@@ -581,6 +679,31 @@ def test_free_user_question_limit(monkeypatch, isolated_summary_store):
 
     assert blocked.status_code == 402
     assert "追问次数" in blocked.json()["detail"]
+
+
+def test_failed_question_refunds_question_limit(monkeypatch, isolated_summary_store):
+    fake = FailingOnceQuestionService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app, raise_server_exceptions=False)
+    login(client)
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/question-refund"),
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    failed = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "失败的问题", "language": "zh-CN"},
+    )
+
+    assert failed.status_code >= 400
+    for index in range(3):
+        assert client.post(
+            f"/api/summaries/{summary_id}/questions",
+            json={"question": f"成功问题 {index}", "language": "zh-CN"},
+        ).status_code == 200
 
 
 def test_unknown_summary_task_returns_404():

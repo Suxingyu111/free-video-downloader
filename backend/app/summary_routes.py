@@ -19,7 +19,12 @@ from app.services.entitlements import (
 )
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
-from app.services.usage_meter import MeterExceeded, assert_duration_allowed, reserve_summary_question
+from app.services.usage_meter import (
+    MeterExceeded,
+    assert_duration_allowed,
+    refund_summary_question,
+    reserve_summary_question,
+)
 from app.services.ytdlp_service import friendly_error_message
 
 
@@ -96,6 +101,17 @@ def get_summary_service() -> SummaryService:
     return summary_service
 
 
+def _summary_duration_seconds(payload: SummaryRequest, seed_result: dict | None) -> float | None:
+    if payload.duration is not None:
+        return payload.duration
+    if seed_result is None:
+        return None
+    duration = seed_result.get("duration")
+    if isinstance(duration, int | float) and not isinstance(duration, bool):
+        return float(duration)
+    return None
+
+
 @router.post("")
 def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) -> dict[str, object]:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
@@ -114,8 +130,11 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
             seed_result = cached_task.result
 
     summary_id = f"summary_{secrets.token_urlsafe(10)}"
+    duration = _summary_duration_seconds(payload, seed_result)
+    if duration is None:
+        raise HTTPException(status_code=400, detail="请先解析视频后再生成 AI 总结。")
     try:
-        assert_duration_allowed(user, capability="summary", duration_seconds=payload.duration)
+        assert_duration_allowed(user, capability="summary", duration_seconds=duration)
     except MeterExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
@@ -194,13 +213,20 @@ def ask_summary_question(
     except MeterExceeded as exc:
         raise HTTPException(status_code=402, detail="这个总结的追问次数已用完，请升级 Pro 后继续。") from exc
     transcript = _transcript_from_result(task.result)
-    answer = get_summary_service().answer_question(
-        title=task.title or "未命名视频",
-        transcript=transcript,
-        summary=task.result,
-        question=question,
-        language=payload.language,
-    )
+    try:
+        answer = get_summary_service().answer_question(
+            title=task.title or "未命名视频",
+            transcript=transcript,
+            summary=task.result,
+            question=question,
+            language=payload.language,
+        )
+    except Exception as exc:
+        try:
+            refund_summary_question(user, summary_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=_friendly_summary_error(exc)) from exc
     return {"answer": answer}
 
 

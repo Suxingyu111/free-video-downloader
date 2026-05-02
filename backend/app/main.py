@@ -121,6 +121,27 @@ def _analysis_snapshot_matches(snapshot: AnalysisSnapshot, url: str) -> bool:
     return snapshot.url == url or snapshot.result.get("webpage_url") == url
 
 
+def _download_duration_values(result: dict, payload: "DownloadRequest") -> list[object]:
+    entries = result.get("entries")
+    if isinstance(entries, list) and entries:
+        if payload.entry_ids:
+            selected_ids = {str(entry_id) for entry_id in payload.entry_ids}
+            selected_entries = [
+                entry
+                for entry in entries
+                if isinstance(entry, dict) and str(entry.get("id") or "") in selected_ids
+            ]
+            if selected_entries:
+                return [entry.get("duration") for entry in selected_entries]
+        else:
+            entry_durations = [
+                entry.get("duration") for entry in entries if isinstance(entry, dict)
+            ]
+            if entry_durations:
+                return entry_durations
+    return [result.get("duration")]
+
+
 class DownloadRequest(BaseModel):
     url: str
     analysis_token: str | None = None
@@ -429,7 +450,8 @@ def create_download(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
     try:
-        assert_duration_allowed(user, capability="download", duration_seconds=result.get("duration"))
+        for duration in _download_duration_values(result, payload):
+            assert_duration_allowed(user, capability="download", duration_seconds=duration)
     except MeterExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
     entry_count = len(payload.entry_ids) if payload.entry_ids else max(len(result.get("entries") or []), 1)

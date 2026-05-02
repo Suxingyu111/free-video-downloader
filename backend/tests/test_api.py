@@ -183,6 +183,24 @@ def test_analyze_returns_analysis_token(monkeypatch, tmp_path):
     assert response.json()["duration"] == 618
 
 
+def test_blank_analyze_url_does_not_consume_anonymous_quota(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    client = TestClient(app)
+
+    response = client.post("/api/analyze", data={"url": "   "})
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute("select coalesce(sum(analyze_count), 0) as used from anonymous_usage").fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 400
+    assert int(usage["used"]) == 0
+
+
 def test_anonymous_analyze_limit_blocks_fourth_request(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")

@@ -311,6 +311,10 @@ async def analyze(
     url: str = Form(...),
     user: User | None = Depends(optional_user),
 ) -> dict:
+    normalized_url = url.strip()
+    if not normalized_url:
+        raise HTTPException(status_code=400, detail="请输入视频链接")
+
     try:
         if user:
             reserve_user_meter(user, MeterType.ANALYZE, 1, reservation_id=f"analyze_{secrets.token_urlsafe(10)}")
@@ -320,15 +324,15 @@ async def analyze(
         raise HTTPException(status_code=429, detail=str(exc)) from exc
 
     try:
-        demo_result = demo_analyze_result(url)
+        demo_result = demo_analyze_result(normalized_url)
         if demo_result is not None:
             result = proxy_media_assets(demo_result)
-            result["analysis_token"] = analysis_store.create(url, result)
+            result["analysis_token"] = analysis_store.create(normalized_url, result)
             return result
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                result = await asyncio.to_thread(service.analyze, url)
+                result = await asyncio.to_thread(service.analyze, normalized_url)
                 break
             except Exception as exc:
                 last_error = exc
@@ -338,7 +342,7 @@ async def analyze(
         else:
             raise last_error or RuntimeError("Analyze failed")
         result = proxy_media_assets(result)
-        result["analysis_token"] = analysis_store.create(url, result)
+        result["analysis_token"] = analysis_store.create(normalized_url, result)
         return result
     except Exception as exc:  # yt-dlp raises many extractor-specific errors.
         raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from urllib.parse import urlsplit, urlunsplit
 
 import stripe
@@ -74,6 +75,84 @@ def _checkout_return_base_url(
     return configured_origin or configured_url.rstrip("/")
 
 
+def _get_credit_pack_or_400(pack_id: str):
+    try:
+        return get_credit_pack(pack_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail="未知按量包类型") from exc
+
+
+def _mock_credit_pack_reference(pack_id: str) -> str:
+    return f"mock_{pack_id}_{secrets.token_urlsafe(10)}"
+
+
+def _stripe_dict(value) -> dict | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "to_dict_recursive"):
+        return value.to_dict_recursive()
+    if hasattr(value, "_to_dict_recursive"):
+        return value._to_dict_recursive()
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    return dict(value)
+
+
+def _checkout_session_line_item_price_id(checkout_session: dict) -> str | None:
+    line_items = ((checkout_session.get("line_items") or {}).get("data") or [])
+    if not line_items:
+        return None
+    return (line_items[0].get("price") or {}).get("id")
+
+
+def _checkout_session_price_id(config, checkout_session: dict) -> str | None:
+    price_id = _checkout_session_line_item_price_id(checkout_session)
+    if price_id:
+        return price_id
+    session_id = checkout_session.get("id")
+    if not session_id or not config.stripe_secret_key:
+        return None
+    stripe.api_key = config.stripe_secret_key
+    retrieved = _stripe_dict(
+        stripe.checkout.Session.retrieve(
+            session_id,
+            expand=["line_items.data.price"],
+        )
+    ) or {}
+    return _checkout_session_line_item_price_id(retrieved)
+
+
+def _is_credit_pack_checkout_session(checkout_session: dict) -> bool:
+    metadata = checkout_session.get("metadata") or {}
+    return (
+        checkout_session.get("mode") == "payment"
+        and metadata.get("purchase_type") == "credit_pack"
+    )
+
+
+def _grant_credit_pack_checkout_session(config, checkout_session: dict) -> None:
+    metadata = checkout_session.get("metadata") or {}
+    pack_id = metadata.get("pack_id")
+    user_id = metadata.get("saveany_user_id") or checkout_session.get("client_reference_id")
+    if not pack_id or not user_id:
+        raise ValueError("Stripe credit pack checkout is missing metadata")
+    if checkout_session.get("payment_status") != "paid":
+        raise ValueError("Stripe credit pack payment is not paid")
+    price_id = _checkout_session_price_id(config, checkout_session)
+    configured_pack_id = credit_pack_from_price_id(price_id)
+    if not price_id or configured_pack_id != pack_id:
+        raise ValueError("Stripe credit pack price does not match pack metadata")
+    grant_credit_pack(
+        user_id,
+        pack_id,
+        source="stripe",
+        payment_reference=checkout_session.get("payment_intent") or checkout_session["id"],
+        stripe_price_id=price_id,
+    )
+
+
 @router.get("/status")
 def billing_status(user: User = Depends(current_user)) -> dict:
     return {"membership": get_membership(user.id).as_dict(), "mode": load_config().billing_mode}
@@ -90,13 +169,13 @@ def billing_checkout(
     if purchase_type == "credit_pack":
         if not payload or not payload.pack_id:
             raise HTTPException(status_code=400, detail="缺少按量包类型")
-        pack = get_credit_pack(payload.pack_id)
+        pack = _get_credit_pack_or_400(payload.pack_id)
         if config.billing_mode == "mock":
             credit_pack = grant_credit_pack(
                 user.id,
                 pack.id,
                 source="mock",
-                payment_reference=f"mock_{pack.id}",
+                payment_reference=_mock_credit_pack_reference(pack.id),
             )
             return {"mode": "mock", "credit_pack": credit_pack, "url": "/#pricing"}
         price_id = getattr(config, pack.stripe_config_field)
@@ -107,6 +186,19 @@ def billing_checkout(
             request,
             payload.return_url,
         )
+        open_attempt = get_open_stripe_checkout_attempt(
+            user.id,
+            return_base_url,
+            purchase_type="credit_pack",
+            pack_id=pack.id,
+            stripe_price_id=price_id,
+        )
+        if open_attempt is not None:
+            return {
+                "mode": "stripe",
+                "url": open_attempt["stripe_checkout_url"],
+                "session_id": open_attempt["stripe_checkout_session_id"],
+            }
         stripe.api_key = config.stripe_secret_key
         customer_id = ensure_stripe_customer_id(
             user,
@@ -128,7 +220,15 @@ def billing_checkout(
                 "pack_id": pack.id,
             },
         )
-        record_stripe_checkout_attempt(user.id, session.id, session.url, return_base_url)
+        record_stripe_checkout_attempt(
+            user.id,
+            session.id,
+            session.url,
+            return_base_url,
+            purchase_type="credit_pack",
+            pack_id=pack.id,
+            stripe_price_id=price_id,
+        )
         return {"mode": "stripe", "url": session.url, "session_id": session.id}
     if purchase_type != "subscription":
         raise HTTPException(status_code=400, detail="未知购买类型")
@@ -141,7 +241,12 @@ def billing_checkout(
         if not config.stripe_secret_key or not config.stripe_pro_monthly_price_id:
             raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
         return_base_url = _checkout_return_base_url(config.public_app_url, request, payload.return_url if payload else None)
-        open_attempt = get_open_stripe_checkout_attempt(user.id, return_base_url if payload else None)
+        open_attempt = get_open_stripe_checkout_attempt(
+            user.id,
+            return_base_url if payload else None,
+            purchase_type="subscription",
+            stripe_price_id=config.stripe_pro_monthly_price_id,
+        )
         if open_attempt is not None:
             return {
                 "mode": "stripe",
@@ -166,7 +271,14 @@ def billing_checkout(
             subscription_data={"metadata": {"saveany_user_id": user.id}},
             metadata={"saveany_user_id": user.id},
         )
-        record_stripe_checkout_attempt(user.id, session.id, session.url, return_base_url)
+        record_stripe_checkout_attempt(
+            user.id,
+            session.id,
+            session.url,
+            return_base_url,
+            purchase_type="subscription",
+            stripe_price_id=config.stripe_pro_monthly_price_id,
+        )
         return {"mode": "stripe", "url": session.url, "session_id": session.id}
     raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
 
@@ -259,33 +371,21 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
         return {"ok": True}
 
     try:
-        if event_type == "checkout.session.completed":
+        if event_type in {
+            "checkout.session.completed",
+            "checkout.session.async_payment_succeeded",
+            "checkout.session.async_payment_failed",
+        }:
             checkout_session = event["data"]["object"]
-            upsert_stripe_checkout_session(checkout_session)
-            metadata = checkout_session.get("metadata") or {}
-            if checkout_session.get("mode") == "payment" and metadata.get("purchase_type") == "credit_pack":
-                pack_id = metadata.get("pack_id")
-                user_id = metadata.get("saveany_user_id") or checkout_session.get("client_reference_id")
-                if not pack_id or not user_id:
-                    raise ValueError("Stripe credit pack checkout is missing metadata")
-                price_id = None
-                line_items = ((checkout_session.get("line_items") or {}).get("data") or [])
-                if line_items:
-                    price_id = (line_items[0].get("price") or {}).get("id")
-                if not price_id:
-                    raise ValueError("Stripe credit pack price does not match pack metadata")
-                configured_pack_id = credit_pack_from_price_id(price_id)
-                if configured_pack_id != pack_id:
-                    raise ValueError("Stripe credit pack price does not match pack metadata")
-                grant_credit_pack(
-                    user_id,
-                    pack_id,
-                    source="stripe",
-                    payment_reference=checkout_session.get("payment_intent") or checkout_session["id"],
-                    stripe_price_id=price_id,
-                )
-            if checkout_session.get("id"):
-                complete_stripe_checkout_attempt(checkout_session["id"])
+            if _is_credit_pack_checkout_session(checkout_session):
+                if event_type != "checkout.session.async_payment_failed":
+                    _grant_credit_pack_checkout_session(config, checkout_session)
+                    if checkout_session.get("id"):
+                        complete_stripe_checkout_attempt(checkout_session["id"])
+            elif event_type == "checkout.session.completed":
+                upsert_stripe_checkout_session(checkout_session)
+                if checkout_session.get("id"):
+                    complete_stripe_checkout_attempt(checkout_session["id"])
         elif event_type in {
             "customer.subscription.created",
             "customer.subscription.updated",
@@ -314,13 +414,13 @@ def mock_activate(user: User = Depends(current_user)) -> dict:
 def mock_credit_pack(pack_id: str, user: User = Depends(current_user)) -> dict:
     if load_config().billing_mode != "mock":
         raise HTTPException(status_code=404, detail="Mock billing is disabled")
-    pack = get_credit_pack(pack_id)
+    pack = _get_credit_pack_or_400(pack_id)
     return {
         "credit_pack": grant_credit_pack(
             user.id,
             pack.id,
             source="mock",
-            payment_reference=f"mock_{pack.id}",
+            payment_reference=_mock_credit_pack_reference(pack.id),
         )
     }
 

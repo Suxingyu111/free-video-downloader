@@ -144,15 +144,23 @@ def create_mock_checkout(user: User) -> dict:
         attempt_id = f"attempt_{secrets.token_urlsafe(10)}"
         conn.execute(
             """
-            insert into billing_attempts (id, user_id, mode, status, created_at, updated_at)
-            values (?, ?, 'mock', 'created', ?, ?)
+            insert into billing_attempts
+            (id, user_id, mode, status, purchase_type, created_at, updated_at)
+            values (?, ?, 'mock', 'created', 'subscription', ?, ?)
             """,
             (attempt_id, user.id, now, now),
         )
     return {"mode": "mock", "url": "/#pricing", "attempt_id": attempt_id}
 
 
-def get_open_stripe_checkout_attempt(user_id: str, return_url: str | None = None) -> dict | None:
+def get_open_stripe_checkout_attempt(
+    user_id: str,
+    return_url: str | None = None,
+    *,
+    purchase_type: str = "subscription",
+    pack_id: str | None = None,
+    stripe_price_id: str | None = None,
+) -> dict | None:
     now = time()
     cutoff = now - STRIPE_CHECKOUT_ATTEMPT_TTL_SECONDS
     with transaction() as conn:
@@ -171,23 +179,38 @@ def get_open_stripe_checkout_attempt(user_id: str, return_url: str | None = None
                 update billing_attempts
                 set status = 'expired', updated_at = ?
                 where user_id = ? and mode = 'stripe' and status = 'open'
+                  and purchase_type = ?
+                  and coalesce(pack_id, '') = coalesce(?, '')
+                  and coalesce(stripe_price_id, '') = coalesce(?, '')
                   and (stripe_return_url is null or stripe_return_url != ?)
                 """,
-                (now, user_id, return_url),
+                (now, user_id, purchase_type, pack_id, stripe_price_id, return_url),
             )
         row = conn.execute(
             """
-            select id, stripe_checkout_session_id, stripe_checkout_url, stripe_return_url
+            select id, stripe_checkout_session_id, stripe_checkout_url, stripe_return_url,
+                   purchase_type, pack_id, stripe_price_id
             from billing_attempts
             where user_id = ? and mode = 'stripe' and status = 'open'
               and updated_at >= ?
               and stripe_checkout_session_id is not null
               and stripe_checkout_url is not null
               and (? is null or stripe_return_url = ?)
+              and purchase_type = ?
+              and coalesce(pack_id, '') = coalesce(?, '')
+              and coalesce(stripe_price_id, '') = coalesce(?, '')
             order by updated_at desc
             limit 1
             """,
-            (user_id, cutoff, return_url, return_url),
+            (
+                user_id,
+                cutoff,
+                return_url,
+                return_url,
+                purchase_type,
+                pack_id,
+                stripe_price_id,
+            ),
         ).fetchone()
     if row is None:
         return None
@@ -199,6 +222,10 @@ def record_stripe_checkout_attempt(
     session_id: str,
     session_url: str,
     return_url: str | None = None,
+    *,
+    purchase_type: str = "subscription",
+    pack_id: str | None = None,
+    stripe_price_id: str | None = None,
 ) -> None:
     now = time()
     with transaction() as conn:
@@ -214,13 +241,17 @@ def record_stripe_checkout_attempt(
             conn.execute(
                 """
                 insert into billing_attempts
-                (id, user_id, mode, status, stripe_checkout_session_id, stripe_checkout_url, stripe_return_url,
+                (id, user_id, mode, status, purchase_type, pack_id, stripe_price_id,
+                 stripe_checkout_session_id, stripe_checkout_url, stripe_return_url,
                  created_at, updated_at)
-                values (?, ?, 'stripe', 'open', ?, ?, ?, ?, ?)
+                values (?, ?, 'stripe', 'open', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     f"attempt_{secrets.token_urlsafe(10)}",
                     user_id,
+                    purchase_type,
+                    pack_id,
+                    stripe_price_id,
                     session_id,
                     session_url,
                     return_url,
@@ -233,10 +264,20 @@ def record_stripe_checkout_attempt(
                 """
                 update billing_attempts
                 set user_id = ?, mode = 'stripe', status = 'open',
+                    purchase_type = ?, pack_id = ?, stripe_price_id = ?,
                     stripe_checkout_url = ?, stripe_return_url = ?, updated_at = ?
                 where id = ?
                 """,
-                (user_id, session_url, return_url, now, existing["id"]),
+                (
+                    user_id,
+                    purchase_type,
+                    pack_id,
+                    stripe_price_id,
+                    session_url,
+                    return_url,
+                    now,
+                    existing["id"],
+                ),
             )
 
 

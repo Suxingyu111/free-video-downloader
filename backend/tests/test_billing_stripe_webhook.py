@@ -59,10 +59,12 @@ class FakeStripeSubscription:
 
 
 class FakeStripeCheckoutSessionConfirm:
+    calls = []
     payloads = {}
 
     @classmethod
     def retrieve(cls, session_id, expand=None):
+        cls.calls.append({"session_id": session_id, "expand": expand})
         return cls.payloads[session_id]
 
 
@@ -90,14 +92,16 @@ def _credit_pack_checkout_event(
     event_id,
     user_id,
     *,
+    event_type="checkout.session.completed",
     pack_id="summary_small",
+    payment_status="paid",
     price_id="price_summary_small",
     include_line_items=True,
 ):
     checkout_session = {
         "id": f"cs_{event_id}",
         "mode": "payment",
-        "payment_status": "paid",
+        "payment_status": payment_status,
         "payment_intent": f"pi_{event_id}",
         "client_reference_id": user_id,
         "metadata": {
@@ -112,7 +116,7 @@ def _credit_pack_checkout_event(
         }
     return {
         "id": event_id,
-        "type": "checkout.session.completed",
+        "type": event_type,
         "data": {"object": checkout_session},
     }
 
@@ -297,6 +301,36 @@ def test_stripe_checkout_creates_new_session_after_open_attempt_expires(
         second.json()["session_id"],
     ]
     assert [attempt["status"] for attempt in attempts] == ["expired", "open"]
+
+
+def test_stripe_credit_pack_checkout_attempt_not_reused_for_subscription(
+    monkeypatch, tmp_path
+):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "pack-attempt@example.com", "password": "checkout-password"},
+    )
+
+    pack_checkout = client.post(
+        "/api/billing/checkout",
+        json={"purchase_type": "credit_pack", "pack_id": "summary_small"},
+    )
+    subscription_checkout = client.post("/api/billing/checkout")
+
+    assert pack_checkout.status_code == 200
+    assert subscription_checkout.status_code == 200
+    assert pack_checkout.json()["session_id"] != subscription_checkout.json()["session_id"]
+    assert len(FakeStripeCheckoutSession.created) == 2
+    assert FakeStripeCheckoutSession.created[0]["mode"] == "payment"
+    assert FakeStripeCheckoutSession.created[1]["mode"] == "subscription"
 
 
 def test_checkout_confirm_syncs_paid_subscription(monkeypatch, tmp_path):
@@ -1046,6 +1080,112 @@ def test_stripe_checkout_payment_pack_grants_credit(monkeypatch, tmp_path):
     assert pack["remaining_amount"] == 20
 
 
+def test_stripe_checkout_completed_pack_requires_paid_payment_status(
+    monkeypatch, tmp_path
+):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("pack-unpaid@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app, raise_server_exceptions=False)
+    event = _credit_pack_checkout_event(
+        "evt_pack_unpaid",
+        user.id,
+        payment_status="unpaid",
+    )
+
+    _assert_rejected_credit_pack_event(client, tmp_path, event, user.id)
+
+
+def test_stripe_async_payment_succeeded_pack_grants_credit(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("pack-async-success@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = _credit_pack_checkout_event(
+        "evt_pack_async_success",
+        user.id,
+        event_type="checkout.session.async_payment_succeeded",
+    )
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        pack = conn.execute(
+            "select * from credit_packs where user_id = ?",
+            (user.id,),
+        ).fetchone()
+        subscription_count = conn.execute(
+            "select count(*) as count from subscriptions where user_id = ?",
+            (user.id,),
+        ).fetchone()
+    assert pack["pack_id"] == "summary_small"
+    assert pack["remaining_amount"] == 20
+    assert subscription_count["count"] == 0
+
+
+def test_stripe_credit_pack_webhook_does_not_create_subscription(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("pack-no-subscription@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = _credit_pack_checkout_event("evt_pack_no_subscription", user.id)
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        subscription_count = conn.execute(
+            "select count(*) as count from subscriptions where user_id = ?",
+            (user.id,),
+        ).fetchone()
+    assert subscription_count["count"] == 0
+
+
+def test_stripe_credit_pack_webhook_retrieves_missing_line_items(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("pack-retrieve-line-items@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    FakeStripeCheckoutSessionConfirm.calls = []
+    FakeStripeCheckoutSessionConfirm.payloads = {
+        "cs_evt_pack_retrieve_line_items": {
+            "id": "cs_evt_pack_retrieve_line_items",
+            "line_items": {"data": [{"price": {"id": "price_summary_small"}}]},
+        }
+    }
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
+    client = TestClient(app)
+    event = _credit_pack_checkout_event(
+        "evt_pack_retrieve_line_items",
+        user.id,
+        include_line_items=False,
+    )
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        pack = conn.execute(
+            "select * from credit_packs where user_id = ?",
+            (user.id,),
+        ).fetchone()
+    assert pack["pack_id"] == "summary_small"
+    assert FakeStripeCheckoutSessionConfirm.calls == [
+        {
+            "session_id": "cs_evt_pack_retrieve_line_items",
+            "expand": ["line_items.data.price"],
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("event_id", "include_line_items", "price_id"),
     [
@@ -1065,6 +1205,12 @@ def test_stripe_credit_pack_webhook_requires_line_item_price_id(
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user(f"{event_id}@example.com", "stripe-password")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    if not include_line_items or price_id is None:
+        FakeStripeCheckoutSessionConfirm.calls = []
+        FakeStripeCheckoutSessionConfirm.payloads = {
+            f"cs_{event_id}": {"id": f"cs_{event_id}", "line_items": {"data": []}}
+        }
+        monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
     client = TestClient(app, raise_server_exceptions=False)
     event = _credit_pack_checkout_event(
         event_id,

@@ -85,6 +85,9 @@ create table if not exists billing_attempts (
   user_id text not null references users(id) on delete cascade,
   mode text not null,
   status text not null,
+  purchase_type text not null default 'subscription',
+  pack_id text,
+  stripe_price_id text,
   stripe_checkout_session_id text,
   stripe_checkout_url text,
   stripe_return_url text,
@@ -219,6 +222,14 @@ def _migrate_billing_attempts(conn: sqlite3.Connection) -> None:
         conn.execute("alter table billing_attempts add column stripe_checkout_url text")
     if "stripe_return_url" not in columns:
         conn.execute("alter table billing_attempts add column stripe_return_url text")
+    if "purchase_type" not in columns:
+        conn.execute(
+            "alter table billing_attempts add column purchase_type text not null default 'subscription'"
+        )
+    if "pack_id" not in columns:
+        conn.execute("alter table billing_attempts add column pack_id text")
+    if "stripe_price_id" not in columns:
+        conn.execute("alter table billing_attempts add column stripe_price_id text")
 
 
 @contextmanager

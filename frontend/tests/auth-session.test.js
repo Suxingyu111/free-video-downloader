@@ -140,6 +140,36 @@ test("quotaMeterRatio coerces partial meter payloads safely", () => {
   assert.equal(quotaMeterRatio(state, "conversion"), 70);
 });
 
+test("quotaMeterRatio keeps credit pack allowance visible after plan allowance is exhausted", () => {
+  const state = authInitialState();
+  updateAuthState(state, {
+    user: { email: "pack-user@example.com" },
+    membership: { active: false, plan: "free", status: "free" },
+    usage: {
+      meters: {
+        summary: { limit: 3, used: 3, remaining: 20, plan_remaining: 0, pack_remaining: 20 }
+      }
+    }
+  });
+
+  assert.equal(quotaMeterText(state, "summary"), "AI 总结还剩 20 次");
+  assert.equal(quotaMeterRatio(state, "summary"), 87);
+
+  const packOnlyState = authInitialState();
+  updateAuthState(packOnlyState, {
+    user: { email: "pack-only@example.com" },
+    membership: { active: false, plan: "free", status: "free" },
+    usage: {
+      meters: {
+        summary: { limit: 3, used: 3, plan_remaining: 0, pack_remaining: 20 }
+      }
+    }
+  });
+
+  assert.equal(quotaMeterText(packOnlyState, "summary"), "AI 总结还剩 20 次");
+  assert.equal(quotaMeterRatio(packOnlyState, "summary"), 87);
+});
+
 test("auth usage defaults include isolated meter and credit pack objects", () => {
   const first = authInitialState();
   const second = authInitialState();

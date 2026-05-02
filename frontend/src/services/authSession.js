@@ -64,21 +64,23 @@ export function remainingSummaryText(state) {
 export function quotaMeterText(state, meter) {
   const value = state.usage?.meters?.[meter];
   if (!value) return "";
-  if (meter === "summary") return `AI 总结还剩 ${Math.max(value.remaining || 0, 0)} 次`;
-  if (meter === "transcription_minutes") return `语音转写还剩 ${Math.max(value.remaining || 0, 0)} 分钟`;
-  if (meter === "analyze") return `解析还剩 ${Math.max(value.remaining || 0, 0)} 次`;
-  if (meter === "download") return `下载还剩 ${Math.max(value.remaining || 0, 0)} 次`;
+  const remaining = meterRemaining(value);
+  if (meter === "summary") return `AI 总结还剩 ${remaining} 次`;
+  if (meter === "transcription_minutes") return `语音转写还剩 ${remaining} 分钟`;
+  if (meter === "analyze") return `解析还剩 ${remaining} 次`;
+  if (meter === "download") return `下载还剩 ${remaining} 次`;
   return "";
 }
 
 export function quotaMeterRatio(state, meter) {
   const value = state.usage?.meters?.[meter];
   if (!value) return 0;
-  const limit = Number(value.limit);
-  if (!Number.isFinite(limit) || limit <= 0) return 0;
-  const rawUsed = Number(value.used);
-  const used = Number.isFinite(rawUsed) ? rawUsed : 0;
-  return Math.max(0, Math.min(100, Math.round(((limit - used) / limit) * 100)));
+  const limit = safeNumber(value.limit);
+  const used = safeNumber(value.used);
+  const remaining = meterRemaining(value);
+  const denominator = Math.max(limit, used + remaining);
+  if (!Number.isFinite(denominator) || denominator <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((remaining / denominator) * 100)));
 }
 
 function defaultUsage(usage = {}) {
@@ -88,4 +90,18 @@ function defaultUsage(usage = {}) {
     meters: { ...(usage.meters || {}) },
     credit_packs: { ...(usage.credit_packs || {}) }
   };
+}
+
+function safeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function meterRemaining(value) {
+  const rawRemaining = Number(value.remaining);
+  if (Number.isFinite(rawRemaining)) return Math.max(rawRemaining, 0);
+  const limit = safeNumber(value.limit);
+  const used = safeNumber(value.used);
+  const packRemaining = safeNumber(value.pack_remaining);
+  return Math.max(limit - used + packRemaining, 0);
 }

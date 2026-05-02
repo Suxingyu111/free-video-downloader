@@ -1,3 +1,5 @@
+from time import time
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -19,6 +21,26 @@ def register_with_csrf(client: TestClient, email: str, password: str):
         json={"email": email, "password": password},
         headers=csrf_headers(client),
     )
+
+
+def set_session_expiry(db_path, expires_at: float, absolute_expires_at: float | None) -> None:
+    conn = database.connect(db_path)
+    try:
+        conn.execute(
+            "update sessions set expires_at = ?, absolute_expires_at = ?",
+            (expires_at, absolute_expires_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def session_expiry(db_path) -> float:
+    conn = database.connect(db_path)
+    try:
+        return conn.execute("select expires_at from sessions").fetchone()["expires_at"]
+    finally:
+        conn.close()
 
 
 def test_register_login_me_logout_flow(monkeypatch, tmp_path):
@@ -114,6 +136,44 @@ def test_login_returns_session_csrf_token(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert response.json()["csrf_token"]
+
+
+def test_me_refreshes_idle_session_expiry(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    client = TestClient(app)
+    register_with_csrf(client, "user@example.com", "correct horse battery staple")
+    now = time()
+    original_expires_at = now + 60
+    absolute_expires_at = now + 30 * 86400
+    set_session_expiry(db_path, original_expires_at, absolute_expires_at)
+
+    response = client.get("/api/me")
+
+    assert response.status_code == 200
+    refreshed_expires_at = session_expiry(db_path)
+    assert refreshed_expires_at > original_expires_at
+    assert refreshed_expires_at < absolute_expires_at
+
+
+def test_me_refreshes_idle_session_expiry_without_exceeding_absolute(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    client = TestClient(app)
+    register_with_csrf(client, "user@example.com", "correct horse battery staple")
+    now = time()
+    original_expires_at = now + 5
+    absolute_expires_at = now + 20
+    set_session_expiry(db_path, original_expires_at, absolute_expires_at)
+
+    response = client.get("/api/me")
+
+    assert response.status_code == 200
+    refreshed_expires_at = session_expiry(db_path)
+    assert refreshed_expires_at > original_expires_at
+    assert refreshed_expires_at <= absolute_expires_at
 
 
 def test_logout_requires_session_csrf(monkeypatch, tmp_path):

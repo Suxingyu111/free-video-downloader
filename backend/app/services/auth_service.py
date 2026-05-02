@@ -139,7 +139,11 @@ def get_user_by_session_token(token: str | None) -> User | None:
     with transaction() as conn:
         row = conn.execute(
             """
-            select users.* from sessions
+            select
+              users.*,
+              sessions.expires_at as session_expires_at,
+              sessions.absolute_expires_at as session_absolute_expires_at
+            from sessions
             join users on users.id = sessions.user_id
             where sessions.session_token_hash = ?
               and sessions.expires_at > ?
@@ -151,9 +155,18 @@ def get_user_by_session_token(token: str | None) -> User | None:
         ).fetchone()
         if row is None:
             return None
+        absolute_expires_at = row["session_absolute_expires_at"] or row["session_expires_at"]
+        refreshed_expires_at = min(
+            now + load_config().session_idle_days * 86400,
+            absolute_expires_at,
+        )
         conn.execute(
-            "update sessions set last_seen_at = ? where session_token_hash = ?",
-            (now, _hash_token(token)),
+            """
+            update sessions
+            set last_seen_at = ?, expires_at = ?
+            where session_token_hash = ?
+            """,
+            (now, refreshed_expires_at, _hash_token(token)),
         )
     return _row_to_user(row)
 

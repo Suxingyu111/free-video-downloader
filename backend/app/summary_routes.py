@@ -108,7 +108,8 @@ def get_summary_service() -> SummaryService:
 
 
 @router.post("")
-def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) -> dict[str, object]:
+def create_summary(payload: SummaryRequest, request: Request, user: User = Depends(current_user)) -> dict[str, object]:
+    _assert_summary_session_csrf(request)
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
     cached_task = summary_store.get_cached_task(payload.url, language=payload.language, owner_user_id=user.id)
     seed_result = None

@@ -106,6 +106,33 @@ def test_create_summary_requires_login(isolated_summary_store):
     assert response.status_code == 401
 
 
+def test_create_summary_requires_session_csrf_after_login(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client, "summary-csrf@example.com")
+
+    missing_csrf = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/csrf-video", "title": "Demo", "language": "zh-CN"},
+        headers={"origin": "http://localhost:5173"},
+    )
+
+    assert missing_csrf.status_code == 403
+    assert fake.calls == []
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/csrf-video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cache_hit"] is False
+    wait_for_status(client, response.json()["summary_id"], "completed")
+    assert len(fake.calls) == 1
+
+
 def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)

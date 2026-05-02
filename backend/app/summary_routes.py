@@ -122,11 +122,10 @@ def _summary_duration_seconds(payload: SummaryRequest, seed_result: dict | None)
 @router.post("")
 def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) -> dict[str, object]:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
-    cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
+    cached_task = summary_store.get_cached_task(payload.url, language=payload.language, owner_user_id=user.id)
     seed_result = None
     if cached_task is not None:
-        cached_owned_by_other = bool(cached_task.owner_user_id and cached_task.owner_user_id != user.id)
-        if not payload.force and not cached_owned_by_other:
+        if not payload.force:
             usage = get_usage_summary(user)
             return {
                 "summary_id": cached_task.id,
@@ -134,9 +133,7 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
                 "status": cached_task.status,
                 "usage": usage.as_dict(),
             }
-        if cached_owned_by_other:
-            cached_task = None
-        elif cached_task.status == "completed" and cached_task.result:
+        if cached_task.status == "completed" and cached_task.result:
             seed_result = cached_task.result
 
     summary_id = f"summary_{secrets.token_urlsafe(10)}"

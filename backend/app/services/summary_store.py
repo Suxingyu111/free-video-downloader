@@ -209,16 +209,40 @@ class SummaryStore:
         with self._lock:
             return self._tasks.get(task_id)
 
-    def get_cached_task(self, url: str, *, language: str = "zh-CN") -> SummarySnapshot | None:
+    def get_cached_task(
+        self,
+        url: str,
+        *,
+        language: str = "zh-CN",
+        owner_user_id: str | None = None,
+    ) -> SummarySnapshot | None:
         cache_key = build_summary_cache_key(url, language=language)
         with self._lock:
             task_id = self._cache_index.get(cache_key)
-            if not task_id:
-                return None
-            task = self._tasks.get(task_id)
-            if task is None or task.status != "completed":
-                return None
-            return task
+            task = self._tasks.get(task_id) if task_id else None
+            if task is not None and task.status == "completed" and _is_cache_owner_acceptable(task, owner_user_id):
+                return task
+
+            exact_owner_match: SummarySnapshot | None = None
+            ownerless_match: SummarySnapshot | None = None
+            any_match: SummarySnapshot | None = None
+            for candidate in self._tasks.values():
+                if candidate.cache_key != cache_key or candidate.status != "completed":
+                    continue
+                if owner_user_id is None:
+                    any_match = candidate
+                    break
+                if owner_user_id is not None and candidate.owner_user_id == owner_user_id:
+                    exact_owner_match = candidate
+                    break
+                if candidate.owner_user_id is None and ownerless_match is None:
+                    ownerless_match = candidate
+
+            fallback = any_match or exact_owner_match or ownerless_match
+            if fallback is not None and fallback.cache_key:
+                self._cache_index[fallback.cache_key] = fallback.id
+                self._write_json(self._index_file, self._cache_index)
+            return fallback
 
     def resolve_markdown(self, task_id: str) -> Path | None:
         with self._lock:
@@ -354,6 +378,12 @@ def _cache_index_sort_key(task: SummarySnapshot) -> tuple[int, float]:
         "completed": 2,
     }.get(task.status, 0)
     return status_priority, task.updated_at
+
+
+def _is_cache_owner_acceptable(task: SummarySnapshot, owner_user_id: str | None) -> bool:
+    if owner_user_id is None:
+        return True
+    return task.owner_user_id is None or task.owner_user_id == owner_user_id
 
 
 summary_store = SummaryStore()

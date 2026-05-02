@@ -725,6 +725,46 @@ def test_second_user_does_not_receive_first_users_cached_summary(monkeypatch, is
     assert len(fake.calls) == 2
 
 
+def test_owner_cache_returns_original_user_task_after_another_user_updates_index(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    url = "https://example.com/shared-owned-cache-roundtrip"
+    client_a = TestClient(app)
+    client_b = TestClient(app)
+    register(client_a, "summary-cache-a@example.com")
+
+    first = client_a.post(
+        "/api/summaries",
+        json=summary_payload(url),
+    )
+    first_summary_id = first.json()["summary_id"]
+    wait_for_status(client_a, first_summary_id, "completed")
+    usage_after_first = client_a.get("/api/me").json()["usage"]
+
+    register(client_b, "summary-cache-b@example.com")
+    second = client_b.post(
+        "/api/summaries",
+        json=summary_payload(url),
+    )
+    second_summary_id = second.json()["summary_id"]
+    wait_for_status(client_b, second_summary_id, "completed")
+
+    third = client_a.post(
+        "/api/summaries",
+        json={"url": url, "title": "Demo", "language": "zh-CN"},
+    )
+    usage_after_third = client_a.get("/api/me").json()["usage"]
+
+    assert second.status_code == 200
+    assert second.json()["cache_hit"] is False
+    assert second_summary_id != first_summary_id
+    assert third.status_code == 200
+    assert third.json()["cache_hit"] is True
+    assert third.json()["summary_id"] == first_summary_id
+    assert usage_after_third["used_today"] == usage_after_first["used_today"]
+    assert len(fake.calls) == 2
+
+
 def test_free_user_summary_duration_limit(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)

@@ -4,11 +4,13 @@ import secrets
 from dataclasses import dataclass
 from time import time
 
+from app.services.app_config import load_config
 from app.services.auth_service import User, get_user_by_id
 from app.services.database import transaction
 from app.services.plan_catalog import MeterType, PeriodType
 from app.services.usage_meter import (
     MeterExceeded,
+    allowance_for_user,
     entitlement_status,
     refund_reservation,
     reserve_user_meter,
@@ -46,20 +48,21 @@ class UsageSummary:
 
 
 def get_usage_summary(user: User) -> UsageSummary:
+    _seed_summary_meter_from_legacy_usage(user)
     status = entitlement_status(user)
     summary = status["meters"]["summary"]
     membership_active = status["plan"] == "pro"
-    limit = summary["limit"]
+    daily_free_limit = load_config().free_summary_daily_limit
     used = summary["used"]
-    remaining = summary["remaining"]
+    remaining = summary["plan_remaining"]
     if membership_active:
         used_today = 0
-        remaining_today = limit
+        remaining_today = daily_free_limit
     else:
         used_today = used
         remaining_today = remaining
     return UsageSummary(
-        daily_free_limit=limit,
+        daily_free_limit=daily_free_limit,
         used_today=used_today,
         remaining_today=remaining_today,
         membership_active=membership_active,
@@ -69,6 +72,7 @@ def get_usage_summary(user: User) -> UsageSummary:
 
 
 def reserve_summary_quota(user: User, reservation_id: str) -> UsageSummary:
+    _seed_summary_meter_from_legacy_usage(user)
     try:
         reserve_user_meter(user, MeterType.SUMMARY, 1, reservation_id=reservation_id)
     except MeterExceeded as exc:
@@ -86,18 +90,144 @@ def consume_summary_quota(user: User) -> UsageSummary:
 def refund_summary_quota_reservation(reservation_id: str) -> UsageSummary | None:
     refund = refund_reservation(reservation_id)
     if refund is None:
-        return None
+        return _refund_legacy_summary_quota_reservation(reservation_id)
     _sync_legacy_summary_quota_reservation(reservation_id)
     user = get_user_by_id(refund["user_id"])
     return get_usage_summary(user) if user else None
 
 
 def _free_summary_quota_exhausted(user: User) -> bool:
+    _seed_summary_meter_from_legacy_usage(user)
     status = entitlement_status(user)
     if status["plan"] != "free":
         return False
     summary = status["meters"]["summary"]
     return summary["plan_remaining"] <= 0 and summary["pack_remaining"] <= 0
+
+
+def _seed_summary_meter_from_legacy_usage(user: User) -> None:
+    allowance = allowance_for_user(user, MeterType.SUMMARY)
+    if allowance.plan_id != "free" or allowance.period_type != PeriodType.DAY:
+        return
+
+    now = time()
+    with transaction() as conn:
+        legacy = conn.execute(
+            """
+            select summary_count
+            from usage_daily
+            where user_id = ? and usage_date = ?
+            """,
+            (user.id, allowance.period_key),
+        ).fetchone()
+        if legacy is None:
+            return
+
+        legacy_count = int(legacy["summary_count"])
+        current = conn.execute(
+            f"""
+            select {allowance.column}
+            from usage_periods
+            where user_id = ? and period_type = ? and period_key = ?
+            """,
+            (user.id, allowance.period_type.value, allowance.period_key),
+        ).fetchone()
+        current_count = int(current[allowance.column]) if current else 0
+        if legacy_count <= current_count:
+            return
+
+        conn.execute(
+            f"""
+            insert into usage_periods
+            (user_id, period_type, period_key, {allowance.column}, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?)
+            on conflict(user_id, period_type, period_key)
+            do update set {allowance.column} = excluded.{allowance.column},
+                          updated_at = excluded.updated_at
+            """,
+            (
+                user.id,
+                allowance.period_type.value,
+                allowance.period_key,
+                legacy_count,
+                now,
+                now,
+            ),
+        )
+
+
+def _refund_legacy_summary_quota_reservation(reservation_id: str) -> UsageSummary | None:
+    now = time()
+    user_id: str | None = None
+    with transaction() as conn:
+        reservation = conn.execute(
+            """
+            select *
+            from summary_quota_reservations
+            where reservation_id = ?
+            """,
+            (reservation_id,),
+        ).fetchone()
+        if reservation is None:
+            return None
+
+        user_id = reservation["user_id"]
+        usage_date = reservation["usage_date"]
+        if reservation["refunded_at"] is None:
+            row = conn.execute(
+                """
+                select summary_count
+                from usage_daily
+                where user_id = ? and usage_date = ?
+                """,
+                (user_id, usage_date),
+            ).fetchone()
+            next_used = max((int(row["summary_count"]) if row else 0) - 1, 0)
+            if row is not None:
+                conn.execute(
+                    """
+                    update usage_daily
+                    set summary_count = ?, updated_at = ?
+                    where user_id = ? and usage_date = ?
+                    """,
+                    (next_used, now, user_id, usage_date),
+                )
+
+            meter = conn.execute(
+                """
+                select summary_count
+                from usage_periods
+                where user_id = ? and period_type = ? and period_key = ?
+                """,
+                (user_id, PeriodType.DAY.value, usage_date),
+            ).fetchone()
+            if meter is not None:
+                conn.execute(
+                    """
+                    update usage_periods
+                    set summary_count = ?, updated_at = ?
+                    where user_id = ? and period_type = ? and period_key = ?
+                    """,
+                    (
+                        max(int(meter["summary_count"]) - 1, 0),
+                        now,
+                        user_id,
+                        PeriodType.DAY.value,
+                        usage_date,
+                    ),
+                )
+
+            conn.execute(
+                """
+                update summary_quota_reservations
+                set refunded_at = ?
+                where reservation_id = ?
+                """,
+                (now, reservation_id),
+            )
+
+    user = get_user_by_id(user_id) if user_id else None
+    return get_usage_summary(user) if user else None
 
 
 def _sync_legacy_summary_quota_reservation(reservation_id: str) -> None:

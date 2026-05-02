@@ -13,6 +13,10 @@ from app.services.entitlements import (
 from app.services.plan_catalog import PeriodType
 
 
+def fixed_period_key(period_type: PeriodType) -> str:
+    return "2026-05-01" if period_type == PeriodType.DAY else "2026-05"
+
+
 def test_free_user_gets_three_daily_summary_uses(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "3")
@@ -53,6 +57,107 @@ def test_member_does_not_consume_free_daily_quota(monkeypatch, tmp_path):
 
     assert usage.membership_active is True
     assert get_usage_summary(user).used_today == 0
+
+
+def test_legacy_daily_usage_seeds_new_meter_without_downward_overwrite(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "3")
+    monkeypatch.setattr("app.services.usage_meter.current_period_key", fixed_period_key)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("legacy-seed@example.com", "legacy-password")
+
+    with database.transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into usage_daily (user_id, usage_date, summary_count, created_at, updated_at)
+            values (?, ?, 3, 1, 1)
+            """,
+            (user.id, "2026-05-01"),
+        )
+
+    usage = get_usage_summary(user)
+
+    assert usage.used_today == 3
+    assert usage.remaining_today == 0
+    with pytest.raises(QuotaExceeded, match="今日免费 AI 总结额度已用完"):
+        reserve_summary_quota(user, "legacy_seed_full")
+
+    with database.connect(tmp_path / "saveany.db") as conn:
+        legacy = conn.execute(
+            "select summary_count from usage_daily where user_id = ? and usage_date = ?",
+            (user.id, "2026-05-01"),
+        ).fetchone()
+        seeded = conn.execute(
+            """
+            select summary_count
+            from usage_periods
+            where user_id = ? and period_type = ? and period_key = ?
+            """,
+            (user.id, PeriodType.DAY.value, "2026-05-01"),
+        ).fetchone()
+
+    assert legacy["summary_count"] == 3
+    assert seeded["summary_count"] == 3
+
+
+def test_legacy_only_summary_reservation_refund_is_idempotent(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "3")
+    monkeypatch.setattr("app.services.usage_meter.current_period_key", fixed_period_key)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("legacy-refund@example.com", "legacy-password")
+
+    with database.transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into usage_daily (user_id, usage_date, summary_count, created_at, updated_at)
+            values (?, ?, 1, 1, 1)
+            """,
+            (user.id, "2026-05-01"),
+        )
+        conn.execute(
+            """
+            insert into summary_quota_reservations
+            (reservation_id, user_id, usage_date, created_at)
+            values (?, ?, ?, 1)
+            """,
+            ("legacy_only_refund", user.id, "2026-05-01"),
+        )
+
+    first = refund_summary_quota_reservation("legacy_only_refund")
+    second = refund_summary_quota_reservation("legacy_only_refund")
+
+    assert first is not None
+    assert first.used_today == 0
+    assert second is not None
+    assert second.used_today == 0
+    with database.connect(tmp_path / "saveany.db") as conn:
+        legacy = conn.execute(
+            "select summary_count from usage_daily where user_id = ? and usage_date = ?",
+            (user.id, "2026-05-01"),
+        ).fetchone()
+        reservation = conn.execute(
+            """
+            select refunded_at
+            from summary_quota_reservations
+            where reservation_id = ?
+            """,
+            ("legacy_only_refund",),
+        ).fetchone()
+        new_reservations = conn.execute(
+            """
+            select count(*) as reservation_count
+            from meter_reservations
+            where reservation_id = ?
+            """,
+            ("legacy_only_refund",),
+        ).fetchone()
+
+    assert legacy["summary_count"] == 0
+    assert reservation["refunded_at"] is not None
+    assert new_reservations["reservation_count"] == 0
 
 
 def test_reservation_refund_uses_original_usage_date(monkeypatch, tmp_path):

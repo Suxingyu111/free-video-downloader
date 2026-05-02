@@ -117,7 +117,7 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
     except QuotaExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    quota_user_id = None if usage.membership_active else user.id
+    quota_user_id = user.id
     task = None
     try:
         task = summary_store.create_task(

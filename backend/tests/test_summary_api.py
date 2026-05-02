@@ -4,7 +4,8 @@ import pytest
 from app.main import app
 from app import summary_routes
 from app.services import database
-from app.services.auth_service import create_user
+from app.services.auth_service import create_user, get_user_by_id
+from app.services.billing_service import activate_mock_subscription
 from app.services.entitlements import get_usage_summary, reserve_summary_quota
 from app.services.summary_store import SummaryStore
 
@@ -322,6 +323,30 @@ def test_failed_summary_refunds_consumed_quota(monkeypatch, isolated_summary_sto
     assert snapshot["status"] == "failed"
     assert usage["used_today"] == 0
     assert usage["remaining_today"] == 3
+
+
+def test_failed_pro_summary_refunds_metered_quota(monkeypatch, isolated_summary_store):
+    monkeypatch.setattr(summary_routes, "summary_service", FailingSummaryService())
+    client = TestClient(app)
+    login(client)
+    user = get_user_by_id(client.get("/api/me").json()["user"]["id"])
+    assert user is not None
+    activate_mock_subscription(user)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/failing-pro-video", "title": "Demo", "language": "zh-CN"},
+    )
+    summary_id = response.json()["summary_id"]
+
+    snapshot = wait_for_status(client, summary_id, "failed")
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 200
+    assert snapshot["status"] == "failed"
+    assert status["plan"] == "pro"
+    assert status["meters"]["summary"]["used"] == 0
+    assert status["meters"]["summary"]["remaining"] == 120
 
 
 def test_task_creation_failure_after_reservation_refunds_quota(monkeypatch, isolated_summary_store):

@@ -99,9 +99,13 @@ function safeNumber(value) {
 
 function meterRemaining(value) {
   const rawRemaining = Number(value.remaining);
-  if (Number.isFinite(rawRemaining)) return Math.max(rawRemaining, 0);
+  const packRemaining = safeNumber(value.pack_remaining);
+  if (Number.isFinite(rawRemaining)) {
+    const remaining = Math.max(rawRemaining, 0);
+    if (remaining <= 0 && packRemaining > 0) return packRemaining;
+    return remaining;
+  }
   const limit = safeNumber(value.limit);
   const used = safeNumber(value.used);
-  const packRemaining = safeNumber(value.pack_remaining);
   return Math.max(limit - used + packRemaining, 0);
 }

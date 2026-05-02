@@ -168,6 +168,20 @@ test("quotaMeterRatio keeps credit pack allowance visible after plan allowance i
 
   assert.equal(quotaMeterText(packOnlyState, "summary"), "AI 总结还剩 20 次");
   assert.equal(quotaMeterRatio(packOnlyState, "summary"), 87);
+
+  const staleRemainingState = authInitialState();
+  updateAuthState(staleRemainingState, {
+    user: { email: "stale-pack@example.com" },
+    membership: { active: false, plan: "free", status: "free" },
+    usage: {
+      meters: {
+        summary: { limit: 3, used: 3, remaining: 0, plan_remaining: 0, pack_remaining: 20 }
+      }
+    }
+  });
+
+  assert.equal(quotaMeterText(staleRemainingState, "summary"), "AI 总结还剩 20 次");
+  assert.equal(quotaMeterRatio(staleRemainingState, "summary"), 87);
 });
 
 test("auth usage defaults include isolated meter and credit pack objects", () => {

@@ -73,6 +73,7 @@ class SummarySnapshot:
     streamed_text: str = ""
     markdown_url: str | None = None
     error: str | None = None
+    owner_user_id: str | None = None
     quota_user_id: str | None = None
     quota_refunded_at: float | None = None
     created_at: float = field(default_factory=time)
@@ -114,6 +115,7 @@ class SummarySnapshot:
             streamed_text=str(data.get("streamed_text") or ""),
             markdown_url=data.get("markdown_url") if isinstance(data.get("markdown_url"), str) else None,
             error=data.get("error") if isinstance(data.get("error"), str) else None,
+            owner_user_id=data.get("owner_user_id") if isinstance(data.get("owner_user_id"), str) else None,
             quota_user_id=data.get("quota_user_id") if isinstance(data.get("quota_user_id"), str) else None,
             quota_refunded_at=float(data["quota_refunded_at"]) if data.get("quota_refunded_at") is not None else None,
             created_at=float(data.get("created_at") or time()),
@@ -138,6 +140,7 @@ class SummaryStore:
         title: str | None = None,
         language: str = "zh-CN",
         cache_key: str | None = None,
+        owner_user_id: str | None = None,
         quota_user_id: str | None = None,
         task_id: str | None = None,
     ) -> SummarySnapshot:
@@ -147,6 +150,7 @@ class SummaryStore:
             title=title,
             language=language or "zh-CN",
             cache_key=cache_key or build_summary_cache_key(url, language=language),
+            owner_user_id=owner_user_id,
             quota_user_id=quota_user_id,
         )
         with self._lock:
@@ -289,6 +293,7 @@ class SummaryStore:
         record = {
             **task.as_dict(),
             "cache_key": task.cache_key,
+            "owner_user_id": task.owner_user_id,
             "prompt_version": SUMMARY_PROMPT_VERSION,
             "quota_refunded_at": task.quota_refunded_at,
             "quota_user_id": task.quota_user_id,

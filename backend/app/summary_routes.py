@@ -19,6 +19,7 @@ from app.services.entitlements import (
 )
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
+from app.services.usage_meter import MeterExceeded, assert_duration_allowed, reserve_summary_question
 from app.services.ytdlp_service import friendly_error_message
 
 
@@ -33,6 +34,7 @@ class SummaryRequest(BaseModel):
     title: str | None = None
     language: str = "zh-CN"
     force: bool = False
+    duration: float | None = None
 
 
 class SummaryQuestionRequest(BaseModel):
@@ -113,6 +115,11 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
 
     summary_id = f"summary_{secrets.token_urlsafe(10)}"
     try:
+        assert_duration_allowed(user, capability="summary", duration_seconds=payload.duration)
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+    try:
         usage = reserve_summary_quota(user, summary_id)
     except QuotaExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
@@ -124,6 +131,7 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
             payload.url,
             title=payload.title,
             language=payload.language,
+            owner_user_id=user.id,
             quota_user_id=quota_user_id,
             task_id=summary_id,
         )
@@ -166,15 +174,25 @@ def get_summary(summary_id: str) -> dict:
 
 
 @router.post("/{summary_id}/questions")
-def ask_summary_question(summary_id: str, payload: SummaryQuestionRequest) -> dict[str, str]:
+def ask_summary_question(
+    summary_id: str,
+    payload: SummaryQuestionRequest,
+    user: User = Depends(current_user),
+) -> dict[str, str]:
     task = summary_store.get_task(summary_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Summary task not found")
+    if task.owner_user_id and task.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权访问这个 AI 总结。")
     if task.status != "completed" or not task.result:
         raise HTTPException(status_code=409, detail="Summary task is not completed")
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
+    try:
+        reserve_summary_question(user, summary_id)
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=402, detail="这个总结的追问次数已用完，请升级 Pro 后继续。") from exc
     transcript = _transcript_from_result(task.result)
     answer = get_summary_service().answer_question(
         title=task.title or "未命名视频",

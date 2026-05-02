@@ -32,7 +32,7 @@ from app.services.plan_catalog import MeterType
 from app.services.runtime_cleanup import cleanup_failed_download
 from app.services.runtime_cleanup import prune_download_directories
 from app.services.task_store import task_store
-from app.services.usage_meter import MeterExceeded, consume_anonymous_meter, reserve_user_meter
+from app.services.usage_meter import MeterExceeded, assert_duration_allowed, consume_anonymous_meter, reserve_user_meter
 from app.services.ytdlp_service import DEFAULT_FORMAT, DEFAULT_HTTP_HEADERS, YtDlpService, friendly_error_message
 from app.summary_routes import refund_interrupted_summary_quotas
 from app.summary_routes import router as summary_router
@@ -428,6 +428,10 @@ def create_download(
             result = demo_result if demo_result is not None else service.analyze(payload.url)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
+    try:
+        assert_duration_allowed(user, capability="download", duration_seconds=result.get("duration"))
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
     entry_count = len(payload.entry_ids) if payload.entry_ids else max(len(result.get("entries") or []), 1)
     try:
         if user:

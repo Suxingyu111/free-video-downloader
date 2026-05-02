@@ -253,6 +253,52 @@ def test_download_uses_analysis_token_and_anonymous_limit(monkeypatch, tmp_path)
     assert "访客下载次数已用完" in second.json()["detail"]
 
 
+def test_anonymous_demo_download_blocks_video_over_duration_limit(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    url = "https://demo.saveany.local/long-video"
+
+    def long_demo_result(requested_url):
+        assert requested_url == url
+        return {
+            "kind": "video",
+            "id": "long-demo",
+            "title": "Long Demo",
+            "webpage_url": url,
+            "thumbnail": None,
+            "duration": 31 * 60,
+            "extractor": "demo",
+            "formats": [],
+            "entries": [],
+        }
+
+    def demo_download_file(_requested_url, output_dir):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / "long-demo.mp4"
+        output_file.write_bytes(b"long demo")
+        return output_file
+
+    monkeypatch.setattr(main, "demo_analyze_result", long_demo_result)
+    monkeypatch.setattr(main, "demo_download_file", demo_download_file)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    assert response.status_code == 402
+    assert "30 分钟" in response.json()["detail"]
+
+
 def test_anonymous_multi_entry_download_limit_is_atomic(monkeypatch, tmp_path):
     db_path = tmp_path / "saveany.db"
     monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))

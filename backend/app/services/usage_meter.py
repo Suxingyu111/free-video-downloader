@@ -207,6 +207,32 @@ def anonymous_usage_summary(ip: str) -> dict:
     }
 
 
+def max_duration_for_user(user: User | None, *, capability: str) -> int | None:
+    plan_id = active_plan_id(user) if user else "anonymous"
+    limits = get_plan_limits(plan_id)
+    if capability == "download":
+        return limits.download_max_duration_seconds
+    if capability == "summary":
+        return limits.summary_max_duration_seconds
+    raise ValueError(f"Unknown duration capability: {capability}")
+
+
+def assert_duration_allowed(user: User | None, *, capability: str, duration_seconds: float | int | None) -> None:
+    max_seconds = max_duration_for_user(user, capability=capability)
+    if not max_seconds or duration_seconds is None:
+        return
+    try:
+        duration = float(duration_seconds)
+    except (TypeError, ValueError):
+        return
+    if duration <= max_seconds:
+        return
+    minutes = max_seconds // 60
+    if capability == "download":
+        raise MeterExceeded(f"当前套餐单个下载视频最长支持 {minutes} 分钟。")
+    raise MeterExceeded(f"当前套餐单个 AI 总结视频最长支持 {minutes} 分钟。")
+
+
 def reserve_user_meter(
     user: User, meter_type: MeterType, amount: int, *, reservation_id: str
 ) -> dict:
@@ -301,6 +327,31 @@ def reserve_user_meter(
                 (reservation_id, pack_id, used_amount),
             )
     return _meter_status(user, meter_type)
+
+
+def reserve_summary_question(user: User, summary_id: str) -> dict:
+    limits = get_plan_limits(active_plan_id(user))
+    limit = limits.questions_per_summary or 0
+    now = time()
+    with transaction() as conn:
+        row = conn.execute(
+            "select question_count from summary_questions where summary_id = ? and user_id = ?",
+            (summary_id, user.id),
+        ).fetchone()
+        used = int(row["question_count"]) if row else 0
+        if used >= limit:
+            raise MeterExceeded("这个总结的追问次数已用完，请升级 Pro 后继续。")
+        next_used = used + 1
+        conn.execute(
+            """
+            insert into summary_questions (summary_id, user_id, question_count, created_at, updated_at)
+            values (?, ?, ?, ?, ?)
+            on conflict(summary_id, user_id)
+            do update set question_count = excluded.question_count, updated_at = excluded.updated_at
+            """,
+            (summary_id, user.id, next_used, now, now),
+        )
+    return {"limit": limit, "used": next_used, "remaining": max(limit - next_used, 0)}
 
 
 def _consume_credit_packs(

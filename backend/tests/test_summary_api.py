@@ -519,6 +519,70 @@ def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_
     assert answer.status_code == 409
 
 
+def test_summary_task_records_owner_and_question_requires_login(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/owned-video", "title": "Demo", "language": "zh-CN", "duration": 120},
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+    client.post("/api/auth/logout")
+
+    answer = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "这一段讲了什么？", "language": "zh-CN"},
+    )
+
+    assert answer.status_code == 401
+
+
+def test_free_user_summary_duration_limit(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/long-free-video", "title": "Demo", "language": "zh-CN", "duration": 31 * 60},
+    )
+
+    assert response.status_code == 402
+    assert "30 分钟" in response.json()["detail"]
+
+
+def test_free_user_question_limit(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/questions", "title": "Demo", "language": "zh-CN", "duration": 120},
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    for index in range(3):
+        assert client.post(
+            f"/api/summaries/{summary_id}/questions",
+            json={"question": f"问题 {index}", "language": "zh-CN"},
+        ).status_code == 200
+
+    blocked = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "第四个问题", "language": "zh-CN"},
+    )
+
+    assert blocked.status_code == 402
+    assert "追问次数" in blocked.json()["detail"]
+
+
 def test_unknown_summary_task_returns_404():
     client = TestClient(app)
 

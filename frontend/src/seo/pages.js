@@ -1541,6 +1541,7 @@ export function getPageJsonLd(page, siteUrl = seoSite.defaultUrl) {
   const origin = normalizeOrigin(siteUrl);
   const questions = page.questions?.length ? page.questions : seoGeoAnswers.slice(0, 2);
   const pageAbsoluteUrl = pageUrl(origin, page.path);
+  const pageSchemaType = page.schemaType || (page.pageType === "hub" ? "CollectionPage" : "WebPage");
   const graph = [
     {
       "@type": "BreadcrumbList",
@@ -1561,7 +1562,7 @@ export function getPageJsonLd(page, siteUrl = seoSite.defaultUrl) {
       ]
     },
     {
-      "@type": "WebPage",
+      "@type": pageSchemaType === "Article" || pageSchemaType === "SoftwareApplication" ? "WebPage" : pageSchemaType,
       "@id": `${pageAbsoluteUrl}#webpage`,
       name: page.title,
       headline: page.heading,
@@ -1609,6 +1610,57 @@ export function getPageJsonLd(page, siteUrl = seoSite.defaultUrl) {
         name: step,
         text: step
       }))
+    });
+  }
+
+  if (page.schemaType === "Article" || page.path?.startsWith("/articles/")) {
+    graph.push({
+      "@type": "Article",
+      "@id": `${pageAbsoluteUrl}#article`,
+      headline: page.heading,
+      description: page.description,
+      inLanguage: seoSite.language,
+      dateModified: page.lastUpdated || seoSite.lastUpdated,
+      author: {
+        "@id": `${origin}/#organization`
+      },
+      publisher: {
+        "@id": `${origin}/#organization`
+      },
+      mainEntityOfPage: {
+        "@id": `${pageAbsoluteUrl}#webpage`
+      }
+    });
+  }
+
+  if (page.pageType === "pricing" || page.path === "/pricing/") {
+    graph.push({
+      "@type": "SoftwareApplication",
+      "@id": `${pageAbsoluteUrl}#pricing-software`,
+      name: seoSite.productName,
+      alternateName: seoSite.brandName,
+      url: pageAbsoluteUrl,
+      applicationCategory: seoSite.appCategory,
+      operatingSystem: seoSite.operatingSystem,
+      inLanguage: seoSite.language,
+      description: page.description,
+      offers: {
+        "@type": "OfferCatalog",
+        name: "SaveAny 套餐方案",
+        itemListElement: seoPricingPlans.map((plan, index) => ({
+          "@type": "Offer",
+          position: index + 1,
+          name: plan.name,
+          description: plan.description,
+          price: plan.price,
+          priceCurrency: plan.priceCurrency,
+          availability: "https://schema.org/InStock",
+          url: pageAbsoluteUrl
+        }))
+      },
+      publisher: {
+        "@id": `${origin}/#organization`
+      }
     });
   }
 

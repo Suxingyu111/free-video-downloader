@@ -347,6 +347,25 @@ test("page structured data includes crawlable FAQ and capability lists", () => {
   assert.match(JSON.stringify(graph), /如何把视频总结成笔记/);
 });
 
+test("topic, article, and pricing pages expose matching structured data", () => {
+  const hub = SEO_PAGES.find((item) => item.path === "/features/");
+  const hubGraph = getPageJsonLd(hub, "https://saveany.example")["@graph"];
+  assert.ok(hubGraph.some((item) => item["@type"] === "CollectionPage"));
+
+  const article = SEO_PAGES.find((item) => item.path === "/articles/public-video-downloader-drm-boundary/");
+  const articleGraph = getPageJsonLd({ ...article, schemaType: "Article" }, "https://saveany.example")["@graph"];
+  assert.ok(articleGraph.some((item) => item["@type"] === "Article"));
+
+  const pricing = SEO_PAGES.find((item) => item.path === "/pricing/");
+  const pricingGraph = getPageJsonLd(pricing, "https://saveany.example")["@graph"];
+  const pricingApp = pricingGraph.find((item) => item["@type"] === "SoftwareApplication" && item["@id"].endsWith("#pricing-software"));
+
+  assert.ok(pricingApp);
+  assert.equal(pricingApp.offers["@type"], "OfferCatalog");
+  assert.equal(pricingApp.offers.itemListElement.length, 3);
+  assert.match(JSON.stringify(pricingApp), /专业版/);
+});
+
 test("llms files and markdown mirrors expose AI-readable product facts", () => {
   const siteUrl = "https://saveany.example";
   const llmsTxt = buildLlmsTxt(siteUrl);

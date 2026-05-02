@@ -65,6 +65,55 @@ def test_credit_pack_is_consumed_after_plan_allowance(monkeypatch, tmp_path):
     assert status["credit_packs"]["summary"]["remaining"] == 19
 
 
+def test_add_credit_pack_rejects_none_payment_reference(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    user = create_user("pack-none-payment@example.com", "meter-password")
+
+    with pytest.raises(ValueError, match="payment_reference"):
+        add_credit_pack(
+            user.id,
+            pack_id="summary_small",
+            source="mock",
+            payment_reference=None,
+        )
+
+    with database.connect(db_path) as conn:
+        row = conn.execute(
+            "select count(*) as pack_count from credit_packs where user_id = ?",
+            (user.id,),
+        ).fetchone()
+
+    assert row["pack_count"] == 0
+
+
+@pytest.mark.parametrize("payment_reference", ["", "   "])
+def test_add_credit_pack_rejects_blank_payment_reference(
+    monkeypatch, tmp_path, payment_reference
+):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    user = create_user("pack-blank-payment@example.com", "meter-password")
+
+    with pytest.raises(ValueError, match="payment_reference"):
+        add_credit_pack(
+            user.id,
+            pack_id="summary_small",
+            source="mock",
+            payment_reference=payment_reference,
+        )
+
+    with database.connect(db_path) as conn:
+        row = conn.execute(
+            "select count(*) as pack_count from credit_packs where user_id = ?",
+            (user.id,),
+        ).fetchone()
+
+    assert row["pack_count"] == 0
+
+
 def test_add_credit_pack_is_idempotent_for_payment_reference(monkeypatch, tmp_path):
     db_path = tmp_path / "saveany.db"
     monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))

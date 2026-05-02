@@ -406,6 +406,12 @@ def add_credit_pack(
     payment_reference: str,
     stripe_price_id: str | None = None,
 ) -> dict:
+    if not isinstance(payment_reference, str):
+        raise ValueError("payment_reference is required")
+    payment_reference = payment_reference.strip()
+    if not payment_reference:
+        raise ValueError("payment_reference is required")
+
     pack = get_credit_pack(pack_id)
     now = time()
     expires_at = now + pack.valid_days * 86400

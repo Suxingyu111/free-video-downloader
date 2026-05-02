@@ -145,7 +145,7 @@ create table if not exists credit_packs (
   pack_type text not null,
   source text not null,
   stripe_price_id text,
-  stripe_payment_intent_id text,
+  stripe_payment_intent_id text not null,
   purchased_amount integer not null,
   remaining_amount integer not null,
   expires_at real not null,

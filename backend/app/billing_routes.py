@@ -21,6 +21,7 @@ from app.services.billing_service import (
     ensure_stripe_customer_id,
     expire_mock_subscription,
     fail_mock_payment,
+    fail_stripe_checkout_attempt,
     grant_credit_pack,
     get_open_stripe_checkout_attempt,
     get_membership,
@@ -211,8 +212,8 @@ def billing_checkout(
             mode="payment",
             customer=customer_id,
             line_items=[{"price": price_id, "quantity": 1}],
-            success_url=f"{return_base_url}/#pricing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{return_base_url}/#pricing?checkout=cancel",
+            success_url=f"{return_base_url}/#pricing?checkout=success&purchase_type=credit_pack&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{return_base_url}/#pricing?checkout=cancel&purchase_type=credit_pack",
             client_reference_id=user.id,
             metadata={
                 "saveany_user_id": user.id,
@@ -386,6 +387,8 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
                     _grant_credit_pack_checkout_session(config, checkout_session)
                     if checkout_session.get("id"):
                         complete_stripe_checkout_attempt(checkout_session["id"])
+                elif event_type == "checkout.session.async_payment_failed" and checkout_session.get("id"):
+                    fail_stripe_checkout_attempt(checkout_session["id"])
             elif event_type == "checkout.session.completed":
                 upsert_stripe_checkout_session(checkout_session)
                 if checkout_session.get("id"):

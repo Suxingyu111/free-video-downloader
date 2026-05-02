@@ -51,8 +51,8 @@ stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook
 
 把 Stripe CLI 输出的 `whsec_...` 填入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
 
-6. 打开套餐页，点击“开通专业版 ¥19/月”或购买按量包，用 Stripe test card 完成 Checkout。
-7. 回到 SaveAny 后等待 webhook 确认会员状态。
+6. 打开套餐页，点击“开通专业版 ¥19/月”，用 Stripe test card 完成 Checkout。按量包可先通过后端 API 验收；前端购买入口完成后，再从套餐页购买按量包。
+7. 回到 SaveAny 后等待 webhook 确认会员或按量包状态。
 
 前端成功回跳不会自行开通会员。会员状态只由后端在 Stripe webhook 验签通过后更新。
 

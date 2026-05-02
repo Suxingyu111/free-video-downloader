@@ -286,6 +286,18 @@ def complete_stripe_checkout_attempt(session_id: str) -> None:
         )
 
 
+def fail_stripe_checkout_attempt(session_id: str) -> None:
+    with transaction() as conn:
+        conn.execute(
+            """
+            update billing_attempts
+            set status = 'failed', updated_at = ?
+            where stripe_checkout_session_id = ? and status = 'open'
+            """,
+            (time(), session_id),
+        )
+
+
 def _stripe_dict(value) -> dict | None:
     if value is None:
         return None

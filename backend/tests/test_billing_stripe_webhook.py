@@ -245,6 +245,33 @@ def test_stripe_credit_pack_checkout_does_not_change_membership(monkeypatch, tmp
     assert customer["stripe_customer_id"] == "cus_reused"
 
 
+def test_stripe_credit_pack_checkout_marks_return_urls(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "pack-return@example.com", "password": "checkout-password"},
+    )
+
+    response = client.post(
+        "/api/billing/checkout",
+        json={"purchase_type": "credit_pack", "pack_id": "summary_small"},
+    )
+
+    assert response.status_code == 200
+    session_call = FakeStripeCheckoutSession.created[0]
+    assert "checkout=success&purchase_type=credit_pack&session_id=" in session_call["success_url"]
+    assert session_call["cancel_url"].endswith(
+        "/#pricing?checkout=cancel&purchase_type=credit_pack"
+    )
+
+
 def test_stripe_checkout_uses_request_origin_for_return_urls(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
     database.initialize_database(tmp_path / "saveany.db")
@@ -270,6 +297,8 @@ def test_stripe_checkout_uses_request_origin_for_return_urls(monkeypatch, tmp_pa
         "http://127.0.0.1:5175/#pricing?checkout=success"
     )
     assert session_call["cancel_url"] == "http://127.0.0.1:5175/#pricing?checkout=cancel"
+    assert "purchase_type=credit_pack" not in session_call["success_url"]
+    assert "purchase_type=credit_pack" not in session_call["cancel_url"]
 
 
 def test_stripe_checkout_recreates_session_when_return_origin_changes(monkeypatch, tmp_path):
@@ -1209,6 +1238,57 @@ def test_stripe_async_payment_failed_pack_does_not_grant(monkeypatch, tmp_path):
     )
 
     _assert_processed_credit_pack_event_without_grant(client, tmp_path, event, user.id)
+
+
+def test_stripe_async_payment_failed_credit_pack_checkout_can_retry(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "pack-failed-retry@example.com", "password": "checkout-password"},
+    ).json()
+    user_id = registered["user"]["id"]
+
+    first = client.post(
+        "/api/billing/checkout",
+        json={"purchase_type": "credit_pack", "pack_id": "summary_small"},
+    )
+    failed_event = _credit_pack_checkout_event(
+        "evt_pack_retry_failed",
+        user_id,
+        session_id=first.json()["session_id"],
+        event_type="checkout.session.async_payment_failed",
+        payment_status="unpaid",
+    )
+    failed_response = _post_event(client, failed_event)
+    second = client.post(
+        "/api/billing/checkout",
+        json={"purchase_type": "credit_pack", "pack_id": "summary_small"},
+    )
+
+    assert first.status_code == 200
+    assert failed_response.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["session_id"] != second.json()["session_id"]
+    assert len(FakeStripeCheckoutSession.created) == 2
+    with database.connect(tmp_path / "saveany.db") as conn:
+        attempts = conn.execute(
+            """
+            select stripe_checkout_session_id, status
+            from billing_attempts
+            where user_id = ?
+            order by created_at
+            """,
+            (user_id,),
+        ).fetchall()
+    assert [attempt["status"] for attempt in attempts] == ["failed", "open"]
 
 
 def test_stripe_async_payment_succeeded_pack_grants_credit(monkeypatch, tmp_path):

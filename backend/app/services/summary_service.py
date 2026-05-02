@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -94,7 +95,15 @@ class SummaryService:
             if progress_hook:
                 emit_summary_progress(progress_hook, "speech_to_text", 30, "Extracting audio for speech-to-text")
             audio_path = self.audio_service.extract_audio(url, output_dir / "audio")
+            transcription_seconds = estimate_audio_duration_seconds(audio_path)
             if progress_hook:
+                emit_summary_progress(
+                    progress_hook,
+                    "speech_to_text",
+                    32,
+                    "Speech-to-text minutes required",
+                    transcription_seconds=transcription_seconds,
+                )
                 preview_transcript = self._try_build_speech_preview_draft(
                     audio_path=audio_path,
                     output_dir=output_dir,
@@ -335,6 +344,27 @@ def create_audio_preview_clip(audio_path: Path, output_dir: Path, *, seconds: in
     except (OSError, subprocess.SubprocessError):
         return None
     return preview_path if preview_path.exists() and preview_path.stat().st_size > 0 else None
+
+
+def estimate_audio_duration_seconds(audio_path: Path) -> float:
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(audio_path),
+    ]
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=20)
+        duration = float(result.stdout.strip() or "0")
+        if not math.isfinite(duration) or duration <= 0:
+            return 1.0
+        return max(duration, 1.0)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 1.0
 
 
 def transcript_from_summary_result(result: dict | None, *, language: str) -> Transcript | None:

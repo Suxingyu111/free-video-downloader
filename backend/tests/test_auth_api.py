@@ -4,6 +4,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import database
+from app.services.auth_service import get_user_by_id
+from app.services.billing_service import activate_mock_subscription
+from app.services.plan_catalog import PeriodType
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
@@ -521,3 +524,72 @@ def test_password_reset_request_revokes_previous_unused_token(monkeypatch, tmp_p
 
     assert revoked_confirm.status_code == 400
     assert current_confirm.status_code == 200
+
+
+def test_me_includes_entitlement_status(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    register_with_csrf(client, "entitlements@example.com", "correct horse battery staple")
+
+    response = client.get("/api/entitlements/status")
+
+    assert response.status_code == 200
+    assert response.json()["plan"] == "free"
+    assert response.json()["meters"]["summary"]["limit"] == 3
+    assert response.json()["meters"]["transcription_minutes"]["limit"] == 30
+
+
+def test_entitlement_status_seeds_legacy_daily_usage(monkeypatch, tmp_path):
+    def fixed_period_key(period_type: PeriodType) -> str:
+        return "2026-05-01" if period_type == PeriodType.DAY else "2026-05"
+
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setattr("app.services.usage_meter.current_period_key", fixed_period_key)
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    registered = register_with_csrf(
+        client,
+        "legacy-status@example.com",
+        "correct horse battery staple",
+    )
+    user_id = registered.json()["user"]["id"]
+    with database.transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into usage_daily (user_id, usage_date, summary_count, created_at, updated_at)
+            values (?, ?, 3, 1, 1)
+            """,
+            (user_id, "2026-05-01"),
+        )
+
+    response = client.get("/api/entitlements/status")
+
+    assert response.status_code == 200
+    assert response.json()["meters"]["summary"]["used"] == 3
+    assert response.json()["meters"]["summary"]["remaining"] == 0
+
+
+def test_me_keeps_legacy_daily_usage_fields_for_pro(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "3")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    registered = register_with_csrf(
+        client,
+        "pro-usage@example.com",
+        "correct horse battery staple",
+    )
+    user = get_user_by_id(registered.json()["user"]["id"])
+    assert user is not None
+    activate_mock_subscription(user)
+
+    response = client.get("/api/me")
+
+    assert response.status_code == 200
+    usage = response.json()["usage"]
+    assert usage["daily_free_limit"] == 3
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+    assert usage["membership_active"] is True
+    assert usage["meters"]["summary"]["limit"] == 120

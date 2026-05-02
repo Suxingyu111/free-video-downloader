@@ -234,10 +234,40 @@ class SummaryStore:
                     return max(owned_tasks, key=lambda task: task.updated_at)
             task_id = self._cache_index.get(cache_key)
             task = self._tasks.get(task_id) if task_id else None
-            if task is not None and task.status == "completed":
+            if task is not None and task.status == "completed" and _is_cache_owner_acceptable(task, owner_user_id):
                 return task
+
+            if owner_user_id is not None:
+                owned_tasks = [
+                    task
+                    for task in completed_tasks
+                    if task.owner_user_id == owner_user_id
+                ]
+                if owned_tasks:
+                    fallback = max(owned_tasks, key=lambda task: task.updated_at)
+                    if fallback.cache_key:
+                        self._cache_index[fallback.cache_key] = fallback.id
+                        self._write_json(self._index_file, self._cache_index)
+                    return fallback
+
+                ownerless_tasks = [
+                    task
+                    for task in completed_tasks
+                    if task.owner_user_id is None
+                ]
+                if ownerless_tasks:
+                    fallback = max(ownerless_tasks, key=lambda task: task.updated_at)
+                    if fallback.cache_key:
+                        self._cache_index[fallback.cache_key] = fallback.id
+                        self._write_json(self._index_file, self._cache_index)
+                    return fallback
+
             if completed_tasks:
-                return max(completed_tasks, key=lambda task: task.updated_at)
+                fallback = max(completed_tasks, key=lambda task: task.updated_at)
+                if fallback.cache_key:
+                    self._cache_index[fallback.cache_key] = fallback.id
+                    self._write_json(self._index_file, self._cache_index)
+                return fallback
             return None
 
     def clone_completed_task_for_owner(
@@ -350,6 +380,7 @@ class SummaryStore:
         record = {
             **task.as_dict(),
             "cache_key": task.cache_key,
+            "owner_user_id": task.owner_user_id,
             "prompt_version": SUMMARY_PROMPT_VERSION,
             "owner_user_id": task.owner_user_id,
             "quota_refunded_at": task.quota_refunded_at,
@@ -411,6 +442,12 @@ def _cache_index_sort_key(task: SummarySnapshot) -> tuple[int, float]:
         "completed": 2,
     }.get(task.status, 0)
     return status_priority, task.updated_at
+
+
+def _is_cache_owner_acceptable(task: SummarySnapshot, owner_user_id: str | None) -> bool:
+    if owner_user_id is None:
+        return True
+    return task.owner_user_id is None or task.owner_user_id == owner_user_id
 
 
 summary_store = SummaryStore()

@@ -61,6 +61,13 @@ create table if not exists subscriptions (
   updated_at real not null
 );
 
+create table if not exists stripe_customers (
+  user_id text primary key references users(id) on delete cascade,
+  stripe_customer_id text not null unique,
+  created_at real not null,
+  updated_at real not null
+);
+
 create table if not exists stripe_events (
   event_id text primary key,
   event_type text not null,
@@ -92,6 +99,9 @@ create table if not exists billing_attempts (
   user_id text not null references users(id) on delete cascade,
   mode text not null,
   status text not null,
+  purchase_type text not null default 'subscription',
+  pack_id text,
+  stripe_price_id text,
   stripe_checkout_session_id text,
   stripe_checkout_url text,
   stripe_return_url text,
@@ -103,6 +113,81 @@ create table if not exists rate_limits (
   key text primary key,
   count integer not null,
   reset_at real not null
+);
+
+create table if not exists usage_periods (
+  user_id text not null references users(id) on delete cascade,
+  period_type text not null,
+  period_key text not null,
+  analyze_count integer not null default 0,
+  download_count integer not null default 0,
+  summary_count integer not null default 0,
+  transcription_minutes integer not null default 0,
+  question_count integer not null default 0,
+  created_at real not null,
+  updated_at real not null,
+  primary key (user_id, period_type, period_key)
+);
+
+create table if not exists anonymous_usage (
+  ip_hash text not null,
+  usage_date text not null,
+  analyze_count integer not null default 0,
+  download_count integer not null default 0,
+  created_at real not null,
+  updated_at real not null,
+  primary key (ip_hash, usage_date)
+);
+
+create table if not exists meter_reservations (
+  reservation_id text primary key,
+  user_id text references users(id) on delete cascade,
+  meter_type text not null,
+  amount integer not null,
+  plan_amount integer not null default 0,
+  pack_amount integer not null default 0,
+  period_type text,
+  period_key text,
+  credit_pack_id text,
+  status text not null,
+  created_at real not null,
+  committed_at real,
+  refunded_at real
+);
+
+create table if not exists credit_packs (
+  id text primary key,
+  user_id text not null references users(id) on delete cascade,
+  pack_id text not null,
+  pack_type text not null,
+  source text not null,
+  stripe_price_id text,
+  stripe_payment_intent_id text not null,
+  purchased_amount integer not null,
+  remaining_amount integer not null,
+  expires_at real not null,
+  status text not null,
+  created_at real not null,
+  updated_at real not null
+);
+
+create unique index if not exists idx_credit_packs_payment_idempotency
+on credit_packs (user_id, source, stripe_payment_intent_id, pack_id);
+
+create table if not exists meter_reservation_pack_uses (
+  reservation_id text not null references meter_reservations(reservation_id) on delete cascade,
+  credit_pack_id text not null references credit_packs(id) on delete cascade,
+  amount integer not null,
+  primary key (reservation_id, credit_pack_id)
+);
+
+create table if not exists summary_questions (
+  summary_id text not null,
+  user_id text not null references users(id) on delete cascade,
+  question_count integer not null default 0,
+  created_at real not null,
+  updated_at real not null,
+  primary key (summary_id, user_id)
 );
 """
 
@@ -153,6 +238,14 @@ def _migrate_billing_attempts(conn: sqlite3.Connection) -> None:
         conn.execute("alter table billing_attempts add column stripe_checkout_url text")
     if "stripe_return_url" not in columns:
         conn.execute("alter table billing_attempts add column stripe_return_url text")
+    if "purchase_type" not in columns:
+        conn.execute(
+            "alter table billing_attempts add column purchase_type text not null default 'subscription'"
+        )
+    if "pack_id" not in columns:
+        conn.execute("alter table billing_attempts add column pack_id text")
+    if "stripe_price_id" not in columns:
+        conn.execute("alter table billing_attempts add column stripe_price_id text")
 
 
 def _migrate_sessions(conn: sqlite3.Connection) -> None:

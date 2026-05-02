@@ -4,10 +4,12 @@ import test from "node:test";
 import {
   askSummaryQuestion,
   connectSummaryEvents,
+  createDownloadTask,
   createBillingCheckout,
   createBillingPortal,
   createSummaryTask,
   getBillingStatus,
+  getEntitlementStatus,
   getMe,
   getSummary,
   loginAccount,
@@ -174,3 +176,44 @@ test("connectSummaryEvents listens for summary event and closes", () => {
   assert.deepEqual(snapshots, [{ id: "summary_123", status: "completed" }]);
   assert.equal(closed, true);
 });
+
+test("getEntitlementStatus calls quota status endpoint with credentials", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    return jsonResponse({ plan: "free", meters: {} });
+  };
+
+  const result = await getEntitlementStatus();
+
+  assert.equal(result.plan, "free");
+  assert.equal(calls[0].url, "/api/entitlements/status");
+  assert.equal(calls[0].options.credentials, "include");
+});
+
+test("createDownloadTask sends analysis token", async () => {
+  let body = null;
+  globalThis.fetch = async (_url, options = {}) => {
+    body = JSON.parse(options.body);
+    return jsonResponse({ task_id: "task_1" });
+  };
+
+  await createDownloadTask({
+    url: "https://example.com/video",
+    analysis_token: "analysis_123",
+    entry_ids: [],
+    format_id: "best",
+    subtitle_langs: [],
+    write_auto_subs: false,
+    prefer_srt: true
+  });
+
+  assert.equal(body.analysis_token, "analysis_123");
+});
+
+function jsonResponse(body) {
+  return {
+    ok: true,
+    json: async () => body
+  };
+}

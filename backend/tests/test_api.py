@@ -7,6 +7,7 @@ from app import main
 from app.main import DownloadRequest
 from app.main import app
 from app.main import proxy_media_assets
+from app.services import database
 
 
 def test_health_endpoint_returns_ok():
@@ -43,7 +44,10 @@ def test_api_contract_has_no_manual_cookie_fields():
     assert "cookie_ref" not in DownloadRequest.model_fields
 
 
-def test_analyze_retries_transient_youtube_bot_check(monkeypatch):
+def test_analyze_retries_transient_youtube_bot_check(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+
     class FlakyService:
         def __init__(self):
             self.calls = 0
@@ -164,3 +168,285 @@ def test_geo_access_monitor_logs_crawler_and_geo_assets(monkeypatch, tmp_path):
     assert records[0]["path"] == "/llms.txt"
     assert records[0]["crawler"] == "openai-search"
     assert "secret" not in json.dumps(records[0])
+
+
+def test_analyze_returns_analysis_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    response = client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"})
+
+    assert response.status_code == 200
+    assert response.json()["analysis_token"].startswith("analysis_")
+    assert response.json()["duration"] == 618
+
+
+def test_blank_analyze_url_does_not_consume_anonymous_quota(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    client = TestClient(app)
+
+    response = client.post("/api/analyze", data={"url": "   "})
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute("select coalesce(sum(analyze_count), 0) as used from anonymous_usage").fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 400
+    assert int(usage["used"]) == 0
+
+
+def test_anonymous_analyze_limit_blocks_fourth_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    for _ in range(3):
+        assert client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"}).status_code == 200
+
+    blocked = client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"})
+
+    assert blocked.status_code == 429
+    assert "访客解析次数已用完" in blocked.json()["detail"]
+
+
+def test_download_uses_analysis_token_and_anonymous_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    analyzed = client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"}).json()
+    first = client.post(
+        "/api/download",
+        json={
+            "url": analyzed["webpage_url"],
+            "analysis_token": analyzed["analysis_token"],
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+    second = client.post(
+        "/api/download",
+        json={
+            "url": analyzed["webpage_url"],
+            "analysis_token": analyzed["analysis_token"],
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert "访客下载次数已用完" in second.json()["detail"]
+
+
+def test_anonymous_demo_download_blocks_video_over_duration_limit(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    url = "https://demo.saveany.local/long-video"
+
+    def long_demo_result(requested_url):
+        assert requested_url == url
+        return {
+            "kind": "video",
+            "id": "long-demo",
+            "title": "Long Demo",
+            "webpage_url": url,
+            "thumbnail": None,
+            "duration": 31 * 60,
+            "extractor": "demo",
+            "formats": [],
+            "entries": [],
+        }
+
+    def demo_download_file(_requested_url, output_dir):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / "long-demo.mp4"
+        output_file.write_bytes(b"long demo")
+        return output_file
+
+    monkeypatch.setattr(main, "demo_analyze_result", long_demo_result)
+    monkeypatch.setattr(main, "demo_download_file", demo_download_file)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    assert response.status_code == 402
+    assert "30 分钟" in response.json()["detail"]
+
+
+def test_anonymous_download_blocks_selected_playlist_entry_over_duration_limit(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    url = "https://example.com/playlist-duration"
+    token = main.analysis_store.create(
+        url,
+        {
+            "kind": "playlist",
+            "webpage_url": url,
+            "entries": [
+                {"id": "short", "url": "https://example.com/playlist-duration/short", "duration": 120},
+                {"id": "long", "url": "https://example.com/playlist-duration/long", "duration": 31 * 60},
+            ],
+        },
+    )
+
+    class NoopThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(main.threading, "Thread", NoopThread)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "analysis_token": token,
+            "format_id": "best",
+            "entry_ids": ["long"],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute("select coalesce(sum(download_count), 0) as used from anonymous_usage").fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 402
+    assert "30 分钟" in response.json()["detail"]
+    assert int(usage["used"]) == 0
+
+
+def test_anonymous_multi_entry_download_limit_is_atomic(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    client = TestClient(app)
+    url = "https://example.com/playlist"
+    token = main.analysis_store.create(
+        url,
+        {
+            "kind": "playlist",
+            "webpage_url": url,
+            "entries": [
+                {"id": "one", "url": "https://example.com/playlist/one"},
+                {"id": "two", "url": "https://example.com/playlist/two"},
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "analysis_token": token,
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute("select coalesce(sum(download_count), 0) as used from anonymous_usage").fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 429
+    assert "访客下载次数已用完" in response.json()["detail"]
+    assert int(usage["used"]) == 0
+
+
+def test_download_analysis_token_matches_canonical_webpage_url(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    original_url = "https://example.com/watch?id=original"
+    canonical_url = "https://example.com/watch/canonical"
+
+    class CanonicalService:
+        def __init__(self):
+            self.analyze_calls = []
+
+        def analyze(self, url):
+            self.analyze_calls.append(url)
+            return {
+                "kind": "video",
+                "id": "canonical",
+                "title": "Canonical",
+                "webpage_url": canonical_url,
+                "thumbnail": None,
+                "entries": [],
+            }
+
+        def download(
+            self,
+            url,
+            output_dir,
+            format_id,
+            subtitle_langs,
+            write_auto_subs,
+            prefer_srt,
+            progress_hook,
+            entry_ids,
+        ):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / "canonical.mp4"
+            output_file.write_bytes(b"canonical")
+            return output_file
+
+    fake_service = CanonicalService()
+    monkeypatch.setattr(main, "service", fake_service)
+    client = TestClient(app)
+
+    analyzed = client.post("/api/analyze", data={"url": original_url}).json()
+    response = client.post(
+        "/api/download",
+        json={
+            "url": analyzed["webpage_url"],
+            "analysis_token": analyzed["analysis_token"],
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_service.analyze_calls == [original_url]

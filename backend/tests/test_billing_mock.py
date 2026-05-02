@@ -158,3 +158,53 @@ def test_stripe_portal_missing_secret_returns_503(monkeypatch, tmp_path):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Stripe 支付尚未配置"
+
+
+def test_mock_credit_pack_purchase_grants_balance(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    _login(client)
+
+    response = client.post("/api/billing/mock/credit-pack/summary_small")
+    status = client.get("/api/entitlements/status")
+
+    assert response.status_code == 200
+    assert response.json()["credit_pack"]["pack_id"] == "summary_small"
+    assert status.json()["credit_packs"]["summary"]["remaining"] == 20
+
+
+def test_mock_credit_pack_repeat_purchase_stacks_balance(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    _login(client)
+
+    first = client.post("/api/billing/mock/credit-pack/summary_small")
+    second = client.post("/api/billing/mock/credit-pack/summary_small")
+    status = client.get("/api/entitlements/status")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["credit_pack"]["id"] != second.json()["credit_pack"]["id"]
+    assert status.json()["credit_packs"]["summary"]["remaining"] == 40
+
+
+def test_mock_credit_pack_unknown_pack_returns_400(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = _login(client)
+
+    mock_response = client.post("/api/billing/mock/credit-pack/missing_pack")
+    checkout_response = client.post(
+        "/api/billing/checkout",
+        json={"purchase_type": "credit_pack", "pack_id": "missing_pack"},
+        headers=headers,
+    )
+
+    assert mock_response.status_code == 400
+    assert checkout_response.status_code == 400

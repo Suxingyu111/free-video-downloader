@@ -23,6 +23,10 @@ class User:
     email: str
     status: str
 
+    @classmethod
+    def from_row(cls, row) -> User:
+        return cls(id=row["id"], email=row["email"], status=row["status"])
+
     def as_dict(self) -> dict:
         return {"id": self.id, "email": self.email, "status": self.status}
 
@@ -42,7 +46,7 @@ def _hash_token(token: str) -> str:
 
 
 def _row_to_user(row) -> User:
-    return User(id=row["id"], email=row["email"], status=row["status"])
+    return User.from_row(row)
 
 
 def create_user(email: str, password: str) -> User:
@@ -191,6 +195,15 @@ def verify_session_csrf_token(session_token: str | None, csrf_token: str | None)
     if row is None or not row["csrf_token_hash"]:
         return False
     return hmac.compare_digest(row["csrf_token_hash"], _hash_token(csrf_token))
+
+
+def get_user_by_id(user_id: str) -> User | None:
+    conn = connect()
+    try:
+        row = conn.execute("select * from users where id = ?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+    return User.from_row(row) if row else None
 
 
 def revoke_session(token: str | None, reason: str | None = None) -> None:

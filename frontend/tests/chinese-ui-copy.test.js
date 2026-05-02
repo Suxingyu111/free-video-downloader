@@ -88,20 +88,23 @@ test("membership UI exposes account billing and quota copy", () => {
     "重置密码",
     "退出登录",
     "免费版",
-    "专业版会员",
+    "Pro 个人版",
+    "¥19",
+    "120 次 AI 总结",
+    "600 分钟语音转写",
+    "总结小包",
+    "转写小包",
     "今日还可免费总结",
+    "今天的访客解析次数已用完",
+    "语音转写还剩",
     "查看套餐方案",
-    "选择专业版并支付 ¥29/月",
     "管理订阅",
-    "今日免费 AI 总结额度已用完",
     "正在确认会员状态",
     "当前已开通",
     "当前套餐",
-    "重新选择专业版 ¥29/月",
     "付款失败，请更新支付方式",
     "已取消续费，本周期内仍可使用",
     "支付已返回，仍在等待 Stripe 确认",
-    "专业版已开通",
     "模拟开通",
     "模拟取消",
     "模拟过期",
@@ -111,4 +114,6 @@ test("membership UI exposes account billing and quota copy", () => {
   for (const phrase of requiredPhrases) {
     assert.match(membershipSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+
+  assert.doesNotMatch(appSource, /团队版|团队协作|¥99/);
 });

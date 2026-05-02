@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import secrets
 import threading
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from app import auth_routes
 from app.auth_routes import current_user
 from app.services.auth_service import User
+from app.services.analysis_store import analysis_store
 from app.services.entitlements import (
     QuotaExceeded,
     get_usage_summary,
@@ -20,6 +22,15 @@ from app.services.entitlements import (
 )
 from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
+from app.services.usage_meter import (
+    MeterExceeded,
+    MeterType,
+    assert_duration_allowed,
+    refund_reservation,
+    refund_summary_question,
+    reserve_user_meter_by_id,
+    reserve_summary_question,
+)
 from app.services.ytdlp_service import friendly_error_message
 
 
@@ -34,6 +45,7 @@ class SummaryRequest(BaseModel):
     title: str | None = None
     language: str = "zh-CN"
     force: bool = False
+    duration: float | None = None
 
 
 class SummaryQuestionRequest(BaseModel):
@@ -64,12 +76,25 @@ def _run_summary(
     summary_id: str,
     payload: SummaryRequest,
     seed_result: dict | None = None,
-    refund_on_failure: bool = False,
+    quota_user_id: str | None = None,
 ) -> None:
     output_dir = SUMMARY_DIR / summary_id
+    transcription_reservation_id = {"value": None}
 
     def progress_hook(stage: str, progress: float, message: str, **changes: object) -> None:
         status = "transcribing" if stage in {"subtitle", "speech_to_text"} else "summarizing"
+        transcription_seconds = changes.pop("transcription_seconds", None)
+        if transcription_seconds is not None and quota_user_id and transcription_reservation_id["value"] is None:
+            minutes = _transcription_minutes_from_seconds(transcription_seconds)
+            if minutes is not None:
+                reservation_id = f"{summary_id}_transcription"
+                reserve_user_meter_by_id(
+                    quota_user_id,
+                    MeterType.TRANSCRIPTION_MINUTES,
+                    minutes,
+                    reservation_id=reservation_id,
+                )
+                transcription_reservation_id["value"] = reservation_id
         summary_store.update_task(
             summary_id,
             status=status,
@@ -91,7 +116,12 @@ def _run_summary(
         )
         summary_store.complete_task(summary_id, result=result, markdown_path=markdown_path)
     except Exception as exc:
-        if refund_on_failure:
+        if transcription_reservation_id["value"]:
+            try:
+                refund_reservation(transcription_reservation_id["value"])
+            except Exception:
+                pass
+        if quota_user_id:
             try:
                 refund_summary_quota_reservation(summary_id)
                 summary_store.mark_quota_refunded(summary_id)
@@ -100,11 +130,38 @@ def _run_summary(
         summary_store.fail_task(summary_id, _friendly_summary_error(exc))
 
 
+def _transcription_minutes_from_seconds(transcription_seconds: object) -> int | None:
+    try:
+        seconds = float(transcription_seconds)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(seconds):
+        return None
+    return max(1, math.ceil(seconds / 60))
+
+
 def get_summary_service() -> SummaryService:
     global summary_service
     if summary_service is None:
         summary_service = SummaryService()
     return summary_service
+
+
+def _numeric_duration(value: object) -> float | None:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    return float(value)
+
+
+def _summary_duration_seconds(payload: SummaryRequest, seed_result: dict | None) -> float | None:
+    if seed_result is not None:
+        duration = _numeric_duration(seed_result.get("duration"))
+        if duration is not None:
+            return duration
+    snapshot = analysis_store.find_by_url(payload.url)
+    if snapshot is None:
+        return None
+    return _numeric_duration(snapshot.result.get("duration"))
 
 
 @router.post("")
@@ -138,12 +195,20 @@ def create_summary(payload: SummaryRequest, request: Request, user: User = Depen
             seed_result = cached_task.result
 
     summary_id = f"summary_{secrets.token_urlsafe(10)}"
+    duration = _summary_duration_seconds(payload, seed_result)
+    if duration is None:
+        raise HTTPException(status_code=400, detail="请先解析视频后再生成 AI 总结。")
+    try:
+        assert_duration_allowed(user, capability="summary", duration_seconds=duration)
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
     try:
         usage = reserve_summary_quota(user, summary_id)
     except QuotaExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    quota_user_id = None if usage.membership_active else user.id
+    quota_user_id = user.id
     task = None
     try:
         task = summary_store.create_task(
@@ -156,7 +221,7 @@ def create_summary(payload: SummaryRequest, request: Request, user: User = Depen
         )
         worker = threading.Thread(
             target=_run_summary,
-            args=(task.id, payload, seed_result, quota_user_id is not None),
+            args=(task.id, payload, seed_result, user.id),
             daemon=True,
         )
         worker.start()
@@ -177,6 +242,10 @@ def refund_interrupted_summary_quotas() -> None:
     for task in summary_store.pending_quota_refunds():
         if not task.quota_user_id:
             continue
+        try:
+            refund_reservation(f"{task.id}_transcription")
+        except Exception:
+            pass
         try:
             refund_summary_quota_reservation(task.id)
             summary_store.mark_quota_refunded(task.id)
@@ -204,14 +273,25 @@ def ask_summary_question(
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
+    try:
+        reserve_summary_question(user, summary_id)
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=402, detail="这个总结的追问次数已用完，请升级 Pro 后继续。") from exc
     transcript = _transcript_from_result(task.result)
-    answer = get_summary_service().answer_question(
-        title=task.title or "未命名视频",
-        transcript=transcript,
-        summary=task.result,
-        question=question,
-        language=payload.language,
-    )
+    try:
+        answer = get_summary_service().answer_question(
+            title=task.title or "未命名视频",
+            transcript=transcript,
+            summary=task.result,
+            question=question,
+            language=payload.language,
+        )
+    except Exception as exc:
+        try:
+            refund_summary_question(user, summary_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=_friendly_summary_error(exc)) from exc
     return {"answer": answer}
 
 

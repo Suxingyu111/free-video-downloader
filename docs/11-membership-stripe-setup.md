@@ -15,7 +15,12 @@ BILLING_MODE=mock
 ## Stripe Test Mode
 
 1. 在 Stripe Dashboard 创建 Product：`SaveAny Pro`。
-2. 创建月度 recurring Price：`¥29`，currency 为 `cny`。
+2. 在 Stripe Dashboard 创建以下 Prices：
+   - `SaveAny Pro`：月度 recurring Price，`¥19`，currency 为 `cny`。
+   - `总结小包`：one-time Price，`¥6`，currency 为 `cny`。
+   - `总结大包`：one-time Price，`¥19`，currency 为 `cny`。
+   - `转写小包`：one-time Price，`¥8`，currency 为 `cny`。
+   - `转写大包`：one-time Price，`¥29`，currency 为 `cny`。
 3. 复制本地 Stripe 配置模板：
 
 ```bash
@@ -29,6 +34,10 @@ BILLING_MODE=stripe
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRO_MONTHLY_PRICE_ID=price_...
+STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_...
+STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_...
+STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID=price_...
+STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID=price_...
 PUBLIC_APP_URL=http://127.0.0.1:5173
 ```
 
@@ -42,8 +51,8 @@ stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook
 
 把 Stripe CLI 输出的 `whsec_...` 填入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
 
-6. 打开套餐页，点击“开通专业版 ¥29/月”，用 Stripe test card 完成 Checkout。
-7. 回到 SaveAny 后等待 webhook 确认会员状态。
+6. 打开套餐页，点击“开通专业版 ¥19/月”，用 Stripe test card 完成 Checkout。按量包可先通过后端 API 验收；前端购买入口完成后，再从套餐页购买按量包。
+7. 回到 SaveAny 后等待 webhook 确认会员或按量包状态。
 
 前端成功回跳不会自行开通会员。会员状态只由后端在 Stripe webhook 验签通过后更新。
 

@@ -30,6 +30,7 @@ Response:
   "thumbnail": "/api/proxy/assets/asset-token",
   "duration": 120,
   "extractor": "youtube",
+  "analysis_token": "analysis_123",
   "formats": [],
   "subtitles": [],
   "entries": []
@@ -38,6 +39,7 @@ Response:
 
 For playlists, `kind` is `playlist` and `entries` contains selectable video entries.
 Remote thumbnails are rewritten to local proxy URLs so the browser does not directly request hotlink-protected media hosts.
+`analysis_token` 由后端基于本次解析 URL 和快照生成。前端应在 `POST /api/download` 中回传该 token，让下载时长校验和额度扣减优先复用已解析元数据，减少重复解析。
 
 ## `POST /api/download`
 
@@ -46,6 +48,7 @@ JSON request:
 ```json
 {
   "url": "https://example.com/watch",
+  "analysis_token": "analysis_123",
   "entry_ids": ["abc123"],
   "format_id": "best",
   "subtitle_langs": ["en"],
@@ -53,6 +56,8 @@ JSON request:
   "prefer_srt": true
 }
 ```
+
+`analysis_token` 为兼容旧客户端仍是可选字段。若 token 存在且仍匹配请求 URL，后端复用解析快照；若缺失或过期，后端会在创建任务前尝试重新解析。
 
 Response:
 
@@ -131,6 +136,66 @@ Registration, login failures, and password reset requests use short-window rate 
 }
 ```
 
+## Entitlements
+
+- `GET /api/entitlements/status`
+
+需要登录会话 cookie。响应会暴露当前个人套餐、各 meter 用量、套餐内剩余额度和按量包剩余额度，供账号菜单和账单 UI 展示真实 quota。
+
+示例响应：
+
+```json
+{
+  "plan": "pro",
+  "meters": {
+    "analyze": {
+      "meter": "analyze",
+      "period_type": "month",
+      "period_key": "2026-05",
+      "limit": 300,
+      "used": 12,
+      "remaining": 288,
+      "plan_remaining": 288,
+      "pack_remaining": 0
+    },
+    "download": {
+      "meter": "download",
+      "period_type": "month",
+      "period_key": "2026-05",
+      "limit": 100,
+      "used": 4,
+      "remaining": 96,
+      "plan_remaining": 96,
+      "pack_remaining": 0
+    },
+    "summary": {
+      "meter": "summary",
+      "period_type": "month",
+      "period_key": "2026-05",
+      "limit": 120,
+      "used": 120,
+      "remaining": 20,
+      "plan_remaining": 0,
+      "pack_remaining": 20
+    },
+    "transcription_minutes": {
+      "meter": "transcription_minutes",
+      "period_type": "month",
+      "period_key": "2026-05",
+      "limit": 600,
+      "used": 45,
+      "remaining": 555,
+      "plan_remaining": 555,
+      "pack_remaining": 0
+    }
+  },
+  "credit_packs": {
+    "summary": { "remaining": 20 },
+    "transcription_minutes": { "remaining": 0 }
+  }
+}
+```
+
 ## Billing
 
 - `GET /api/billing/status`
@@ -148,4 +213,4 @@ Registration, login failures, and password reset requests use short-window rate 
 
 ## AI Summary Entitlements
 
-`POST /api/summaries` requires a logged-in user. Free users can create up to the configured daily limit, default `3`, and Pro members do not consume the free daily quota. If the free quota is exhausted, the API returns `402` with an upgrade message.
+`POST /api/summaries` 要求登录用户。免费版用户拥有每日 AI 总结额度，Pro 个人版用户拥有月度 AI 总结和语音转写额度；当套餐内额度耗尽时，按量包可继续补充总结或转写 meter。相关额度耗尽时，API 返回 `402`，并给出升级或购买按量包提示。

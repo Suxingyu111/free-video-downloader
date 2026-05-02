@@ -136,15 +136,21 @@ test("homepage capability cards are compact and not navigation targets", () => {
   assert.doesNotMatch(appSource, /@click\.prevent="navigateToPage\(highlight\.id\)"/);
 });
 
-test("pricing page keeps a three-tier package plan while homepage preview is removed", () => {
+test("pricing page shows personal free and pro plans plus credit packs", () => {
   assert.match(appSource, /const pricingPlans = \[/);
   assert.match(appSource, /name:\s*"免费版"/);
-  assert.match(appSource, /name:\s*"专业版"/);
-  assert.match(appSource, /name:\s*"团队版"/);
+  assert.match(appSource, /name:\s*"Pro 个人版"/);
+  assert.doesNotMatch(appSource, /name:\s*"团队版"/);
+  assert.doesNotMatch(appSource, /¥99/);
+  assert.match(appSource, /const creditPacks = \[/);
+  assert.match(appSource, /总结小包/);
+  assert.match(appSource, /id:\s*"summary_large"[\s\S]*name:\s*"总结加量包"/);
+  assert.doesNotMatch(appSource, /name:\s*"总结大包"/);
+  assert.match(appSource, /转写大包/);
   assert.match(appSource, /v-for="plan in pricingPlans"/);
   assert.match(appSource, /class="pricing-grid"/);
   assert.match(appSource, /class="plan-feature-list"/);
-  assert.match(mainCss, /\.pricing-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(mainCss, /\.pricing-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.doesNotMatch(appSource, /class="home-pricing-preview"/);
   assert.doesNotMatch(appSource, /class="home-plan-card"/);
   assert.doesNotMatch(appSource, /查看完整套餐方案/);
@@ -247,17 +253,35 @@ test("quota and billing feedback are unified into status panels", () => {
   assert.match(appSource, /state\.checkoutStatus === "success"[\s\S]*await confirmCheckoutReturn\(\{ force: true \}\)/);
   assert.match(appSource, /async function logout\(\)[\s\S]*state\.billingMessage = ""[\s\S]*state\.checkoutStatus = ""/);
   assert.match(appSource, /class="billing-status-panel"/);
+  assert.match(
+    appSource,
+    /class="billing-status-panel"[\s\S]*:style="\{ width: `\$\{summaryQuotaRatio\}%` \}"[\s\S]*:style="\{ width: `\$\{transcriptionQuotaRatio\}%` \}"/
+  );
   assert.match(appSource, /账单状态/);
   assert.match(appSource, /class="current-plan-badge"/);
   assert.match(appSource, /class="plan-status-copy"/);
   assert.match(appSource, /class="mock-billing-panel"/);
-  assert.match(appSource, /选择专业版并支付 ¥29\/月/);
+  assert.match(appSource, /开通 Pro ¥19\/月/);
   assert.doesNotMatch(appSource, /class="message pricing-message"/);
   assert.match(mainCss, /\.billing-status-panel\s*\{/);
   assert.match(mainCss, /\.current-plan-badge\s*\{/);
   assert.match(mainCss, /\.plan-status-copy\s*\{/);
   assert.match(mainCss, /\.summary-gate-card\s*\{/);
   assert.match(mainCss, /\.summary-upgrade-card\s*\{/);
+});
+
+test("credit pack checkout return skips subscription confirmation", () => {
+  assert.match(appSource, /checkoutPurchaseType:\s*""/);
+  assert.match(appSource, /state\.checkoutPurchaseType = params\.get\("purchase_type"\) \|\| ""/);
+  assert.match(appSource, /async function handleCreditPackCheckoutReturn/);
+  assert.match(appSource, /state\.checkoutPurchaseType === "credit_pack"[\s\S]*await handleCreditPackCheckoutReturn\(\)/);
+  assert.match(appSource, /if \(state\.checkoutPurchaseType === "credit_pack"\) return/);
+  assert.match(appSource, /按量包支付已返回，额度会自动同步。/);
+  assert.match(appSource, /已取消按量包支付，可以稍后重新购买。/);
+  assert.doesNotMatch(
+    appSource,
+    /state\.checkoutPurchaseType === "credit_pack"[\s\S]{0,200}confirmBillingCheckout/
+  );
 });
 
 test("completed downloads stay bound to the selected format", () => {

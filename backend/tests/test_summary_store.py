@@ -122,6 +122,24 @@ def test_summary_store_restores_previous_completed_cache_after_forced_failure(tm
     assert restored.get_cached_task("https://example.com/watch", language="zh-CN").id == completed.id
 
 
+def test_summary_store_selects_cached_task_for_owner_when_index_points_elsewhere(tmp_path):
+    store = SummaryStore(tmp_path)
+    first = store.create_task("https://example.com/watch", owner_user_id="user_a")
+    first_markdown = tmp_path / first.id / "summary.md"
+    first_markdown.parent.mkdir(parents=True, exist_ok=True)
+    first_markdown.write_text("# First", encoding="utf-8")
+    store.complete_task(first.id, result={"overview": "A"}, markdown_path=first_markdown)
+
+    second = store.create_task("https://example.com/watch", owner_user_id="user_b")
+    second_markdown = tmp_path / second.id / "summary.md"
+    second_markdown.parent.mkdir(parents=True, exist_ok=True)
+    second_markdown.write_text("# Second", encoding="utf-8")
+    store.complete_task(second.id, result={"overview": "B"}, markdown_path=second_markdown)
+
+    assert store.get_cached_task("https://example.com/watch", owner_user_id="user_a").id == first.id
+    assert store.get_cached_task("https://example.com/watch", owner_user_id="user_b").id == second.id
+
+
 def test_summary_store_recovers_completed_snapshots_from_disk(tmp_path):
     store = SummaryStore(tmp_path)
     task = store.create_task("https://example.com/watch", title="Demo", language="zh-CN")

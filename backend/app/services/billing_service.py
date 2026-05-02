@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import Callable
 from time import time
 
+from app.services.app_config import load_config
 from app.services.auth_service import User
 from app.services.database import connect, transaction
+from app.services.plan_catalog import CREDIT_PACK_CATALOG
 
 
 ACTIVE_STATUSES = {"active", "trialing"}
@@ -78,6 +80,15 @@ def get_latest_stripe_customer_id(user_id: str) -> str | None:
     try:
         row = conn.execute(
             """
+            select stripe_customer_id from stripe_customers
+            where user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        if row is not None:
+            return row["stripe_customer_id"]
+        row = conn.execute(
+            """
             select stripe_customer_id from subscriptions
             where user_id = ? and stripe_customer_id is not null
             order by updated_at desc
@@ -95,33 +106,17 @@ def get_latest_stripe_customer_id(user_id: str) -> str | None:
 def store_stripe_customer_id(user_id: str, customer_id: str) -> None:
     now = time()
     with transaction() as conn:
-        row = conn.execute(
+        conn.execute(
             """
-            select id from subscriptions
-            where user_id = ? and stripe_customer_id is not null
-            order by updated_at desc
-            limit 1
+            insert into stripe_customers
+            (user_id, stripe_customer_id, created_at, updated_at)
+            values (?, ?, ?, ?)
+            on conflict(user_id)
+            do update set stripe_customer_id = excluded.stripe_customer_id,
+                          updated_at = excluded.updated_at
             """,
-            (user_id,),
-        ).fetchone()
-        if row is None:
-            conn.execute(
-                """
-                insert into subscriptions
-                (id, user_id, plan, status, stripe_customer_id, created_at, updated_at)
-                values (?, ?, 'pro', 'incomplete', ?, ?, ?)
-                """,
-                (f"sub_{secrets.token_urlsafe(10)}", user_id, customer_id, now, now),
-            )
-        else:
-            conn.execute(
-                """
-                update subscriptions
-                set stripe_customer_id = ?, updated_at = ?
-                where id = ?
-                """,
-                (customer_id, now, row["id"]),
-            )
+            (user_id, customer_id, now, now),
+        )
 
 
 def ensure_stripe_customer_id(user: User, create_customer: Callable[[], str]) -> str:
@@ -142,15 +137,23 @@ def create_mock_checkout(user: User) -> dict:
         attempt_id = f"attempt_{secrets.token_urlsafe(10)}"
         conn.execute(
             """
-            insert into billing_attempts (id, user_id, mode, status, created_at, updated_at)
-            values (?, ?, 'mock', 'created', ?, ?)
+            insert into billing_attempts
+            (id, user_id, mode, status, purchase_type, created_at, updated_at)
+            values (?, ?, 'mock', 'created', 'subscription', ?, ?)
             """,
             (attempt_id, user.id, now, now),
         )
     return {"mode": "mock", "url": "/#pricing", "attempt_id": attempt_id}
 
 
-def get_open_stripe_checkout_attempt(user_id: str, return_url: str | None = None) -> dict | None:
+def get_open_stripe_checkout_attempt(
+    user_id: str,
+    return_url: str | None = None,
+    *,
+    purchase_type: str = "subscription",
+    pack_id: str | None = None,
+    stripe_price_id: str | None = None,
+) -> dict | None:
     now = time()
     cutoff = now - STRIPE_CHECKOUT_ATTEMPT_TTL_SECONDS
     with transaction() as conn:
@@ -169,23 +172,38 @@ def get_open_stripe_checkout_attempt(user_id: str, return_url: str | None = None
                 update billing_attempts
                 set status = 'expired', updated_at = ?
                 where user_id = ? and mode = 'stripe' and status = 'open'
+                  and purchase_type = ?
+                  and coalesce(pack_id, '') = coalesce(?, '')
+                  and coalesce(stripe_price_id, '') = coalesce(?, '')
                   and (stripe_return_url is null or stripe_return_url != ?)
                 """,
-                (now, user_id, return_url),
+                (now, user_id, purchase_type, pack_id, stripe_price_id, return_url),
             )
         row = conn.execute(
             """
-            select id, stripe_checkout_session_id, stripe_checkout_url, stripe_return_url
+            select id, stripe_checkout_session_id, stripe_checkout_url, stripe_return_url,
+                   purchase_type, pack_id, stripe_price_id
             from billing_attempts
             where user_id = ? and mode = 'stripe' and status = 'open'
               and updated_at >= ?
               and stripe_checkout_session_id is not null
               and stripe_checkout_url is not null
               and (? is null or stripe_return_url = ?)
+              and purchase_type = ?
+              and coalesce(pack_id, '') = coalesce(?, '')
+              and coalesce(stripe_price_id, '') = coalesce(?, '')
             order by updated_at desc
             limit 1
             """,
-            (user_id, cutoff, return_url, return_url),
+            (
+                user_id,
+                cutoff,
+                return_url,
+                return_url,
+                purchase_type,
+                pack_id,
+                stripe_price_id,
+            ),
         ).fetchone()
     if row is None:
         return None
@@ -197,6 +215,10 @@ def record_stripe_checkout_attempt(
     session_id: str,
     session_url: str,
     return_url: str | None = None,
+    *,
+    purchase_type: str = "subscription",
+    pack_id: str | None = None,
+    stripe_price_id: str | None = None,
 ) -> None:
     now = time()
     with transaction() as conn:
@@ -212,13 +234,17 @@ def record_stripe_checkout_attempt(
             conn.execute(
                 """
                 insert into billing_attempts
-                (id, user_id, mode, status, stripe_checkout_session_id, stripe_checkout_url, stripe_return_url,
+                (id, user_id, mode, status, purchase_type, pack_id, stripe_price_id,
+                 stripe_checkout_session_id, stripe_checkout_url, stripe_return_url,
                  created_at, updated_at)
-                values (?, ?, 'stripe', 'open', ?, ?, ?, ?, ?)
+                values (?, ?, 'stripe', 'open', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     f"attempt_{secrets.token_urlsafe(10)}",
                     user_id,
+                    purchase_type,
+                    pack_id,
+                    stripe_price_id,
                     session_id,
                     session_url,
                     return_url,
@@ -231,10 +257,20 @@ def record_stripe_checkout_attempt(
                 """
                 update billing_attempts
                 set user_id = ?, mode = 'stripe', status = 'open',
+                    purchase_type = ?, pack_id = ?, stripe_price_id = ?,
                     stripe_checkout_url = ?, stripe_return_url = ?, updated_at = ?
                 where id = ?
                 """,
-                (user_id, session_url, return_url, now, existing["id"]),
+                (
+                    user_id,
+                    purchase_type,
+                    pack_id,
+                    stripe_price_id,
+                    session_url,
+                    return_url,
+                    now,
+                    existing["id"],
+                ),
             )
 
 
@@ -245,6 +281,18 @@ def complete_stripe_checkout_attempt(session_id: str) -> None:
             update billing_attempts
             set status = 'completed', updated_at = ?
             where stripe_checkout_session_id = ? and status != 'completed'
+            """,
+            (time(), session_id),
+        )
+
+
+def fail_stripe_checkout_attempt(session_id: str) -> None:
+    with transaction() as conn:
+        conn.execute(
+            """
+            update billing_attempts
+            set status = 'failed', updated_at = ?
+            where stripe_checkout_session_id = ? and status = 'open'
             """,
             (time(), session_id),
         )
@@ -374,6 +422,35 @@ def fail_mock_payment(user: User) -> Membership:
             (time(), user.id),
         )
     return get_membership(user.id)
+
+
+def grant_credit_pack(
+    user_id: str,
+    pack_id: str,
+    *,
+    source: str,
+    payment_reference: str,
+    stripe_price_id: str | None = None,
+) -> dict:
+    from app.services.usage_meter import add_credit_pack
+
+    return add_credit_pack(
+        user_id,
+        pack_id=pack_id,
+        source=source,
+        payment_reference=payment_reference,
+        stripe_price_id=stripe_price_id,
+    )
+
+
+def credit_pack_from_price_id(price_id: str | None) -> str | None:
+    if not price_id:
+        return None
+    config = load_config()
+    for pack_id, pack in CREDIT_PACK_CATALOG.items():
+        if getattr(config, pack.stripe_config_field) == price_id:
+            return pack_id
+    return None
 
 
 def upsert_stripe_subscription(subscription: dict) -> Membership:

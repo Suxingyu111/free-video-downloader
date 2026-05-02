@@ -54,13 +54,17 @@ class FakeSummaryService:
 
 
 class SpeechToTextSummaryService(FakeSummaryService):
+    def __init__(self, transcription_seconds=125):
+        super().__init__()
+        self.transcription_seconds = transcription_seconds
+
     def generate_summary(self, *, url, title, language, output_dir, progress_hook=None, seed_result=None):
         if progress_hook:
             progress_hook(
                 "speech_to_text",
                 30,
                 "Extracting audio for speech-to-text",
-                transcription_seconds=125,
+                transcription_seconds=self.transcription_seconds,
             )
         return super().generate_summary(
             url=url,
@@ -866,6 +870,23 @@ def test_speech_to_text_reserves_transcription_minutes(monkeypatch, isolated_sum
 
     assert usage["meters"]["transcription_minutes"]["used"] == 3
     assert usage["meters"]["transcription_minutes"]["remaining"] == 27
+
+
+def test_speech_to_text_fractional_seconds_round_up_minutes(monkeypatch, isolated_summary_store):
+    monkeypatch.setattr(summary_routes, "summary_service", SpeechToTextSummaryService(60.1))
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/fractional-transcription", server_duration=60.1),
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+    usage = client.get("/api/entitlements/status").json()
+
+    assert usage["meters"]["transcription_minutes"]["used"] == 2
+    assert usage["meters"]["transcription_minutes"]["remaining"] == 28
 
 
 def test_unknown_summary_task_returns_404():

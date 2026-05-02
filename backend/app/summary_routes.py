@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import secrets
 import threading
 
@@ -70,16 +71,17 @@ def _run_summary(
     def progress_hook(stage: str, progress: float, message: str, **changes: object) -> None:
         status = "transcribing" if stage in {"subtitle", "speech_to_text"} else "summarizing"
         transcription_seconds = changes.pop("transcription_seconds", None)
-        if transcription_seconds and quota_user_id and transcription_reservation_id["value"] is None:
-            minutes = max(1, int((float(transcription_seconds) + 59) // 60))
-            reservation_id = f"{summary_id}_transcription"
-            reserve_user_meter_by_id(
-                quota_user_id,
-                MeterType.TRANSCRIPTION_MINUTES,
-                minutes,
-                reservation_id=reservation_id,
-            )
-            transcription_reservation_id["value"] = reservation_id
+        if transcription_seconds is not None and quota_user_id and transcription_reservation_id["value"] is None:
+            minutes = _transcription_minutes_from_seconds(transcription_seconds)
+            if minutes is not None:
+                reservation_id = f"{summary_id}_transcription"
+                reserve_user_meter_by_id(
+                    quota_user_id,
+                    MeterType.TRANSCRIPTION_MINUTES,
+                    minutes,
+                    reservation_id=reservation_id,
+                )
+                transcription_reservation_id["value"] = reservation_id
         summary_store.update_task(
             summary_id,
             status=status,
@@ -113,6 +115,16 @@ def _run_summary(
             except Exception:
                 pass
         summary_store.fail_task(summary_id, _friendly_summary_error(exc))
+
+
+def _transcription_minutes_from_seconds(transcription_seconds: object) -> int | None:
+    try:
+        seconds = float(transcription_seconds)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(seconds):
+        return None
+    return max(1, math.ceil(seconds / 60))
 
 
 def get_summary_service() -> SummaryService:

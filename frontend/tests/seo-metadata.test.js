@@ -32,44 +32,115 @@ import { SEO_PAGES, getIndexJsonLd, getPageJsonLd, seoRelatedLinks, seoSite } fr
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
 const indexHtmlSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
-test("seo pages cover the homepage and core search landing pages", () => {
+test("seo pages cover stable route matrix and primary landing metadata", () => {
   const paths = SEO_PAGES.map((page) => page.path);
+  const expectedSeoPaths = [
+    "/",
+    "/video-summary/",
+    "/youtube-video-downloader/",
+    "/bilibili-video-downloader/",
+    "/douyin-video-downloader/",
+    "/tiktok-video-downloader/",
+    "/subtitle-extractor/",
+    "/facts/",
+    "/how-to-video-summary/",
+    "/how-to-extract-bilibili-subtitles/",
+    "/public-video-to-mind-map/",
+    "/public-video-archive-workflow/",
+    "/saveany-vs-online-video-downloader/",
+    "/ai-video-summary-tool-comparison/",
+    "/youtube-video-summary-tool/",
+    "/bilibili-course-summary-tool/",
+    "/youtube-to-mp4/",
+    "/youtube-subtitle-downloader/",
+    "/bilibili-course-downloader/",
+    "/douyin-public-video-download/",
+    "/video-to-text/",
+    "/video-to-mindmap/",
+    "/ai-video-notes/",
+    "/online-video-downloader/",
+    "/features/",
+    "/features/video-download/",
+    "/features/ai-video-summary/",
+    "/features/subtitle-extraction/",
+    "/features/mind-map/",
+    "/platforms/",
+    "/platforms/youtube/",
+    "/platforms/bilibili/",
+    "/platforms/douyin/",
+    "/platforms/tiktok/",
+    "/use-cases/",
+    "/use-cases/course-learning/",
+    "/use-cases/content-archive/",
+    "/use-cases/meeting-review/",
+    "/compare/",
+    "/pricing/",
+    "/articles/public-video-downloader-drm-boundary/",
+    "/articles/ai-video-summary-subtitles-markdown/",
+    "/articles/self-hosted-video-summary-privacy/",
+    "/articles/yt-dlp-ai-summary-legal-use-cases/",
+    "/faq/",
+    "/privacy/",
+    "/terms/"
+  ];
 
-  assert.deepEqual(
-    paths,
-    [
-      "/",
-      "/video-summary/",
-      "/youtube-video-downloader/",
-      "/bilibili-video-downloader/",
-      "/douyin-video-downloader/",
-      "/tiktok-video-downloader/",
-      "/subtitle-extractor/",
-      "/facts/",
-      "/how-to-video-summary/",
-      "/how-to-extract-bilibili-subtitles/",
-      "/public-video-to-mind-map/",
-      "/public-video-archive-workflow/",
-      "/saveany-vs-online-video-downloader/",
-      "/ai-video-summary-tool-comparison/",
-      "/youtube-video-summary-tool/",
-      "/bilibili-course-summary-tool/",
-      "/youtube-to-mp4/",
-      "/youtube-subtitle-downloader/",
-      "/bilibili-course-downloader/",
-      "/douyin-public-video-download/",
-      "/video-to-text/",
-      "/video-to-mindmap/",
-      "/ai-video-notes/",
-      "/online-video-downloader/",
-      "/articles/public-video-downloader-drm-boundary/",
-      "/articles/ai-video-summary-subtitles-markdown/",
-      "/articles/self-hosted-video-summary-privacy/",
-      "/articles/yt-dlp-ai-summary-legal-use-cases/",
-      "/faq/",
-      "/privacy/",
-      "/terms/"
-    ]
+  assert.deepEqual(paths, expectedSeoPaths);
+});
+
+test("topic cluster pages define taxonomy and conversion CTAs", () => {
+  const expectedPages = [
+    { path: "/features/", cluster: "features", pageType: "hub", ctaLabel: "查看所有功能" },
+    { path: "/platforms/", cluster: "platforms", pageType: "hub", ctaLabel: "查看支持平台" },
+    { path: "/use-cases/", cluster: "use-cases", pageType: "hub", ctaLabel: "查看使用场景" },
+    { path: "/compare/", cluster: "compare", pageType: "hub", ctaLabel: "查看对比页面" },
+    { path: "/pricing/", cluster: "brand", pageType: "pricing", ctaLabel: "查看套餐方案" },
+    { path: "/features/video-download/", cluster: "features", pageType: "feature", ctaLabel: "粘贴公开视频链接试试解析" },
+    { path: "/features/ai-video-summary/", cluster: "features", pageType: "feature", ctaLabel: "生成 AI 视频学习笔记" },
+    { path: "/platforms/youtube/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 YouTube 公开视频" },
+    { path: "/use-cases/course-learning/", cluster: "use-cases", pageType: "use-case", ctaLabel: "生成课程复习笔记" }
+  ];
+
+  for (const expectedPage of expectedPages) {
+    const page = SEO_PAGES.find((item) => item.path === expectedPage.path);
+
+    assert.ok(page, `${expectedPage.path} should exist in SEO_PAGES`);
+    assert.equal(page.cluster, expectedPage.cluster);
+    assert.equal(page.pageType, expectedPage.pageType);
+    assert.equal(page.ctaLabel, expectedPage.ctaLabel);
+  }
+});
+
+test("hub and pricing pages render crawlable sections", () => {
+  const assertCrawlableSections = (page) => {
+    assert.ok(Array.isArray(page.sections), `${page.path} should define sections`);
+    assert.ok(page.sections.length > 0, `${page.path} should define at least one section`);
+
+    for (const section of page.sections) {
+      assert.equal(typeof section.heading, "string", `${page.path} section should include a heading`);
+      assert.notEqual(section.heading.trim(), "", `${page.path} section heading should not be empty`);
+      assert.equal(typeof section.body, "string", `${page.path} section should include body copy`);
+      assert.notEqual(section.body.trim(), "", `${page.path} section body should not be empty`);
+    }
+  };
+  const hubPaths = ["/features/", "/platforms/", "/use-cases/", "/compare/"];
+
+  for (const path of hubPaths) {
+    const page = SEO_PAGES.find((item) => item.path === path);
+
+    assert.ok(page, `${path} should exist in SEO_PAGES`);
+    assertCrawlableSections(page);
+  }
+
+  const pricingPage = SEO_PAGES.find((item) => item.path === "/pricing/");
+  assert.ok(pricingPage, "/pricing/ should exist in SEO_PAGES");
+  assertCrawlableSections(pricingPage);
+  assert.ok(
+    pricingPage.pricingPlans === true ||
+      (Array.isArray(pricingPage.pricingPlans) && pricingPage.pricingPlans.length > 0) ||
+      (pricingPage.pricingPlans !== null &&
+        typeof pricingPage.pricingPlans === "object" &&
+        Object.keys(pricingPage.pricingPlans).length > 0),
+    "/pricing/ should explicitly expose crawlable pricing plans"
   );
 });
 

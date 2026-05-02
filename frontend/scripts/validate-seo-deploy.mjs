@@ -16,6 +16,7 @@ export const REQUIRED_GEO_PATHS = [
   "/sitemap.xml",
   "/llms.txt",
   "/llms-full.txt",
+  "/.well-known/ai.json",
   "/index.html.md",
   "/sitemap/",
   ...SEO_PAGES.filter((page) => page.path !== "/").map((page) => page.path),
@@ -60,7 +61,7 @@ export async function validateGeneratedAssets({ publicDir = defaultPublicDir, si
     }
   }
 
-  const filesWithCanonical = ["404.html", "robots.txt", "sitemap.xml", "llms.txt", "llms-full.txt", "index.html.md", "sitemap/index.html"];
+  const filesWithCanonical = ["404.html", "robots.txt", "sitemap.xml", "llms.txt", "llms-full.txt", ".well-known/ai.json", "index.html.md", "sitemap/index.html"];
   for (const file of filesWithCanonical) {
     try {
       const content = await readFile(resolve(publicDir, file), "utf8");

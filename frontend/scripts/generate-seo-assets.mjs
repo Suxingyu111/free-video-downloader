@@ -11,6 +11,7 @@ import {
   seoFaqs,
   seoGeoAnswers,
   seoPlatforms,
+  seoPricingPlans,
   seoRelatedLinks,
   seoSite
 } from "../src/seo/pages.js";
@@ -191,6 +192,9 @@ export function buildStaticHeadersFile() {
 
 /llms-full.txt
   Cache-Control: no-cache
+
+/.well-known/ai.json
+  Cache-Control: no-cache
 `;
 }
 
@@ -252,10 +256,67 @@ function buildOptionalListSectionHtml({ id, title, items }) {
       </section>`;
 }
 
+function buildTopicLinksHtml(page, siteUrl) {
+  if (!page.topicLinks?.length) return "";
+  const links = page.topicLinks
+    .map((path) => seoRelatedLinks.find((link) => link.path === path))
+    .filter(Boolean);
+  if (!links.length) return "";
+  const list = links
+    .map(
+      (link) => `<li>
+            <a href="${pageUrl(siteUrl, link.path)}">${escapeHtml(link.title)}</a>
+            <span>${escapeHtml(link.description)}</span>
+          </li>`
+    )
+    .join("\n          ");
+
+  return `<section aria-labelledby="topic-links">
+        <h2 id="topic-links">主题导航</h2>
+        <ul>
+          ${list}
+        </ul>
+      </section>`;
+}
+
+function pricingPriceText(plan) {
+  if (String(plan.price) === "0") return "免费";
+  if (plan.billingPeriod === "monthly") return `¥${plan.price}/月`;
+  return `¥${plan.price}/周期`;
+}
+
+function buildPricingPlansHtml(page) {
+  if (page.pageType !== "pricing") return "";
+  const list = seoPricingPlans
+    .map(
+      (plan) => `<li>
+            <h3>${escapeHtml(plan.name)}</h3>
+            <strong>${escapeHtml(pricingPriceText(plan))}</strong>
+            <p>${escapeHtml(plan.description)}</p>
+            <span>${escapeHtml(plan.features.join("、"))}</span>
+          </li>`
+    )
+    .join("\n          ");
+
+  return `<section aria-labelledby="pricing-plans">
+        <h2 id="pricing-plans">套餐方案</h2>
+        <ul>
+          ${list}
+        </ul>
+      </section>`;
+}
+
+function ctaUrlForPage(page, origin) {
+  const normalizedOrigin = normalizeSiteUrl(origin);
+  if (page.ctaPath) return pageUrl(normalizedOrigin, page.ctaPath);
+  return `${normalizedOrigin}/#${page.ctaHash || "download"}`;
+}
+
 export function buildLandingPageHtml(page, siteUrl = normalizeSiteUrl()) {
   const origin = normalizeSiteUrl(siteUrl);
   const canonicalUrl = pageUrl(origin, page.path);
-  const appUrl = `${origin}/#download`;
+  const ctaUrl = ctaUrlForPage(page, origin);
+  const ctaLabel = page.ctaLabel || "打开下载总结器";
   const jsonLd = JSON.stringify(getPageJsonLd(page, origin));
   const webmasterMetaTags = getWebmasterMetaTags();
   const webmasterMetaHtml = webmasterMetaTags ? `    ${webmasterMetaTags}\n` : "";
@@ -265,7 +326,9 @@ export function buildLandingPageHtml(page, siteUrl = normalizeSiteUrl()) {
   const useCases = buildOptionalListSectionHtml({ id: "use-cases", title: "适用场景", items: page.useCases });
   const howTo = buildHowToHtml(page);
   const failureReasons = buildOptionalListSectionHtml({ id: "failure-reasons", title: "常见失败原因", items: page.failureReasons });
-  const optionalSectionsHtml = [useCases, howTo, failureReasons].filter(Boolean).join("\n      ");
+  const topicLinks = buildTopicLinksHtml(page, origin);
+  const pricingPlans = buildPricingPlansHtml(page);
+  const optionalSectionsHtml = [useCases, howTo, failureReasons, topicLinks, pricingPlans].filter(Boolean).join("\n      ");
 
   return `<!doctype html>
 <html lang="${seoSite.language}">
@@ -324,7 +387,7 @@ ${webmasterMetaHtml}
       <p class="lead">${escapeHtml(page.lead)}</p>
       <p class="summary">${escapeHtml(page.geoSummary || page.description)}</p>
       <p>更新时间：${escapeHtml(page.lastUpdated || seoSite.lastUpdated)}</p>
-      <a class="cta" href="${appUrl}">打开下载总结器</a>
+      <a class="cta" href="${ctaUrl}">${escapeHtml(ctaLabel)}</a>
       <section aria-labelledby="page-points">
         <h2 id="page-points">核心能力</h2>
         <ul>
@@ -368,6 +431,17 @@ export function buildLandingPageMarkdown(page, siteUrl = normalizeSiteUrl()) {
   const useCases = page.useCases?.length ? `\n## 适用场景\n${page.useCases.map((item) => `- ${item}`).join("\n")}\n` : "";
   const howTo = page.howToSteps?.length ? `\n## 操作流程\n${page.howToSteps.map((step, index) => `${index + 1}. ${step}`).join("\n")}\n` : "";
   const failureReasons = page.failureReasons?.length ? `\n## 常见失败原因\n${page.failureReasons.map((item) => `- ${item}`).join("\n")}\n` : "";
+  const topicLinks = page.topicLinks?.length
+    ? `\n## 主题导航\n${page.topicLinks
+        .map((path) => seoRelatedLinks.find((link) => link.path === path))
+        .filter(Boolean)
+        .map((link) => `- [${link.title}](${pageUrl(siteUrl, link.path)}): ${link.description}`)
+        .join("\n")}\n`
+    : "";
+  const pricingPlans =
+    page.pageType === "pricing"
+      ? `\n## 套餐方案\n${seoPricingPlans.map((plan) => `- **${plan.name}**：${pricingPriceText(plan)}。${plan.description} 功能：${plan.features.join("、")}。`).join("\n")}\n`
+      : "";
 
   return `# ${page.heading}
 
@@ -383,7 +457,7 @@ ${page.description}
 ${sections}
 ${useCases}
 ${howTo}
-${failureReasons}
+${failureReasons}${topicLinks}${pricingPlans}
 
 ## 常见问题
 ${questions}
@@ -396,9 +470,32 @@ ${related}
 `;
 }
 
+function clusterLabel(cluster) {
+  const labels = {
+    brand: "Brand And Pricing Pages",
+    features: "Feature Pages",
+    platforms: "Platform Pages",
+    "use-cases": "Use Case Pages",
+    compare: "Comparison Pages"
+  };
+  return labels[cluster] || "Task And Article Pages";
+}
+
+function buildGroupedPageLines(siteUrl) {
+  const groups = new Map();
+  for (const page of SEO_PAGES) {
+    const label = clusterLabel(page.cluster);
+    const lines = groups.get(label) || [];
+    lines.push(`- [${page.primaryKeyword}](${pageUrl(siteUrl, page.path)}): ${page.description}`);
+    groups.set(label, lines);
+  }
+
+  return [...groups.entries()].map(([label, lines]) => `### ${label}\n${lines.join("\n")}`).join("\n\n");
+}
+
 export function buildLlmsTxt(siteUrl = normalizeSiteUrl()) {
   const origin = normalizeSiteUrl(siteUrl);
-  const pageLines = SEO_PAGES.map((page) => `- [${page.primaryKeyword}](${pageUrl(origin, page.path)}): ${page.description}`).join("\n");
+  const pageLines = buildGroupedPageLines(origin);
 
   return `# ${seoSite.productName}
 
@@ -480,6 +577,40 @@ SaveAny does not provide login bypass, cookie upload, DRM bypass, paywall bypass
 `;
 }
 
+export function buildAiJson(siteUrl = normalizeSiteUrl()) {
+  const origin = normalizeSiteUrl(siteUrl);
+  const payload = {
+    name: seoSite.productName,
+    brand: seoSite.brandName,
+    description: seoSite.description,
+    url: `${origin}/`,
+    language: seoSite.language,
+    application_category: seoSite.appCategory,
+    capabilities: seoCapabilities,
+    supported_public_sources: seoPlatforms,
+    primary_action: {
+      url: `${origin}/#download`,
+      method: "paste_public_video_url",
+      description: "粘贴公开视频链接，解析视频信息，按需下载、提取字幕或生成 AI 学习笔记。"
+    },
+    limitations: [
+      "不处理私密、付费、DRM、需要登录或受平台访问控制限制的视频。",
+      "不提供 Cookie 上传、登录绕过、DRM 绕过、付费墙绕过或平台安全策略绕过。",
+      "解析结果受公开视频状态、平台可访问性、清晰度来源、字幕可用性和服务端额度影响。"
+    ],
+    docs: {
+      facts: `${origin}/facts/`,
+      faq: `${origin}/faq/`,
+      privacy: `${origin}/privacy/`,
+      terms: `${origin}/terms/`,
+      llms: `${origin}/llms.txt`,
+      llms_full: `${origin}/llms-full.txt`
+    }
+  };
+
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
 export async function writeSeoAssets({ publicDir = defaultPublicDir, siteUrl = normalizeSiteUrl(), lastmod } = {}) {
   const resolvedPublicDir = resolve(publicDir);
   await mkdir(resolvedPublicDir, { recursive: true });
@@ -493,6 +624,9 @@ export async function writeSeoAssets({ publicDir = defaultPublicDir, siteUrl = n
   await writeFile(resolve(sitemapDir, "index.html"), buildHtmlSitemapPage(siteUrl), "utf8");
   await writeFile(resolve(resolvedPublicDir, "llms.txt"), buildLlmsTxt(siteUrl), "utf8");
   await writeFile(resolve(resolvedPublicDir, "llms-full.txt"), buildLlmsFullTxt(siteUrl), "utf8");
+  const wellKnownDir = resolve(resolvedPublicDir, ".well-known");
+  await mkdir(wellKnownDir, { recursive: true });
+  await writeFile(resolve(wellKnownDir, "ai.json"), buildAiJson(siteUrl), "utf8");
   for (const file of getWebmasterVerificationFiles()) {
     await writeFile(resolve(resolvedPublicDir, file.fileName), file.content, "utf8");
   }

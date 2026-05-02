@@ -402,6 +402,276 @@ Common failure reasons:
 - 平台接口、地区访问、短链跳转或网络状态可能影响解析。
 - 部分平台或视频没有可用字幕，AI 总结结果会受影响。
 
+## SaveAny功能总览
+URL: https://saveany.local/features/
+Markdown: https://saveany.local/features/index.html.md
+Primary keyword: SaveAny功能
+Summary: 功能总览页帮助用户和搜索系统理解 SaveAny 的完整能力边界：公开视频下载、字幕整理、AI 学习总结和合规说明。
+Capabilities:
+- 解析公开视频标题、封面、时长、格式和字幕轨道。
+- 下载完成后继续生成摘要、章节、知识点、思维导图和问答。
+- Markdown 导出适合放入 Obsidian、Notion、Git 仓库或团队知识库。
+
+## 公开视频下载功能，先解析再安全保存
+URL: https://saveany.local/features/video-download/
+Markdown: https://saveany.local/features/video-download/index.html.md
+Primary keyword: 公开视频下载功能
+Summary: SaveAny 的公开视频下载功能基于可公开访问的链接，不接收 Cookie，不处理登录、付费、私密或 DRM 内容。
+Capabilities:
+- 支持稳定 MP4 和原始最高画质两类下载策略。
+- 播放列表和系列内容可作为任务处理，适合公开课程归档。
+- 完成文件通过临时 token 交付，浏览器不会看到服务器真实路径。
+Use cases:
+- 保存公开课程和教程，便于离线复习。
+- 归档公开视频素材，配合字幕和总结形成资料库。
+- 整理跨平台公开视频，减少多个下载站来回切换。
+Common failure reasons:
+- 视频需要登录、付费、地区权限或 DRM。
+- 平台触发验证码、机器人校验或临时风控。
+- 短链失效、视频删除或公开视频接口不可访问。
+
+## AI视频总结功能，把长视频变成学习资料
+URL: https://saveany.local/features/ai-video-summary/
+Markdown: https://saveany.local/features/ai-video-summary/index.html.md
+Primary keyword: AI视频总结功能
+Summary: AI 视频总结功能面向学习、复盘和资料整理，输出概览、章节、知识点、时间线、术语、问答和 Markdown。
+Capabilities:
+- 自动生成一句话概览、章节大纲和核心知识点。
+- 支持围绕总结继续提问，答案基于字幕和摘要。
+- Markdown 导出方便长期保存和二次编辑。
+Use cases:
+- 课程复习时快速抓住章节结构。
+- 会议或访谈复盘时提炼行动项和观点。
+- 内容运营整理长视频素材和选题。
+Common failure reasons:
+- 视频没有可用字幕且转写服务未配置。
+- 音频质量太差会影响转写和总结稳定性。
+- 私密、付费、登录限定或 DRM 内容不会进入总结流程。
+
+## 字幕提取功能，把视频内容变成可检索文本
+URL: https://saveany.local/features/subtitle-extraction/
+Markdown: https://saveany.local/features/subtitle-extraction/index.html.md
+Primary keyword: 字幕提取功能
+Summary: 字幕提取功能是 AI 总结、问答和 Markdown 笔记的基础，适合课程、访谈、会议和公开素材整理。
+Capabilities:
+- 字幕文本可继续生成摘要、章节和知识点。
+- 带时间戳文本便于快速回看原视频位置。
+- 导出的 Markdown 可进入知识库或复习资料。
+Use cases:
+- 外语学习者整理字幕文本。
+- 研究者把公开视频转成可检索资料。
+- 团队把公开会议录播沉淀成文字记录。
+Common failure reasons:
+- 原视频没有字幕轨道。
+- 字幕接口要求登录或地区权限。
+- 转写服务未配置或音频质量不足。
+
+## 视频思维导图功能，快速看懂长视频结构
+URL: https://saveany.local/features/mind-map/
+Markdown: https://saveany.local/features/mind-map/index.html.md
+Primary keyword: 视频思维导图功能
+Summary: 视频思维导图功能让公开视频内容更适合复习、讲解、团队分享和知识库整理。
+Capabilities:
+- 把长视频拆成主题、章节和关键知识点。
+- 支持全屏查看、缩放和导出 SVG/PNG。
+- 与字幕、摘要、问答和 Markdown 笔记联动。
+Use cases:
+- 公开课程复习时抓住知识结构。
+- 会议复盘时梳理议题层级。
+- 内容策划时拆解长视频观点。
+Common failure reasons:
+- 视频文本过短或信息密度不足。
+- 字幕质量差会影响层级结构。
+- 未完成 AI 总结前无法生成稳定思维导图。
+
+## SaveAny支持平台总览
+URL: https://saveany.local/platforms/
+Markdown: https://saveany.local/platforms/index.html.md
+Primary keyword: SaveAny支持平台
+Summary: 平台总览页说明 SaveAny 支持哪些公开视频来源，以及哪些登录、付费、私密和 DRM 场景不会处理。
+Capabilities:
+- 覆盖 YouTube、Bilibili、抖音、TikTok 等常见公开视频来源。
+- 不同平台会使用不同解析策略和失败提示。
+- 所有平台页都保持公开视频和合规边界。
+
+## YouTube公开视频整理，下载字幕和总结一起完成
+URL: https://saveany.local/platforms/youtube/
+Markdown: https://saveany.local/platforms/youtube/index.html.md
+Primary keyword: YouTube公开视频整理
+Summary: YouTube 平台页聚合下载、字幕、总结和 MP4 相关入口，适合公开课程和长视频学习场景。
+Capabilities:
+- 支持公开链接解析、清晰度选择和播放列表任务。
+- 字幕可用时可继续生成摘要、思维导图和问答。
+- 遇到登录、地区或机器人校验限制时给出边界提示。
+Use cases:
+- 保存公开课程离线复习。
+- 整理演讲和访谈观点。
+- 把系列教程变成 Markdown 笔记。
+Common failure reasons:
+- 视频需要登录、年龄验证或地区权限。
+- 公开视频触发机器人校验。
+- 字幕轨道不可访问或不存在。
+
+## B站公开视频整理，公开课程复习更系统
+URL: https://saveany.local/platforms/bilibili/
+Markdown: https://saveany.local/platforms/bilibili/index.html.md
+Primary keyword: B站公开视频整理
+Summary: B站平台页聚合 B站视频下载、课程下载、字幕提取和课程总结入口。
+Capabilities:
+- 适合公开课、教程、知识区视频和公开讲座。
+- 可整理字幕文本并生成章节、知识点和问答。
+- 遇到登录字幕或权限限制时明确提示边界。
+Use cases:
+- 学习者保存公开课程并建立复习资料。
+- 教师整理公开讲座或培训资料。
+- 团队把公开视频沉淀成知识库条目。
+Common failure reasons:
+- 视频需要登录、会员、付费或地区权限。
+- 字幕接口返回登录要求。
+- 合集结构或平台接口变化导致解析不完整。
+
+## 抖音公开视频整理，短视频素材复盘更清楚
+URL: https://saveany.local/platforms/douyin/
+Markdown: https://saveany.local/platforms/douyin/index.html.md
+Primary keyword: 抖音公开视频整理
+Summary: 抖音平台页强调公开视频、免登录态、短视频案例研究和合规边界。
+Capabilities:
+- 默认只处理可公开访问的抖音链接。
+- 解析成功后可保存视频并按需生成复盘笔记。
+- 私密、登录限定、验证码和风控内容会停止处理。
+Use cases:
+- 内容运营保存公开案例。
+- 研究者建立短视频案例库。
+- 学习者归档公开知识类短视频。
+Common failure reasons:
+- 链接私密、删除、登录限定或被风控。
+- 短链跳转异常或地区访问受限。
+- 视频无字幕时总结可能依赖转写配置。
+
+## TikTok公开视频整理，跨平台素材快速归档
+URL: https://saveany.local/platforms/tiktok/
+Markdown: https://saveany.local/platforms/tiktok/index.html.md
+Primary keyword: TikTok公开视频整理
+Summary: TikTok 平台页聚合短视频保存、字幕提取和 AI 总结入口，明确不绕过平台权限限制。
+Capabilities:
+- 适合跨平台内容研究和广告创意整理。
+- 支持清晰度选择和本地保存。
+- 受限、私密或登录限定内容不属于支持范围。
+Use cases:
+- 整理公开短视频案例。
+- 复盘广告创意和表达方式。
+- 归档跨平台公开视频素材。
+Common failure reasons:
+- 视频不是公开视频。
+- 地区、登录或风控限制影响访问。
+- 无字幕或文本来源时总结效果受限。
+
+## SaveAny使用场景总览
+URL: https://saveany.local/use-cases/
+Markdown: https://saveany.local/use-cases/index.html.md
+Primary keyword: SaveAny使用场景
+Summary: 使用场景页按用户目标组织 SaveAny 的下载、字幕、总结、思维导图和 Markdown 能力。
+Capabilities:
+- 学生和自学者把公开课程变成复习笔记。
+- 团队把公开会议或讲座资料沉淀为知识库。
+- 内容运营归档公开视频素材和案例。
+
+## 公开视频课程学习，把公开课变成复习笔记
+URL: https://saveany.local/use-cases/course-learning/
+Markdown: https://saveany.local/use-cases/course-learning/index.html.md
+Primary keyword: 公开视频课程学习
+Summary: 课程学习场景页面向学生和自学者，聚合公开视频下载、字幕、AI 总结、思维导图和 Markdown 导出。
+Capabilities:
+- 解析公开课程标题、封面、时长和字幕。
+- 生成章节大纲、核心知识点和术语解释。
+- 导出 Markdown 作为复习提纲或知识库条目。
+Use cases:
+- 公开课离线复习。
+- 系列教程按章节整理。
+- 考前快速回看课程重点。
+Steps:
+1. 复制公开视频课程链接
+2. 粘贴到 SaveAny 并解析
+3. 检查字幕和可用格式
+4. 生成 AI 课程总结
+5. 导出 Markdown 复习笔记
+Common failure reasons:
+- 课程需要登录、付费或权限。
+- 视频没有字幕且转写服务未配置。
+- 播放列表或合集结构无法完整解析。
+
+## 公开视频素材归档，让案例和资料可检索
+URL: https://saveany.local/use-cases/content-archive/
+Markdown: https://saveany.local/use-cases/content-archive/index.html.md
+Primary keyword: 公开视频素材归档
+Summary: 素材归档场景页强调公开视频保存、字幕、摘要和知识库沉淀的完整流程。
+Capabilities:
+- 按平台和主题收集公开视频链接。
+- 保存可用视频文件和字幕文本。
+- 用 AI 总结提炼主题、章节和关键观点。
+Use cases:
+- 内容团队整理案例库。
+- 研究者归档公开视频资料。
+- 个人知识库沉淀长期素材。
+Steps:
+1. 收集公开视频链接
+2. 解析视频和可用格式
+3. 选择清晰度并下载
+4. 生成字幕与 AI 总结
+5. 导出 Markdown 并归档
+Common failure reasons:
+- 链接不是公开视频。
+- 平台接口或短链跳转失败。
+- 无字幕时需要可用转写配置。
+
+## 公开视频会议复盘，把录播变成行动资料
+URL: https://saveany.local/use-cases/meeting-review/
+Markdown: https://saveany.local/use-cases/meeting-review/index.html.md
+Primary keyword: 公开视频会议复盘
+Summary: 会议复盘场景页服务公开录播整理，不处理私密会议、无授权内容或需要登录权限的视频。
+Capabilities:
+- 生成会议概览、议题时间线和关键观点。
+- 围绕字幕和总结继续提问。
+- 导出 Markdown 复盘笔记，方便团队共享。
+Use cases:
+- 公开讲座复盘。
+- 团队学习公开会议录播。
+- 访谈和播客观点整理。
+Steps:
+1. 确认录播是公开可访问内容
+2. 粘贴链接并解析
+3. 整理字幕或转写文本
+4. 生成 AI 复盘摘要
+5. 导出 Markdown 并补充行动项
+Common failure reasons:
+- 录播需要登录或权限。
+- 音频质量影响转写。
+- 内容过长时需要等待完整总结完成。
+
+## 视频下载总结工具对比，先看工作流和边界
+URL: https://saveany.local/compare/
+Markdown: https://saveany.local/compare/index.html.md
+Primary keyword: 视频下载总结工具对比
+Summary: 对比 hub 帮用户理解 SaveAny 与普通下载器、单一 AI 总结器和在线工具之间的差异。
+Capabilities:
+- 普通下载器通常只解决文件保存。
+- 单一 AI 总结器未必能保存素材和字幕。
+- SaveAny 把公开视频保存、字幕、摘要、思维导图、问答和 Markdown 放在同一流程。
+
+## SaveAny套餐方案，按使用频率选择
+URL: https://saveany.local/pricing/
+Markdown: https://saveany.local/pricing/index.html.md
+Primary keyword: SaveAny套餐方案
+Summary: 定价页让搜索引擎和用户直接理解 SaveAny 的免费体验、专业版价值、团队规划和会员合规边界。
+Capabilities:
+- 免费版适合体验公开视频解析、下载和少量 AI 总结。
+- 专业版适合高频 AI 视频笔记、字幕整理和 Markdown 导出。
+- 团队版面向课程团队、内容团队和自托管协作规划。
+Use cases:
+- 偶尔保存公开视频并体验总结。
+- 长期学习者高频生成课程笔记。
+- 内容团队整理公开素材和共享知识库。
+
 ## 公开视频下载工具为什么不能绕过 DRM
 URL: https://saveany.local/articles/public-video-downloader-drm-boundary/
 Markdown: https://saveany.local/articles/public-video-downloader-drm-boundary/index.html.md

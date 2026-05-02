@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  buildAiJson,
   buildHtmlSitemapPage,
   buildLandingPageHtml,
   buildLandingPageMarkdown,
@@ -363,6 +364,27 @@ test("llms files and markdown mirrors expose AI-readable product facts", () => {
   assert.match(markdown, /## 常见问题/);
 });
 
+test(".well-known ai.json exposes product facts without claiming MCP", () => {
+  const payload = JSON.parse(buildAiJson("https://saveany.example"));
+
+  assert.equal(payload.name, "万能视频下载总结器");
+  assert.equal(payload.brand, "SaveAny");
+  assert.equal(payload.url, "https://saveany.example/");
+  assert.ok(payload.capabilities.includes("AI 视频总结"));
+  assert.ok(payload.supported_public_sources.includes("YouTube"));
+  assert.equal(payload.primary_action.url, "https://saveany.example/#download");
+  assert.ok(payload.limitations.some((item) => item.includes("DRM")));
+  assert.equal(payload.mcp, undefined);
+});
+
+test("landing pages use intent-specific conversion labels", () => {
+  const platformPage = SEO_PAGES.find((item) => item.path === "/platforms/youtube/");
+  const pricingPage = SEO_PAGES.find((item) => item.path === "/pricing/");
+
+  assert.match(buildLandingPageHtml(platformPage, "https://saveany.example"), /解析 YouTube 公开视频/);
+  assert.match(buildLandingPageHtml(pricingPage, "https://saveany.example"), /href="https:\/\/saveany\.example\/#pricing"/);
+});
+
 test("static SEO landing pages remain real URLs outside the compact Vue homepage", () => {
   assert.doesNotMatch(appSource, /seoRelatedLinks/);
   assert.doesNotMatch(appSource, /:href="link\.path"/);
@@ -464,7 +486,7 @@ test("SEO deployment validator rejects fallback domains and accepts generated as
     const report = await validateGeneratedAssets({ publicDir, siteUrl, allowReserved: true });
 
     assert.equal(report.ok, true);
-    assert.equal(report.checkedPaths, SEO_PAGES.length * 2 + 7);
+    assert.equal(report.checkedPaths, SEO_PAGES.length * 2 + 8);
   } finally {
     await rm(publicDir, { recursive: true, force: true });
   }

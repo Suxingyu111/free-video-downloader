@@ -5,10 +5,11 @@ import json
 import secrets
 import threading
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app import auth_routes
 from app.auth_routes import current_user
 from app.services.auth_service import User
 from app.services.entitlements import (
@@ -45,6 +46,18 @@ def _friendly_summary_error(error: Exception | str) -> str:
     if "AI_API_KEY" in text:
         return "AI 总结服务尚未配置，请在后端配置 AI_API_KEY 后重试。"
     return friendly_error_message(text)
+
+
+def _assert_summary_session_csrf(request: Request) -> None:
+    assert_session_csrf = getattr(auth_routes, "assert_session_csrf", auth_routes._assert_session_csrf)
+    assert_session_csrf(request)
+
+
+def _get_owned_summary_task(summary_id: str, user: User):
+    task = summary_store.get_task(summary_id)
+    if task is None or task.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Summary task not found")
+    return task
 
 
 def _run_summary(
@@ -97,10 +110,15 @@ def get_summary_service() -> SummaryService:
 @router.post("")
 def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) -> dict[str, object]:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
-    cached_task = summary_store.get_cached_task(payload.url, language=payload.language)
+    cached_task = summary_store.get_cached_task(payload.url, language=payload.language, owner_user_id=user.id)
     seed_result = None
     if cached_task is not None:
         if not payload.force:
+            if cached_task.owner_user_id != user.id:
+                cloned_task = summary_store.clone_completed_task_for_owner(cached_task.id, user.id)
+                if cloned_task is None:
+                    raise HTTPException(status_code=404, detail="Summary task not found")
+                cached_task = cloned_task
             usage = get_usage_summary(user)
             return {
                 "summary_id": cached_task.id,
@@ -124,6 +142,7 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
             payload.url,
             title=payload.title,
             language=payload.language,
+            owner_user_id=user.id,
             quota_user_id=quota_user_id,
             task_id=summary_id,
         )
@@ -158,18 +177,20 @@ def refund_interrupted_summary_quotas() -> None:
 
 
 @router.get("/{summary_id}")
-def get_summary(summary_id: str) -> dict:
-    task = summary_store.get_task(summary_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Summary task not found")
+def get_summary(summary_id: str, user: User = Depends(current_user)) -> dict:
+    task = _get_owned_summary_task(summary_id, user)
     return task.as_dict()
 
 
 @router.post("/{summary_id}/questions")
-def ask_summary_question(summary_id: str, payload: SummaryQuestionRequest) -> dict[str, str]:
-    task = summary_store.get_task(summary_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Summary task not found")
+def ask_summary_question(
+    summary_id: str,
+    payload: SummaryQuestionRequest,
+    request: Request,
+    user: User = Depends(current_user),
+) -> dict[str, str]:
+    _assert_summary_session_csrf(request)
+    task = _get_owned_summary_task(summary_id, user)
     if task.status != "completed" or not task.result:
         raise HTTPException(status_code=409, detail="Summary task is not completed")
     question = payload.question.strip()
@@ -187,12 +208,14 @@ def ask_summary_question(summary_id: str, payload: SummaryQuestionRequest) -> di
 
 
 @router.get("/{summary_id}/events")
-async def summary_events(summary_id: str) -> StreamingResponse:
+async def summary_events(summary_id: str, user: User = Depends(current_user)) -> StreamingResponse:
+    _get_owned_summary_task(summary_id, user)
+
     async def event_stream():
         last_payload = None
         while True:
             task = summary_store.get_task(summary_id)
-            if task is None:
+            if task is None or task.owner_user_id != user.id:
                 yield "event: error\ndata: {\"error\":\"Summary task not found\"}\n\n"
                 break
             payload = json.dumps(task.as_dict(), ensure_ascii=False)
@@ -211,7 +234,8 @@ async def summary_events(summary_id: str) -> StreamingResponse:
 
 
 @router.get("/{summary_id}/markdown")
-def download_summary_markdown(summary_id: str) -> FileResponse:
+def download_summary_markdown(summary_id: str, user: User = Depends(current_user)) -> FileResponse:
+    _get_owned_summary_task(summary_id, user)
     path = summary_store.resolve_markdown(summary_id)
     if path is None or not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Summary markdown not found")

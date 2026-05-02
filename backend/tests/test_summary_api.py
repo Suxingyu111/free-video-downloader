@@ -73,11 +73,18 @@ def isolated_summary_store(monkeypatch, tmp_path):
     return store
 
 
-def login(client):
-    client.post(
+def csrf_headers(client):
+    response = client.get("/api/csrf")
+    return {"x-csrf-token": response.json()["csrf_token"], "origin": "http://localhost:5173"}
+
+
+def login(client, email="summary@example.com"):
+    response = client.post(
         "/api/auth/register",
-        json={"email": "summary@example.com", "password": "summary-password"},
+        json={"email": email, "password": "summary-password"},
+        headers=csrf_headers(client),
     )
+    return {"x-csrf-token": response.json()["csrf_token"], "origin": "http://localhost:5173"}
 
 
 def wait_for_status(client, summary_id, status):
@@ -103,11 +110,12 @@ def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isol
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert response.status_code == 200
@@ -128,6 +136,7 @@ def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isol
     answer = client.post(
         f"/api/summaries/{summary_id}/questions",
         json={"question": "这一段讲了什么？", "language": "zh-CN"},
+        headers=session_headers,
     )
     assert answer.status_code == 200
     assert answer.json() == {"answer": "回答：这一段讲了什么？"}
@@ -138,11 +147,12 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     first = client.post(
         "/api/summaries",
         json={"url": "https://example.com/cached-video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     summary_id = first.json()["summary_id"]
 
@@ -151,6 +161,7 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
     second = client.post(
         "/api/summaries",
         json={"url": "https://example.com/cached-video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert second.status_code == 200
@@ -159,11 +170,89 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
     assert len(fake.calls) == 1
 
 
+def test_summary_result_is_private_to_owner(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    owner_client = TestClient(app)
+    intruder_client = TestClient(app)
+    owner_headers = login(owner_client, "summary-owner@example.com")
+    intruder_headers = login(intruder_client, "summary-intruder@example.com")
+
+    response = owner_client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/private-summary", "title": "Demo", "language": "zh-CN"},
+        headers=owner_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(owner_client, summary_id, "completed")
+    snapshot_file = isolated_summary_store.base_dir / summary_id / "snapshot.json"
+
+    assert snapshot["status"] == "completed"
+    assert "owner_user_id" not in snapshot
+    assert "owner_user_id" in snapshot_file.read_text(encoding="utf-8")
+    assert intruder_client.get(f"/api/summaries/{summary_id}").status_code == 404
+    assert intruder_client.get(f"/api/summaries/{summary_id}/markdown").status_code == 404
+    assert intruder_client.get(f"/api/summaries/{summary_id}/events").status_code == 404
+
+    answer = intruder_client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "能看到吗？", "language": "zh-CN"},
+        headers=intruder_headers,
+    )
+
+    assert answer.status_code == 404
+
+
+def test_cached_summary_creates_owned_task_for_second_user(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    first_client = TestClient(app)
+    second_client = TestClient(app)
+    first_headers = login(first_client, "summary-cache-owner@example.com")
+    second_headers = login(second_client, "summary-cache-second@example.com")
+
+    first = first_client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/shared-cache", "title": "Demo", "language": "zh-CN"},
+        headers=first_headers,
+    )
+    first_summary_id = first.json()["summary_id"]
+    wait_for_status(first_client, first_summary_id, "completed")
+
+    second = second_client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/shared-cache", "title": "Demo", "language": "zh-CN"},
+        headers=second_headers,
+    )
+    second_summary_id = second.json()["summary_id"]
+
+    assert second.status_code == 200
+    assert second.json()["cache_hit"] is True
+    assert second_summary_id != first_summary_id
+    assert len(fake.calls) == 1
+    assert first_client.get(f"/api/summaries/{second_summary_id}").status_code == 404
+
+    second_snapshot = second_client.get(f"/api/summaries/{second_summary_id}")
+    second_markdown = second_client.get(f"/api/summaries/{second_summary_id}/markdown")
+    second_answer = second_client.post(
+        f"/api/summaries/{second_summary_id}/questions",
+        json={"question": "缓存内容是什么？", "language": "zh-CN"},
+        headers=second_headers,
+    )
+
+    assert second_snapshot.status_code == 200
+    assert second_snapshot.json()["markdown_url"] == f"/api/summaries/{second_summary_id}/markdown"
+    assert second_markdown.status_code == 200
+    assert "测试概览" in second_markdown.text
+    assert second_answer.status_code == 200
+    assert second_answer.json() == {"answer": "回答：缓存内容是什么？"}
+
+
 def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     first = client.post(
         "/api/summaries",
@@ -172,6 +261,7 @@ def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkey
             "title": "Demo",
             "language": "zh-CN",
         },
+        headers=session_headers,
     )
     first_summary_id = first.json()["summary_id"]
     wait_for_status(client, first_summary_id, "completed")
@@ -179,6 +269,7 @@ def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkey
     second = client.post(
         "/api/summaries",
         json={"url": "https://www.bilibili.com/video/BV14b411Z7QY/", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert first.status_code == 200
@@ -192,7 +283,7 @@ def test_create_summary_does_not_reuse_active_task(monkeypatch, isolated_summary
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     active = isolated_summary_store.create_task(
         "https://example.com/active-cache-video",
@@ -205,6 +296,7 @@ def test_create_summary_does_not_reuse_active_task(monkeypatch, isolated_summary
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/active-cache-video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert response.status_code == 200
@@ -219,11 +311,12 @@ def test_cache_hit_does_not_consume_summary_quota(monkeypatch, isolated_summary_
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     first = client.post(
         "/api/summaries",
         json={"url": "https://example.com/quota-cache", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     summary_id = first.json()["summary_id"]
     assert first.json()["usage"]["used_today"] == 1
@@ -234,6 +327,7 @@ def test_cache_hit_does_not_consume_summary_quota(monkeypatch, isolated_summary_
     cached = client.post(
         "/api/summaries",
         json={"url": "https://example.com/quota-cache", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert cached.status_code == 200
@@ -248,11 +342,12 @@ def test_cached_summary_remains_accessible_after_free_quota_exhausted(monkeypatc
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     first = client.post(
         "/api/summaries",
         json={"url": "https://example.com/only-free-summary", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     summary_id = first.json()["summary_id"]
     wait_for_status(client, summary_id, "completed")
@@ -260,10 +355,12 @@ def test_cached_summary_remains_accessible_after_free_quota_exhausted(monkeypatc
     uncached = client.post(
         "/api/summaries",
         json={"url": "https://example.com/second-summary", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     cached = client.post(
         "/api/summaries",
         json={"url": "https://example.com/only-free-summary", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert uncached.status_code == 402
@@ -278,11 +375,12 @@ def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summar
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     first = client.post(
         "/api/summaries",
         json={"url": "https://example.com/force-video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     first_summary_id = first.json()["summary_id"]
 
@@ -291,6 +389,7 @@ def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summar
     second = client.post(
         "/api/summaries",
         json={"url": "https://example.com/force-video", "title": "Demo", "language": "zh-CN", "force": True},
+        headers=session_headers,
     )
 
     assert second.status_code == 200
@@ -307,11 +406,12 @@ def test_create_summary_force_skips_completed_cache(monkeypatch, isolated_summar
 def test_failed_summary_refunds_consumed_quota(monkeypatch, isolated_summary_store):
     monkeypatch.setattr(summary_routes, "summary_service", FailingSummaryService())
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/failing-video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     summary_id = response.json()["summary_id"]
 
@@ -330,11 +430,12 @@ def test_task_creation_failure_after_reservation_refunds_quota(monkeypatch, isol
 
     monkeypatch.setattr(summary_routes.summary_store, "create_task", fail_create_task)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/create-task-fails", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     usage = client.get("/api/me").json()["usage"]
 
@@ -347,11 +448,12 @@ def test_task_creation_failure_after_reservation_refunds_quota(monkeypatch, isol
 def test_worker_start_failure_after_task_creation_refunds_quota(monkeypatch, isolated_summary_store):
     monkeypatch.setattr(summary_routes.threading, "Thread", StartFailingThread)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/worker-start-fails", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     usage = client.get("/api/me").json()["usage"]
 
@@ -435,11 +537,12 @@ def test_summary_response_hides_internal_quota_metadata(monkeypatch, isolated_su
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/private-quota-metadata", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     summary_id = response.json()["summary_id"]
     snapshot = wait_for_status(client, summary_id, "completed")
@@ -453,17 +556,19 @@ def test_create_summary_quota_exhaustion_returns_upgrade_message(monkeypatch, is
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     first = client.post(
         "/api/summaries",
         json={"url": "https://example.com/one", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     wait_for_status(client, first.json()["summary_id"], "completed")
 
     second = client.post(
         "/api/summaries",
         json={"url": "https://example.com/two", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert second.status_code == 402
@@ -474,11 +579,12 @@ def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
-    login(client)
+    session_headers = login(client)
 
     response = client.post(
         "/api/summaries",
         json={"url": "https://example.com/video", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
     )
     summary_id = response.json()["summary_id"]
 
@@ -489,13 +595,15 @@ def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_
     answer = client.post(
         f"/api/summaries/{summary_id}/questions",
         json={"question": "能回答吗？", "language": "zh-CN"},
+        headers=session_headers,
     )
 
     assert answer.status_code == 409
 
 
-def test_unknown_summary_task_returns_404():
+def test_unknown_summary_task_returns_404(isolated_summary_store):
     client = TestClient(app)
+    login(client, "summary-missing@example.com")
 
     response = client.get("/api/summaries/missing")
 

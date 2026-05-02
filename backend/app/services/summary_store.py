@@ -73,6 +73,7 @@ class SummarySnapshot:
     streamed_text: str = ""
     markdown_url: str | None = None
     error: str | None = None
+    owner_user_id: str | None = None
     quota_user_id: str | None = None
     quota_refunded_at: float | None = None
     created_at: float = field(default_factory=time)
@@ -114,6 +115,7 @@ class SummarySnapshot:
             streamed_text=str(data.get("streamed_text") or ""),
             markdown_url=data.get("markdown_url") if isinstance(data.get("markdown_url"), str) else None,
             error=data.get("error") if isinstance(data.get("error"), str) else None,
+            owner_user_id=data.get("owner_user_id") if isinstance(data.get("owner_user_id"), str) else None,
             quota_user_id=data.get("quota_user_id") if isinstance(data.get("quota_user_id"), str) else None,
             quota_refunded_at=float(data["quota_refunded_at"]) if data.get("quota_refunded_at") is not None else None,
             created_at=float(data.get("created_at") or time()),
@@ -138,6 +140,7 @@ class SummaryStore:
         title: str | None = None,
         language: str = "zh-CN",
         cache_key: str | None = None,
+        owner_user_id: str | None = None,
         quota_user_id: str | None = None,
         task_id: str | None = None,
     ) -> SummarySnapshot:
@@ -147,6 +150,7 @@ class SummaryStore:
             title=title,
             language=language or "zh-CN",
             cache_key=cache_key or build_summary_cache_key(url, language=language),
+            owner_user_id=owner_user_id,
             quota_user_id=quota_user_id,
         )
         with self._lock:
@@ -205,9 +209,27 @@ class SummaryStore:
         with self._lock:
             return self._tasks.get(task_id)
 
-    def get_cached_task(self, url: str, *, language: str = "zh-CN") -> SummarySnapshot | None:
+    def get_cached_task(
+        self,
+        url: str,
+        *,
+        language: str = "zh-CN",
+        owner_user_id: str | None = None,
+    ) -> SummarySnapshot | None:
         cache_key = build_summary_cache_key(url, language=language)
         with self._lock:
+            if owner_user_id is not None:
+                owned_tasks = [
+                    task
+                    for task in self._tasks.values()
+                    if (
+                        task.cache_key == cache_key
+                        and task.status == "completed"
+                        and task.owner_user_id == owner_user_id
+                    )
+                ]
+                if owned_tasks:
+                    return max(owned_tasks, key=lambda task: task.updated_at)
             task_id = self._cache_index.get(cache_key)
             if not task_id:
                 return None
@@ -215,6 +237,43 @@ class SummaryStore:
             if task is None or task.status != "completed":
                 return None
             return task
+
+    def clone_completed_task_for_owner(
+        self,
+        source_task_id: str,
+        owner_user_id: str,
+        *,
+        task_id: str | None = None,
+    ) -> SummarySnapshot | None:
+        with self._lock:
+            source = self._tasks.get(source_task_id)
+            if source is None or source.status != "completed":
+                return None
+            clone_id = task_id or f"summary_{secrets.token_urlsafe(10)}"
+            cloned = SummarySnapshot(
+                id=clone_id,
+                url=source.url,
+                title=source.title,
+                language=source.language,
+                cache_key=source.cache_key,
+                status="completed",
+                stage="completed",
+                progress=100.0,
+                message=source.message,
+                result=source.result,
+                draft_result=source.draft_result,
+                streamed_text=source.streamed_text,
+                markdown_url=f"/api/summaries/{clone_id}/markdown",
+                error=None,
+                owner_user_id=owner_user_id,
+            )
+            markdown_path = self._markdown_files.get(source_task_id)
+            self._tasks[cloned.id] = cloned
+            if markdown_path is not None:
+                self._markdown_files[cloned.id] = markdown_path
+            self._save_task_locked(cloned, markdown_path=markdown_path)
+            self._save_index_locked()
+            return cloned
 
     def resolve_markdown(self, task_id: str) -> Path | None:
         with self._lock:
@@ -290,6 +349,7 @@ class SummaryStore:
             **task.as_dict(),
             "cache_key": task.cache_key,
             "prompt_version": SUMMARY_PROMPT_VERSION,
+            "owner_user_id": task.owner_user_id,
             "quota_refunded_at": task.quota_refunded_at,
             "quota_user_id": task.quota_user_id,
         }

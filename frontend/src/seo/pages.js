@@ -1634,6 +1634,18 @@ export function getPageJsonLd(page, siteUrl = seoSite.defaultUrl) {
   }
 
   if (page.pageType === "pricing" || page.path === "/pricing/") {
+    const pricingOffers = seoPricingPlans.map((plan, index) => ({
+      "@type": "Offer",
+      "@id": `${pageAbsoluteUrl}#offer-${plan.id}`,
+      position: index + 1,
+      name: plan.name,
+      description: plan.description,
+      price: plan.price,
+      priceCurrency: plan.priceCurrency,
+      availability: "https://schema.org/InStock",
+      url: pageAbsoluteUrl
+    }));
+
     graph.push({
       "@type": "SoftwareApplication",
       "@id": `${pageAbsoluteUrl}#pricing-software`,
@@ -1644,23 +1656,24 @@ export function getPageJsonLd(page, siteUrl = seoSite.defaultUrl) {
       operatingSystem: seoSite.operatingSystem,
       inLanguage: seoSite.language,
       description: page.description,
-      offers: {
-        "@type": "OfferCatalog",
-        name: "SaveAny 套餐方案",
-        itemListElement: seoPricingPlans.map((plan, index) => ({
-          "@type": "Offer",
-          position: index + 1,
-          name: plan.name,
-          description: plan.description,
-          price: plan.price,
-          priceCurrency: plan.priceCurrency,
-          availability: "https://schema.org/InStock",
-          url: pageAbsoluteUrl
-        }))
-      },
+      offers: pricingOffers,
       publisher: {
         "@id": `${origin}/#organization`
       }
+    });
+
+    graph.push({
+      "@type": "OfferCatalog",
+      "@id": `${pageAbsoluteUrl}#pricing-offer-catalog`,
+      name: "SaveAny 套餐方案",
+      itemListElement: pricingOffers.map((offer, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: offer.name,
+        item: {
+          "@id": offer["@id"]
+        }
+      }))
     });
   }
 

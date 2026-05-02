@@ -353,17 +353,27 @@ test("topic, article, and pricing pages expose matching structured data", () => 
   assert.ok(hubGraph.some((item) => item["@type"] === "CollectionPage"));
 
   const article = SEO_PAGES.find((item) => item.path === "/articles/public-video-downloader-drm-boundary/");
-  const articleGraph = getPageJsonLd({ ...article, schemaType: "Article" }, "https://saveany.example")["@graph"];
+  const articleGraph = getPageJsonLd(article, "https://saveany.example")["@graph"];
   assert.ok(articleGraph.some((item) => item["@type"] === "Article"));
 
   const pricing = SEO_PAGES.find((item) => item.path === "/pricing/");
   const pricingGraph = getPageJsonLd(pricing, "https://saveany.example")["@graph"];
   const pricingApp = pricingGraph.find((item) => item["@type"] === "SoftwareApplication" && item["@id"].endsWith("#pricing-software"));
+  const pricingOfferCatalog = pricingGraph.find((item) => item["@type"] === "OfferCatalog" && item["@id"].endsWith("#pricing-offer-catalog"));
 
   assert.ok(pricingApp);
-  assert.equal(pricingApp.offers["@type"], "OfferCatalog");
-  assert.equal(pricingApp.offers.itemListElement.length, 3);
+  assert.equal(pricingApp.offers.length, 3);
+  for (const offer of pricingApp.offers) {
+    assert.equal(offer["@type"], "Offer");
+    assert.match(offer["@id"], /#offer-/);
+    assert.equal(typeof offer.price, "string");
+    assert.equal(typeof offer.priceCurrency, "string");
+  }
   assert.match(JSON.stringify(pricingApp), /专业版/);
+
+  assert.ok(pricingOfferCatalog);
+  assert.equal(pricingOfferCatalog.itemListElement.length, 3);
+  assert.match(JSON.stringify(pricingOfferCatalog), /专业版/);
 });
 
 test("llms files and markdown mirrors expose AI-readable product facts", () => {

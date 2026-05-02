@@ -7,6 +7,7 @@ from app import main
 from app.main import DownloadRequest
 from app.main import app
 from app.main import proxy_media_assets
+from app.services import database
 
 
 def test_health_endpoint_returns_ok():
@@ -43,7 +44,10 @@ def test_api_contract_has_no_manual_cookie_fields():
     assert "cookie_ref" not in DownloadRequest.model_fields
 
 
-def test_analyze_retries_transient_youtube_bot_check(monkeypatch):
+def test_analyze_retries_transient_youtube_bot_check(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+
     class FlakyService:
         def __init__(self):
             self.calls = 0
@@ -164,3 +168,68 @@ def test_geo_access_monitor_logs_crawler_and_geo_assets(monkeypatch, tmp_path):
     assert records[0]["path"] == "/llms.txt"
     assert records[0]["crawler"] == "openai-search"
     assert "secret" not in json.dumps(records[0])
+
+
+def test_analyze_returns_analysis_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    response = client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"})
+
+    assert response.status_code == 200
+    assert response.json()["analysis_token"].startswith("analysis_")
+    assert response.json()["duration"] == 618
+
+
+def test_anonymous_analyze_limit_blocks_fourth_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    for _ in range(3):
+        assert client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"}).status_code == 200
+
+    blocked = client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"})
+
+    assert blocked.status_code == 429
+    assert "访客解析次数已用完" in blocked.json()["detail"]
+
+
+def test_download_uses_analysis_token_and_anonymous_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    analyzed = client.post("/api/analyze", data={"url": "https://demo.saveany.local/video"}).json()
+    first = client.post(
+        "/api/download",
+        json={
+            "url": analyzed["webpage_url"],
+            "analysis_token": analyzed["analysis_token"],
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+    second = client.post(
+        "/api/download",
+        json={
+            "url": analyzed["webpage_url"],
+            "analysis_token": analyzed["analysis_token"],
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert "访客下载次数已用完" in second.json()["detail"]

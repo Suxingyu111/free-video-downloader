@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import shutil
 import threading
 from contextlib import asynccontextmanager
@@ -10,23 +11,28 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.auth_routes import optional_user
 from app.auth_routes import router as auth_router
 from app.billing_routes import router as billing_router
 from app.entitlement_routes import router as entitlement_router
+from app.services.analysis_store import analysis_store
 from app.services.asset_store import asset_store
+from app.services.auth_service import User
 from app.services.database import initialize_database
 from app.services.geo_monitor import append_geo_access_log
 from app.services.geo_monitor import build_geo_access_record
 from app.services.geo_monitor import should_log_geo_access
+from app.services.plan_catalog import MeterType
 from app.services.runtime_cleanup import cleanup_failed_download
 from app.services.runtime_cleanup import prune_download_directories
 from app.services.task_store import task_store
+from app.services.usage_meter import MeterExceeded, consume_anonymous_meter, reserve_user_meter
 from app.services.ytdlp_service import DEFAULT_FORMAT, DEFAULT_HTTP_HEADERS, YtDlpService, friendly_error_message
 from app.summary_routes import refund_interrupted_summary_quotas
 from app.summary_routes import router as summary_router
@@ -102,8 +108,18 @@ def _is_transient_youtube_bot_check(exc: Exception) -> bool:
     return "[youtube]" in text and "Sign in to confirm" in text
 
 
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or "unknown"
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
 class DownloadRequest(BaseModel):
     url: str
+    analysis_token: str | None = None
     entry_ids: list[str] = Field(default_factory=list)
     format_id: str = DEFAULT_FORMAT
     subtitle_langs: list[str] = Field(default_factory=list)
@@ -291,12 +307,24 @@ def health() -> dict[str, str]:
 
 @app.post("/api/analyze")
 async def analyze(
+    request: Request,
     url: str = Form(...),
+    user: User | None = Depends(optional_user),
 ) -> dict:
+    try:
+        if user:
+            reserve_user_meter(user, MeterType.ANALYZE, 1, reservation_id=f"analyze_{secrets.token_urlsafe(10)}")
+        else:
+            consume_anonymous_meter(_client_ip(request), MeterType.ANALYZE)
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
     try:
         demo_result = demo_analyze_result(url)
         if demo_result is not None:
-            return demo_result
+            result = proxy_media_assets(demo_result)
+            result["analysis_token"] = analysis_store.create(url, result)
+            return result
         last_error: Exception | None = None
         for attempt in range(3):
             try:
@@ -310,6 +338,7 @@ async def analyze(
         else:
             raise last_error or RuntimeError("Analyze failed")
         result = proxy_media_assets(result)
+        result["analysis_token"] = analysis_store.create(url, result)
         return result
     except Exception as exc:  # yt-dlp raises many extractor-specific errors.
         raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
@@ -378,7 +407,30 @@ def _run_download(task_id: str, payload: DownloadRequest) -> None:
 
 
 @app.post("/api/download")
-def create_download(payload: DownloadRequest) -> dict[str, str]:
+def create_download(
+    payload: DownloadRequest,
+    request: Request,
+    user: User | None = Depends(optional_user),
+) -> dict[str, str]:
+    snapshot = analysis_store.get(payload.analysis_token)
+    result = snapshot.result if snapshot and snapshot.url == payload.url else None
+    if result is None:
+        try:
+            demo_result = demo_analyze_result(payload.url)
+            result = demo_result if demo_result is not None else service.analyze(payload.url)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
+    entry_count = len(payload.entry_ids) if payload.entry_ids else max(len(result.get("entries") or []), 1)
+    duration = float(result.get("duration") or 0)
+    try:
+        if user:
+            reserve_user_meter(user, MeterType.DOWNLOAD, entry_count, reservation_id=f"download_{secrets.token_urlsafe(10)}")
+        else:
+            for _ in range(entry_count):
+                consume_anonymous_meter(_client_ip(request), MeterType.DOWNLOAD)
+    except MeterExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
     task = task_store.create_task(payload.url)
     worker = threading.Thread(target=_run_download, args=(task.id, payload), daemon=True)
     worker.start()

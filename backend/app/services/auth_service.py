@@ -260,6 +260,7 @@ def create_password_reset_token(email: str) -> str | None:
 def reset_password(token: str, password: str) -> bool:
     if len(password) < 8:
         raise ValueError("密码至少需要 8 位")
+    token = token.strip()
     now = time()
     token_hash = _hash_token(token)
     with transaction() as conn:

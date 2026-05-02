@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -65,8 +66,12 @@ def _rate_limit_keys(action: str, request: Request, email: str) -> list[str]:
 
 
 def _password_reset_confirm_rate_limit_keys(request: Request, token: str) -> list[str]:
-    token_prefix = token[:12] or "empty"
-    return [f"auth:password-reset-confirm:ip-token:{_client_ip(request)}:{token_prefix}"]
+    ip = _client_ip(request)
+    token_hash_prefix = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    return [
+        f"auth:password-reset-confirm:ip:{ip}",
+        f"auth:password-reset-confirm:ip-token:{ip}:{token_hash_prefix}",
+    ]
 
 
 def _assert_auth_rate_limit(action: str, request: Request, email: str) -> list[str]:
@@ -223,7 +228,8 @@ def request_password_reset(payload: PasswordResetRequest, request: Request) -> d
 @router.post("/auth/password-reset/confirm")
 def confirm_password_reset(payload: PasswordResetConfirm, request: Request) -> dict[str, bool]:
     _assert_prelogin_csrf(request)
-    keys = _password_reset_confirm_rate_limit_keys(request, payload.token)
+    token = payload.token.strip()
+    keys = _password_reset_confirm_rate_limit_keys(request, token)
     config = load_config()
     try:
         for key in keys:
@@ -235,12 +241,12 @@ def confirm_password_reset(payload: PasswordResetConfirm, request: Request) -> d
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     try:
-        changed = reset_password(payload.token, payload.password)
+        changed = reset_password(token, payload.password)
     except ValueError as exc:
         _record_auth_rate_limit(keys)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not changed:
         _record_auth_rate_limit(keys)
         raise HTTPException(status_code=400, detail="重置链接无效或已过期")
-    _clear_auth_rate_limit(keys)
+    _clear_auth_rate_limit(keys[1:])
     return {"ok": True}

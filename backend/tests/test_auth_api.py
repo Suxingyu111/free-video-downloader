@@ -436,6 +436,58 @@ def test_password_reset_confirm_is_rate_limited(monkeypatch, tmp_path):
     assert blocked.json()["detail"] == "操作太频繁，请稍后再试"
 
 
+def test_password_reset_confirm_ip_limit_blocks_different_bad_tokens(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ATTEMPTS", "2")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": "bad-token-one", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+    second = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": "bad-token-two", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+    blocked = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": "bad-token-three", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+
+    assert first.status_code == 400
+    assert second.status_code == 400
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "操作太频繁，请稍后再试"
+
+
+def test_password_reset_confirm_strips_token_whitespace(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEV_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    register_with_csrf(client, "user@example.com", "old-password-123")
+
+    request = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "user@example.com"},
+        headers=csrf_headers(client),
+    )
+    assert request.status_code == 200
+    token = request.json()["reset_token"]
+
+    confirm = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": f"  {token}\n", "password": "new-password-123"},
+        headers=csrf_headers(client),
+    )
+
+    assert confirm.status_code == 200
+
+
 def test_password_reset_request_revokes_previous_unused_token(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("SAVEANY_DEV_MODE", "true")

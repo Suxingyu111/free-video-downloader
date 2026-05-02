@@ -95,5 +95,5 @@ def assert_same_origin(request: Request) -> None:
             raise HTTPException(status_code=403, detail="请求来源不被允许")
         return
     referer = request.headers.get("referer")
-    if referer and _origin(referer) not in origins:
+    if not referer or _origin(referer) not in origins:
         raise HTTPException(status_code=403, detail="请求来源不被允许")

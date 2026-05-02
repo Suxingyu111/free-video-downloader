@@ -7,7 +7,10 @@ from app.services import database
 def csrf_headers(client: TestClient) -> dict[str, str]:
     response = client.get("/api/csrf")
     assert response.status_code == 200
-    return {"x-csrf-token": response.json()["csrf_token"]}
+    return {
+        "x-csrf-token": response.json()["csrf_token"],
+        "origin": "http://localhost:5173",
+    }
 
 
 def register_with_csrf(client: TestClient, email: str, password: str):
@@ -44,7 +47,10 @@ def test_register_login_me_logout_flow(monkeypatch, tmp_path):
     assert me.json()["membership"]["plan"] == "free"
     assert me.json()["usage"]["daily_free_limit"] == 3
 
-    logout = client.post("/api/auth/logout", headers={"x-csrf-token": login.json()["csrf_token"]})
+    logout = client.post(
+        "/api/auth/logout",
+        headers={"x-csrf-token": login.json()["csrf_token"], "origin": "http://localhost:5173"},
+    )
     assert logout.status_code == 200
     assert client.get("/api/me").status_code == 401
 
@@ -60,6 +66,38 @@ def test_register_requires_prelogin_csrf(monkeypatch, tmp_path):
     )
 
     assert response.status_code == 403
+
+
+def test_register_requires_origin_or_referer_with_prelogin_csrf(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    token = client.get("/api/csrf").json()["csrf_token"]
+
+    response = client.post(
+        "/api/auth/register",
+        json={"email": "user@example.com", "password": "correct horse battery staple"},
+        headers={"x-csrf-token": token},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "请求来源不被允许"
+
+
+def test_register_rejects_invalid_origin_with_prelogin_csrf(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    token = client.get("/api/csrf").json()["csrf_token"]
+
+    response = client.post(
+        "/api/auth/register",
+        json={"email": "user@example.com", "password": "correct horse battery staple"},
+        headers={"x-csrf-token": token, "origin": "https://evil.example"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "请求来源不被允许"
 
 
 def test_login_returns_session_csrf_token(monkeypatch, tmp_path):

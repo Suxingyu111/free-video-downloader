@@ -117,6 +117,29 @@ test("quotaMeterRatio calculates remaining percentage with safe boundaries", () 
   assert.equal(quotaMeterRatio(state, "download"), 100);
 });
 
+test("quotaMeterRatio coerces partial meter payloads safely", () => {
+  const state = authInitialState();
+  updateAuthState(state, {
+    user: { email: "user@example.com" },
+    membership: { active: false, plan: "free", status: "free" },
+    usage: {
+      meters: {
+        summary: { limit: 10, remaining: 10 },
+        transcription_minutes: { limit: 10, used: "not-a-number", remaining: 10 },
+        analyze: { limit: "10", used: Number.NaN, remaining: 10 },
+        download: { limit: "0", used: 0, remaining: 0 },
+        conversion: { limit: "10", used: "3", remaining: 7 }
+      }
+    }
+  });
+
+  assert.equal(quotaMeterRatio(state, "summary"), 100);
+  assert.equal(quotaMeterRatio(state, "transcription_minutes"), 100);
+  assert.equal(quotaMeterRatio(state, "analyze"), 100);
+  assert.equal(quotaMeterRatio(state, "download"), 0);
+  assert.equal(quotaMeterRatio(state, "conversion"), 70);
+});
+
 test("auth usage defaults include isolated meter and credit pack objects", () => {
   const first = authInitialState();
   const second = authInitialState();

@@ -73,8 +73,12 @@ export function quotaMeterText(state, meter) {
 
 export function quotaMeterRatio(state, meter) {
   const value = state.usage?.meters?.[meter];
-  if (!value || !value.limit) return 0;
-  return Math.max(0, Math.min(100, Math.round(((value.limit - value.used) / value.limit) * 100)));
+  if (!value) return 0;
+  const limit = Number(value.limit);
+  if (!Number.isFinite(limit) || limit <= 0) return 0;
+  const rawUsed = Number(value.used);
+  const used = Number.isFinite(rawUsed) ? rawUsed : 0;
+  return Math.max(0, Math.min(100, Math.round(((limit - used) / limit) * 100)));
 }
 
 function defaultUsage(usage = {}) {

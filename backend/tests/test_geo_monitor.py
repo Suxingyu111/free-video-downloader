@@ -15,6 +15,11 @@ def test_geo_monitor_classifies_ai_crawlers_and_surfaces():
     assert is_geo_surface_path("/llms.txt")
     assert is_geo_surface_path("/video-summary/index.html.md")
     assert is_geo_surface_path("/facts/")
+    assert is_geo_surface_path("/.well-known/ai.json")
+    assert is_geo_surface_path("/features/")
+    assert is_geo_surface_path("/platforms/youtube/")
+    assert is_geo_surface_path("/use-cases/course-learning/index.html.md")
+    assert is_geo_surface_path("/pricing/")
     assert not is_geo_surface_path("/api/health")
 
 

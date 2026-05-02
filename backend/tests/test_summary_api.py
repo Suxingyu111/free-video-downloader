@@ -53,6 +53,25 @@ class FakeSummaryService:
         return f"回答：{question}"
 
 
+class SpeechToTextSummaryService(FakeSummaryService):
+    def generate_summary(self, *, url, title, language, output_dir, progress_hook=None, seed_result=None):
+        if progress_hook:
+            progress_hook(
+                "speech_to_text",
+                30,
+                "Extracting audio for speech-to-text",
+                transcription_seconds=125,
+            )
+        return super().generate_summary(
+            url=url,
+            title=title,
+            language=language,
+            output_dir=output_dir,
+            progress_hook=progress_hook,
+            seed_result=seed_result,
+        )
+
+
 class FailingSummaryService:
     def generate_summary(self, **_kwargs):
         raise RuntimeError("summary boom")
@@ -830,6 +849,23 @@ def test_failed_question_refunds_question_limit(monkeypatch, isolated_summary_st
             f"/api/summaries/{summary_id}/questions",
             json={"question": f"成功问题 {index}", "language": "zh-CN"},
         ).status_code == 200
+
+
+def test_speech_to_text_reserves_transcription_minutes(monkeypatch, isolated_summary_store):
+    monkeypatch.setattr(summary_routes, "summary_service", SpeechToTextSummaryService())
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/no-subtitles", server_duration=125),
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+    usage = client.get("/api/entitlements/status").json()
+
+    assert usage["meters"]["transcription_minutes"]["used"] == 3
+    assert usage["meters"]["transcription_minutes"]["remaining"] == 27
 
 
 def test_unknown_summary_task_returns_404():

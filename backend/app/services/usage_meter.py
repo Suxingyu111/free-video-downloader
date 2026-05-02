@@ -329,6 +329,15 @@ def reserve_user_meter(
     return _meter_status(user, meter_type)
 
 
+def reserve_user_meter_by_id(user_id: str, meter_type: MeterType, amount: int, *, reservation_id: str) -> dict:
+    from app.services.auth_service import get_user_by_id
+
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise MeterExceeded("用户不存在，无法扣减额度。")
+    return reserve_user_meter(user, meter_type, amount, reservation_id=reservation_id)
+
+
 def reserve_summary_question(user: User, summary_id: str) -> dict:
     limits = get_plan_limits(active_plan_id(user))
     limit = limits.questions_per_summary or 0

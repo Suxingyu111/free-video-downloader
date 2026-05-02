@@ -22,8 +22,11 @@ from app.services.summary_service import SummaryService
 from app.services.summary_store import summary_store
 from app.services.usage_meter import (
     MeterExceeded,
+    MeterType,
     assert_duration_allowed,
+    refund_reservation,
     refund_summary_question,
+    reserve_user_meter_by_id,
     reserve_summary_question,
 )
 from app.services.ytdlp_service import friendly_error_message
@@ -59,12 +62,24 @@ def _run_summary(
     summary_id: str,
     payload: SummaryRequest,
     seed_result: dict | None = None,
-    refund_on_failure: bool = False,
+    quota_user_id: str | None = None,
 ) -> None:
     output_dir = SUMMARY_DIR / summary_id
+    transcription_reservation_id = {"value": None}
 
     def progress_hook(stage: str, progress: float, message: str, **changes: object) -> None:
         status = "transcribing" if stage in {"subtitle", "speech_to_text"} else "summarizing"
+        transcription_seconds = changes.pop("transcription_seconds", None)
+        if transcription_seconds and quota_user_id and transcription_reservation_id["value"] is None:
+            minutes = max(1, int((float(transcription_seconds) + 59) // 60))
+            reservation_id = f"{summary_id}_transcription"
+            reserve_user_meter_by_id(
+                quota_user_id,
+                MeterType.TRANSCRIPTION_MINUTES,
+                minutes,
+                reservation_id=reservation_id,
+            )
+            transcription_reservation_id["value"] = reservation_id
         summary_store.update_task(
             summary_id,
             status=status,
@@ -86,7 +101,12 @@ def _run_summary(
         )
         summary_store.complete_task(summary_id, result=result, markdown_path=markdown_path)
     except Exception as exc:
-        if refund_on_failure:
+        if transcription_reservation_id["value"]:
+            try:
+                refund_reservation(transcription_reservation_id["value"])
+            except Exception:
+                pass
+        if quota_user_id:
             try:
                 refund_summary_quota_reservation(summary_id)
                 summary_store.mark_quota_refunded(summary_id)
@@ -163,7 +183,7 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
         )
         worker = threading.Thread(
             target=_run_summary,
-            args=(task.id, payload, seed_result, quota_user_id is not None),
+            args=(task.id, payload, seed_result, user.id),
             daemon=True,
         )
         worker.start()

@@ -23,7 +23,22 @@ def test_free_user_gets_three_daily_summary_uses(monkeypatch, tmp_path):
     assert consume_summary_quota(user).remaining_today == 1
     assert consume_summary_quota(user).remaining_today == 0
 
-    with pytest.raises(QuotaExceeded):
+    with pytest.raises(QuotaExceeded, match="今日免费 AI 总结额度已用完"):
+        consume_summary_quota(user)
+
+
+def test_free_summary_daily_limit_env_is_honored(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "1")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("one-free@example.com", "free-password")
+
+    usage = consume_summary_quota(user)
+
+    assert usage.daily_free_limit == 1
+    assert usage.used_today == 1
+    assert usage.remaining_today == 0
+    with pytest.raises(QuotaExceeded, match="今日免费 AI 总结额度已用完"):
         consume_summary_quota(user)
 
 
@@ -53,6 +68,12 @@ def test_reservation_refund_uses_original_usage_date(monkeypatch, tmp_path):
     usage = reserve_summary_quota(user, "summary_rollover")
 
     assert usage.used_today == 1
+    with database.connect(tmp_path / "saveany.db") as conn:
+        initial_legacy_day = conn.execute(
+            "select summary_count from usage_daily where user_id = ? and usage_date = ?",
+            (user.id, "2026-05-01"),
+        ).fetchone()
+    assert initial_legacy_day["summary_count"] == 1
 
     def second_period_key(period_type: PeriodType) -> str:
         return "2026-05-02" if period_type == PeriodType.DAY else "2026-05"
@@ -79,9 +100,28 @@ def test_reservation_refund_uses_original_usage_date(monkeypatch, tmp_path):
             """,
             (user.id, PeriodType.DAY.value, "2026-05-02"),
         ).fetchone()
+        legacy_original_day = conn.execute(
+            "select summary_count from usage_daily where user_id = ? and usage_date = ?",
+            (user.id, "2026-05-01"),
+        ).fetchone()
+        legacy_next_day = conn.execute(
+            "select summary_count from usage_daily where user_id = ? and usage_date = ?",
+            (user.id, "2026-05-02"),
+        ).fetchone()
+        legacy_reservation = conn.execute(
+            """
+            select refunded_at
+            from summary_quota_reservations
+            where reservation_id = ? and usage_date = ?
+            """,
+            ("summary_rollover", "2026-05-01"),
+        ).fetchone()
 
     assert original_day["summary_count"] == 0
     assert next_day is None
+    assert legacy_original_day["summary_count"] == 0
+    assert legacy_next_day is None
+    assert legacy_reservation["refunded_at"] is not None
 
 
 def test_entitlement_status_api_shape_for_free_user(monkeypatch, tmp_path):

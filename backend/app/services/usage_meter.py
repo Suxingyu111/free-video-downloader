@@ -90,12 +90,15 @@ def allowance_for_user(user: User, meter_type: MeterType) -> MeterAllowance:
             "download_count",
             plan_id,
         )
-    if meter_type == MeterType.SUMMARY and limits.summary_daily_limit is not None:
+    summary_daily_limit = limits.summary_daily_limit
+    if plan_id == "free":
+        summary_daily_limit = load_config().free_summary_daily_limit
+    if meter_type == MeterType.SUMMARY and summary_daily_limit is not None:
         return MeterAllowance(
             meter_type,
             PeriodType.DAY,
             current_period_key(PeriodType.DAY),
-            limits.summary_daily_limit,
+            summary_daily_limit,
             "summary_count",
             plan_id,
         )

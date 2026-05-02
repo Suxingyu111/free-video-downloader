@@ -32,6 +32,18 @@ import { SEO_PAGES, getIndexJsonLd, getPageJsonLd, seoRelatedLinks, seoSite } fr
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
 const indexHtmlSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
+const assertSeoPathList = (paths, label, minLength, routePaths) => {
+  assert.ok(Array.isArray(paths), `${label} should be an array`);
+  assert.ok(paths.length >= minLength, `${label} should include at least ${minLength} paths`);
+
+  for (const [index, path] of paths.entries()) {
+    assert.equal(typeof path, "string", `${label}[${index}] should be a string`);
+    assert.notEqual(path.trim(), "", `${label}[${index}] should not be empty`);
+    assert.ok(path.startsWith("/"), `${label}[${index}] should be an absolute SEO path`);
+    assert.ok(routePaths.has(path), `${label}[${index}] should exist in SEO_PAGES`);
+  }
+};
+
 test("seo pages cover stable route matrix and primary landing metadata", () => {
   const paths = SEO_PAGES.map((page) => page.path);
   const expectedSeoPaths = [
@@ -88,6 +100,7 @@ test("seo pages cover stable route matrix and primary landing metadata", () => {
 });
 
 test("topic cluster pages define taxonomy and conversion CTAs", () => {
+  const routePaths = new Set(SEO_PAGES.map((page) => page.path));
   const expectedPages = [
     { path: "/features/", cluster: "features", pageType: "hub", ctaLabel: "查看所有功能" },
     { path: "/features/video-download/", cluster: "features", pageType: "feature", ctaLabel: "粘贴公开视频链接试试解析" },
@@ -116,12 +129,12 @@ test("topic cluster pages define taxonomy and conversion CTAs", () => {
     assert.equal(page.cluster, expectedPage.cluster);
     assert.equal(page.pageType, expectedPage.pageType);
     assert.equal(page.ctaLabel, expectedPage.ctaLabel);
-    assert.ok(Array.isArray(page.relatedPaths), `${expectedPage.path} should define relatedPaths`);
-    assert.ok(page.relatedPaths.length >= 3, `${expectedPage.path} should define at least three related paths`);
+    assertSeoPathList(page.relatedPaths, `${expectedPage.path} relatedPaths`, 3, routePaths);
   }
 });
 
 test("hub and pricing pages define crawlable section contracts", () => {
+  const routePaths = new Set(SEO_PAGES.map((page) => page.path));
   const assertCrawlableSections = (page) => {
     assert.ok(Array.isArray(page.sections), `${page.path} should define sections`);
     assert.ok(page.sections.length > 0, `${page.path} should define at least one section`);
@@ -132,8 +145,7 @@ test("hub and pricing pages define crawlable section contracts", () => {
     }
   };
   const assertTopicLinks = (page) => {
-    assert.ok(Array.isArray(page.topicLinks), `${page.path} should define topicLinks`);
-    assert.ok(page.topicLinks.length >= 3, `${page.path} should define at least three topic links`);
+    assertSeoPathList(page.topicLinks, `${page.path} topicLinks`, 3, routePaths);
   };
   const hubPaths = ["/features/", "/platforms/", "/use-cases/", "/compare/"];
 

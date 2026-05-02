@@ -92,8 +92,12 @@ export async function getBillingStatus() {
   return response.json();
 }
 
-export async function createBillingCheckout() {
-  return postJson("/api/billing/checkout");
+export async function createBillingCheckout(payload) {
+  return postJson("/api/billing/checkout", payload);
+}
+
+export async function confirmBillingCheckout(sessionId) {
+  return postJson("/api/billing/checkout/confirm", { session_id: sessionId });
 }
 
 export async function createBillingPortal() {
@@ -195,7 +199,9 @@ async function postJson(url, payload) {
   const response = await fetch(url, options);
   if (!response.ok) {
     const error = await readApiError(response);
-    throw new Error(error);
+    const apiError = new Error(error);
+    apiError.status = response.status;
+    throw apiError;
   }
   return response.json();
 }

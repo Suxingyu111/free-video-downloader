@@ -29,13 +29,18 @@ test("createSummaryTask posts to summary API", async () => {
     };
   };
 
-  const result = await createSummaryTask({ url: "https://example.com/video", title: "Demo", language: "zh-CN" });
+  const result = await createSummaryTask({ url: "https://example.com/video", title: "Demo", language: "zh-CN", force: true });
 
   assert.deepEqual(result, { summary_id: "summary_123" });
   assert.equal(calls[0][0], "/api/summaries");
   assert.equal(calls[0][1].method, "POST");
   assert.equal(calls[0][1].credentials, "include");
-  assert.equal(JSON.parse(calls[0][1].body).title, "Demo");
+  assert.deepEqual(JSON.parse(calls[0][1].body), {
+    url: "https://example.com/video",
+    title: "Demo",
+    language: "zh-CN",
+    force: true
+  });
 });
 
 
@@ -91,6 +96,24 @@ test("billing API helpers include browser credentials", async () => {
     ["/api/billing/status", "/api/billing/checkout", "/api/billing/portal", "/api/billing/mock/activate"]
   );
   assert.equal(calls.every(([, options]) => options.credentials === "include"), true);
+});
+
+
+test("createBillingCheckout sends the current app return origin", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options]);
+    return {
+      ok: true,
+      json: async () => ({ mode: "stripe", url: "https://checkout.stripe.test" })
+    };
+  };
+
+  await createBillingCheckout({ return_url: "http://127.0.0.1:5175" });
+
+  assert.equal(calls[0][0], "/api/billing/checkout");
+  assert.equal(calls[0][1].credentials, "include");
+  assert.deepEqual(JSON.parse(calls[0][1].body), { return_url: "http://127.0.0.1:5175" });
 });
 
 

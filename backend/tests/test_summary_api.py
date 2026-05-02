@@ -159,7 +159,7 @@ def test_create_summary_reuses_completed_file_cache(monkeypatch, isolated_summar
     assert len(fake.calls) == 1
 
 
-def test_create_summary_reuses_active_task_for_equivalent_bilibili_url(monkeypatch, isolated_summary_store):
+def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
     client = TestClient(app)
@@ -173,6 +173,9 @@ def test_create_summary_reuses_active_task_for_equivalent_bilibili_url(monkeypat
             "language": "zh-CN",
         },
     )
+    first_summary_id = first.json()["summary_id"]
+    wait_for_status(client, first_summary_id, "completed")
+
     second = client.post(
         "/api/summaries",
         json={"url": "https://www.bilibili.com/video/BV14b411Z7QY/", "title": "Demo", "language": "zh-CN"},
@@ -180,8 +183,35 @@ def test_create_summary_reuses_active_task_for_equivalent_bilibili_url(monkeypat
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert second.json()["summary_id"] == first.json()["summary_id"]
+    assert second.json()["summary_id"] == first_summary_id
     assert second.json()["cache_hit"] is True
+    assert len(fake.calls) == 1
+
+
+def test_create_summary_does_not_reuse_active_task(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    login(client)
+
+    active = isolated_summary_store.create_task(
+        "https://example.com/active-cache-video",
+        title="Demo",
+        language="zh-CN",
+        task_id="summary_active_cache_video",
+    )
+    isolated_summary_store.update_task(active.id, status="summarizing", stage="summary")
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/active-cache-video", "title": "Demo", "language": "zh-CN"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["summary_id"] != active.id
+    assert response.json()["cache_hit"] is False
+    assert response.json()["usage"]["used_today"] == 1
+    assert response.json()["usage"]["remaining_today"] == 2
     assert len(fake.calls) == 1
 
 

@@ -212,7 +212,7 @@ class SummaryStore:
             if not task_id:
                 return None
             task = self._tasks.get(task_id)
-            if task is None or task.status == "failed":
+            if task is None or task.status != "completed":
                 return None
             return task
 

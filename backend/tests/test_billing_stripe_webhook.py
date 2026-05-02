@@ -50,6 +50,26 @@ class FakeStripeCheckout:
     Session = FakeStripeCheckoutSession
 
 
+class FakeStripeSubscription:
+    payloads = {}
+
+    @classmethod
+    def retrieve(cls, subscription_id):
+        return cls.payloads[subscription_id]
+
+
+class FakeStripeCheckoutSessionConfirm:
+    payloads = {}
+
+    @classmethod
+    def retrieve(cls, session_id, expand=None):
+        return cls.payloads[session_id]
+
+
+class FakeStripeCheckoutConfirm:
+    Session = FakeStripeCheckoutSessionConfirm
+
+
 def _stripe_env(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
@@ -110,6 +130,75 @@ def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
     assert rows[0]["count"] == 1
 
 
+def test_stripe_checkout_uses_request_origin_for_return_urls(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "origin-checkout@example.com", "password": "checkout-password"},
+    )
+
+    response = client.post(
+        "/api/billing/checkout",
+        json={"return_url": "http://127.0.0.1:5175"},
+        headers={"Origin": "http://127.0.0.1:5175"},
+    )
+
+    assert response.status_code == 200
+    session_call = FakeStripeCheckoutSession.created[0]
+    assert session_call["success_url"].startswith(
+        "http://127.0.0.1:5175/#pricing?checkout=success"
+    )
+    assert session_call["cancel_url"] == "http://127.0.0.1:5175/#pricing?checkout=cancel"
+
+
+def test_stripe_checkout_recreates_session_when_return_origin_changes(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "origin-change@example.com", "password": "checkout-password"},
+    )
+
+    first = client.post("/api/billing/checkout")
+    second = client.post(
+        "/api/billing/checkout",
+        json={"return_url": "http://127.0.0.1:5175"},
+        headers={"Origin": "http://127.0.0.1:5175"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["session_id"] != second.json()["session_id"]
+    assert len(FakeStripeCheckoutSession.created) == 2
+    conn = database.connect(tmp_path / "saveany.db")
+    try:
+        attempts = conn.execute(
+            """
+            select status, stripe_return_url
+            from billing_attempts
+            order by created_at
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    assert [attempt["status"] for attempt in attempts] == ["expired", "open"]
+    assert [attempt["stripe_return_url"] for attempt in attempts] == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5175",
+    ]
+
+
 def test_stripe_checkout_creates_new_session_after_open_attempt_expires(
     monkeypatch, tmp_path
 ):
@@ -159,6 +248,174 @@ def test_stripe_checkout_creates_new_session_after_open_attempt_expires(
         second.json()["session_id"],
     ]
     assert [attempt["status"] for attempt in attempts] == ["expired", "open"]
+
+
+def test_checkout_confirm_syncs_paid_subscription(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCheckoutSessionConfirm.payloads = {}
+    FakeStripeSubscription.payloads = {}
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
+    monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
+    client = TestClient(app)
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "confirm-paid@example.com", "password": "stripe-password"},
+    ).json()
+    user_id = registered["user"]["id"]
+    FakeStripeCheckoutSessionConfirm.payloads["cs_paid"] = {
+        "id": "cs_paid",
+        "customer": "cus_confirm",
+        "subscription": "sub_confirm",
+        "payment_status": "paid",
+        "client_reference_id": user_id,
+        "metadata": {"saveany_user_id": user_id},
+    }
+    FakeStripeSubscription.payloads["sub_confirm"] = {
+        "id": "sub_confirm",
+        "customer": "cus_confirm",
+        "status": "active",
+        "current_period_start": 1777600000,
+        "current_period_end": 1780278400,
+        "cancel_at_period_end": False,
+        "metadata": {"saveany_user_id": user_id},
+        "items": {"data": [{"price": {"id": "price_monthly"}}]},
+    }
+
+    response = client.post(
+        "/api/billing/checkout/confirm",
+        json={"session_id": "cs_paid"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "stripe"
+    assert response.json()["membership"]["active"] is True
+    assert response.json()["membership"]["plan"] == "pro"
+    assert get_membership(user_id).active is True
+
+
+def test_checkout_confirm_rejects_session_for_another_user(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    other_user = create_user("other-confirm@example.com", "stripe-password")
+    FakeStripeCheckoutSessionConfirm.payloads = {
+        "cs_other": {
+            "id": "cs_other",
+            "customer": "cus_other",
+            "subscription": "sub_other",
+            "payment_status": "paid",
+            "client_reference_id": other_user.id,
+            "metadata": {"saveany_user_id": other_user.id},
+        }
+    }
+    FakeStripeSubscription.payloads = {
+        "sub_other": {
+            "id": "sub_other",
+            "customer": "cus_other",
+            "status": "active",
+            "current_period_start": 1777600000,
+            "current_period_end": 1780278400,
+            "cancel_at_period_end": False,
+            "metadata": {"saveany_user_id": other_user.id},
+            "items": {"data": [{"price": {"id": "price_monthly"}}]},
+        }
+    }
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
+    monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
+    client = TestClient(app)
+    current = client.post(
+        "/api/auth/register",
+        json={"email": "current-confirm@example.com", "password": "stripe-password"},
+    ).json()
+
+    response = client.post("/api/billing/checkout/confirm", json={"session_id": "cs_other"})
+
+    assert response.status_code == 403
+    assert get_membership(current["user"]["id"]).active is False
+    assert get_membership(other_user.id).active is False
+
+
+def test_checkout_confirm_waits_for_unpaid_session(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCheckoutSessionConfirm.payloads = {}
+    FakeStripeSubscription.payloads = {}
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
+    monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
+    client = TestClient(app)
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "confirm-unpaid@example.com", "password": "stripe-password"},
+    ).json()
+    user_id = registered["user"]["id"]
+    FakeStripeCheckoutSessionConfirm.payloads["cs_unpaid"] = {
+        "id": "cs_unpaid",
+        "customer": "cus_unpaid",
+        "subscription": "sub_unpaid",
+        "payment_status": "unpaid",
+        "client_reference_id": user_id,
+        "metadata": {"saveany_user_id": user_id},
+    }
+    FakeStripeSubscription.payloads["sub_unpaid"] = {
+        "id": "sub_unpaid",
+        "customer": "cus_unpaid",
+        "status": "incomplete",
+        "metadata": {"saveany_user_id": user_id},
+        "items": {"data": [{"price": {"id": "price_monthly"}}]},
+    }
+
+    response = client.post("/api/billing/checkout/confirm", json={"session_id": "cs_unpaid"})
+
+    assert response.status_code == 409
+    assert get_membership(user_id).active is False
+
+
+def test_checkout_confirm_uses_subscription_item_period_fields(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCheckoutSessionConfirm.payloads = {}
+    FakeStripeSubscription.payloads = {}
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
+    monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
+    client = TestClient(app)
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "confirm-item-period@example.com", "password": "stripe-password"},
+    ).json()
+    user_id = registered["user"]["id"]
+    FakeStripeCheckoutSessionConfirm.payloads["cs_item_period"] = {
+        "id": "cs_item_period",
+        "customer": "cus_item_period",
+        "subscription": "sub_item_period",
+        "payment_status": "paid",
+        "client_reference_id": user_id,
+        "metadata": {"saveany_user_id": user_id},
+    }
+    FakeStripeSubscription.payloads["sub_item_period"] = {
+        "id": "sub_item_period",
+        "customer": "cus_item_period",
+        "status": "active",
+        "cancel_at_period_end": False,
+        "metadata": {"saveany_user_id": user_id},
+        "items": {
+            "data": [
+                {
+                    "current_period_start": 1777600000,
+                    "current_period_end": 1780278400,
+                    "price": {"id": "price_monthly"},
+                }
+            ]
+        },
+    }
+
+    response = client.post(
+        "/api/billing/checkout/confirm",
+        json={"session_id": "cs_item_period"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["membership"]["active"] is True
+    assert response.json()["membership"]["current_period_end"] == 1780278400
 
 
 def test_stripe_event_processing_claim_blocks_pending_duplicate(monkeypatch, tmp_path):

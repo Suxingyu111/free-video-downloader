@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from app.auth_routes import current_user
 from app.services.app_config import load_config
@@ -11,6 +14,7 @@ from app.services.billing_service import (
     begin_stripe_event_processing,
     cancel_mock_subscription,
     complete_stripe_checkout_attempt,
+    confirm_stripe_checkout_session,
     create_mock_checkout,
     ensure_stripe_customer_id,
     expire_mock_subscription,
@@ -21,6 +25,8 @@ from app.services.billing_service import (
     mark_stripe_event_processed,
     mark_stripe_invoice_payment_failed,
     record_stripe_checkout_attempt,
+    StripeCheckoutNotReadyError,
+    StripeCheckoutOwnershipError,
     StripeEventInProgress,
     upsert_stripe_checkout_session,
     upsert_stripe_invoice_paid,
@@ -32,13 +38,48 @@ from app.services.database import connect
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 
+class CheckoutConfirmRequest(BaseModel):
+    session_id: str
+
+
+class CheckoutRequest(BaseModel):
+    return_url: str | None = None
+
+
+def _url_origin(value: str | None) -> str | None:
+    if not value:
+        return None
+    parts = urlsplit(value.strip())
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        return None
+    return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
+
+
+def _checkout_return_base_url(
+    configured_url: str,
+    request: Request,
+    requested_return_url: str | None,
+) -> str:
+    configured_origin = _url_origin(configured_url)
+    request_origin = _url_origin(request.headers.get("origin"))
+    requested_origin = _url_origin(requested_return_url)
+    allowed_origins = {origin for origin in (configured_origin, request_origin) if origin}
+    if requested_origin and requested_origin in allowed_origins:
+        return requested_origin
+    return configured_origin or configured_url.rstrip("/")
+
+
 @router.get("/status")
 def billing_status(user: User = Depends(current_user)) -> dict:
     return {"membership": get_membership(user.id).as_dict(), "mode": load_config().billing_mode}
 
 
 @router.post("/checkout")
-def billing_checkout(user: User = Depends(current_user)) -> dict:
+def billing_checkout(
+    request: Request,
+    payload: CheckoutRequest | None = Body(default=None),
+    user: User = Depends(current_user),
+) -> dict:
     config = load_config()
     membership = get_membership(user.id)
     if membership.active:
@@ -48,7 +89,8 @@ def billing_checkout(user: User = Depends(current_user)) -> dict:
     if config.billing_mode == "stripe":
         if not config.stripe_secret_key or not config.stripe_pro_monthly_price_id:
             raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
-        open_attempt = get_open_stripe_checkout_attempt(user.id)
+        return_base_url = _checkout_return_base_url(config.public_app_url, request, payload.return_url if payload else None)
+        open_attempt = get_open_stripe_checkout_attempt(user.id, return_base_url if payload else None)
         if open_attempt is not None:
             return {
                 "mode": "stripe",
@@ -67,15 +109,50 @@ def billing_checkout(user: User = Depends(current_user)) -> dict:
             mode="subscription",
             customer=customer_id,
             line_items=[{"price": config.stripe_pro_monthly_price_id, "quantity": 1}],
-            success_url=f"{config.public_app_url}/#pricing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{config.public_app_url}/#pricing?checkout=cancel",
+            success_url=f"{return_base_url}/#pricing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{return_base_url}/#pricing?checkout=cancel",
             client_reference_id=user.id,
             subscription_data={"metadata": {"saveany_user_id": user.id}},
             metadata={"saveany_user_id": user.id},
         )
-        record_stripe_checkout_attempt(user.id, session.id, session.url)
+        record_stripe_checkout_attempt(user.id, session.id, session.url, return_base_url)
         return {"mode": "stripe", "url": session.url, "session_id": session.id}
     raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
+
+
+@router.post("/checkout/confirm")
+def billing_checkout_confirm(
+    payload: CheckoutConfirmRequest,
+    user: User = Depends(current_user),
+) -> dict:
+    config = load_config()
+    session_id = payload.session_id.strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="缺少 Stripe Checkout Session ID")
+    if config.billing_mode != "stripe":
+        raise HTTPException(status_code=404, detail="Stripe 支付确认仅在 Stripe 模式可用")
+    if not config.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
+
+    stripe.api_key = config.stripe_secret_key
+    try:
+        session = stripe.checkout.Session.retrieve(session_id, expand=["subscription"])
+        membership = confirm_stripe_checkout_session(
+            user,
+            session,
+            lambda subscription_id: stripe.Subscription.retrieve(subscription_id),
+        )
+    except StripeCheckoutOwnershipError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except StripeCheckoutNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Stripe 确认失败，请稍后重试") from exc
+    return {"membership": membership.as_dict(), "mode": "stripe"}
 
 
 @router.post("/portal")

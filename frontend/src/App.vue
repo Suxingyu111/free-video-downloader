@@ -24,6 +24,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import {
   analyzeUrl,
   askSummaryQuestion,
+  confirmBillingCheckout,
   confirmPasswordReset,
   connectSummaryEvents,
   connectTaskEvents,
@@ -41,7 +42,7 @@ import {
   registerAccount,
   requestPasswordReset
 } from "./services/api";
-import { authInitialState, clearAuthState, membershipLabel, remainingSummaryText, updateAuthState } from "./services/authSession";
+import { authInitialState, clearAuthState, membershipLabel, membershipStatusText, remainingSummaryText, updateAuthState } from "./services/authSession";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT, resolveDownloadFormat } from "./services/formats";
 import { applyWorkspaceSnapshot, loadWorkspaceSnapshot, pickWorkspaceSnapshot, saveWorkspaceSnapshot } from "./services/workspacePersistence";
 import { seoCompliancePoints, seoFaqs } from "./seo/pages";
@@ -176,6 +177,8 @@ const state = reactive({
   summaryGate: "",
   tasks: [],
   checkoutStatus: "",
+  checkoutConfirming: false,
+  checkoutConfirmedSessionId: "",
   billingBusy: false,
   billingMessage: "",
   accountMenuOpen: false,
@@ -213,10 +216,12 @@ const pollers = new Map();
 const summaryDisconnectors = new Map();
 const summaryPollers = new Map();
 let workspaceRestoreTimer = null;
+let accountMenuCloseTimer = null;
 
 const currentPage = computed(() => state.currentPage);
 const authMembershipLabel = computed(() => membershipLabel(auth));
 const authUsageText = computed(() => remainingSummaryText(auth));
+const billingStateText = computed(() => membershipStatusText(auth));
 const accountAvatarLabel = computed(() => {
   const emailPrefix = (auth.user?.email || "用户").split("@")[0].trim();
   return (emailPrefix || "用户").slice(0, 2).toUpperCase();
@@ -235,9 +240,16 @@ const authSubmitLabel = computed(() => {
   return "登录";
 });
 const checkoutNotice = computed(() => {
+  if (state.checkoutStatus === "success" && state.checkoutConfirming) return "正在确认支付，请稍等。";
+  if (state.checkoutStatus === "success" && auth.membership?.active) return "专业版已开通。";
   if (state.checkoutStatus === "success") return "正在确认会员状态，请稍等几秒。";
   if (state.checkoutStatus === "cancel") return "已取消支付，可以稍后继续开通专业版。";
   return "";
+});
+const proPlanButtonLabel = computed(() => {
+  if (auth.membership?.active || auth.membership?.status === "past_due") return "管理订阅";
+  if (auth.membership?.plan === "pro") return "重新选择专业版 ¥29/月";
+  return "选择专业版并支付 ¥29/月";
 });
 const hasSummaryQuotaError = computed(() => state.summaryError.includes(FREE_QUOTA_EXHAUSTED_MESSAGE.slice(0, 14)));
 const hasResult = computed(() => Boolean(state.result && state.analyzedUrl === state.url.trim()));
@@ -306,7 +318,7 @@ const workspaceRestoredMeta = computed(() => {
   return "已保留视频链接和解析结果";
 });
 const showWorkspaceRestore = computed(() => state.workspaceRestoreVisible && hasPersistedWorkspace(state.pendingWorkspaceSnapshot));
-const billingPanelVisible = computed(() => Boolean(checkoutNotice.value || state.billingMessage || showMockBilling.value));
+const billingPanelVisible = computed(() => Boolean(auth.user || checkoutNotice.value || state.billingMessage || showMockBilling.value));
 
 function scrollPageToTop(behavior = "auto") {
   if (typeof window === "undefined") return;
@@ -349,6 +361,10 @@ function updateHash(hash) {
   window.history.pushState(null, "", hash);
 }
 
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function syncCurrentPageFromHash() {
   if (typeof window === "undefined") return;
   const nextPage = normalizePageHash(window.location.hash);
@@ -358,7 +374,8 @@ async function syncCurrentPageFromHash() {
   state.activeAnchor = nextAnchor;
   state.checkoutStatus = params.get("checkout") || "";
   if (state.checkoutStatus === "success") {
-    refreshMe({ silent: true });
+    await refreshMe({ silent: true });
+    await confirmCheckoutReturn();
   }
   await nextTick();
   if (nextAnchor) {
@@ -402,11 +419,36 @@ async function navigateToPage(pageId) {
 }
 
 function toggleAccountMenu() {
+  clearAccountMenuCloseTimer();
   state.accountMenuOpen = !state.accountMenuOpen;
 }
 
+function openAccountMenu() {
+  clearAccountMenuCloseTimer();
+  state.accountMenuOpen = true;
+}
+
 function closeAccountMenu() {
+  clearAccountMenuCloseTimer();
   state.accountMenuOpen = false;
+}
+
+function scheduleCloseAccountMenu() {
+  clearAccountMenuCloseTimer();
+  if (typeof window === "undefined") {
+    closeAccountMenu();
+    return;
+  }
+  accountMenuCloseTimer = window.setTimeout(() => {
+    state.accountMenuOpen = false;
+    accountMenuCloseTimer = null;
+  }, 180);
+}
+
+function clearAccountMenuCloseTimer() {
+  if (typeof window === "undefined" || !accountMenuCloseTimer) return;
+  window.clearTimeout(accountMenuCloseTimer);
+  accountMenuCloseTimer = null;
 }
 
 function openAccountCenter() {
@@ -482,6 +524,10 @@ async function submitAuth() {
         : await loginAccount({ email: authForm.email, password: authForm.password });
     updateAuthState(auth, payload);
     await refreshMe({ silent: true });
+    state.billingMessage = "";
+    if (state.checkoutStatus === "success") {
+      await confirmCheckoutReturn({ force: true });
+    }
     authForm.open = false;
     authForm.password = "";
     if (state.summaryGate === "login" && state.result) {
@@ -500,6 +546,11 @@ async function logout() {
   try {
     await logoutAccount();
   } finally {
+    state.billingMessage = "";
+    state.checkoutStatus = "";
+    state.checkoutConfirming = false;
+    state.checkoutConfirmedSessionId = "";
+    if (typeof window !== "undefined" && hashParams(window.location.hash).get("checkout")) updateHash("#pricing");
     clearAuthState(auth);
   }
 }
@@ -512,7 +563,8 @@ async function startCheckout() {
   state.billingBusy = true;
   state.billingMessage = "";
   try {
-    const result = await createBillingCheckout();
+    const returnOrigin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const result = await createBillingCheckout(returnOrigin ? { return_url: returnOrigin } : undefined);
     if (result.url && typeof window !== "undefined") window.location.href = result.url;
   } catch (error) {
     state.billingMessage = localizeStatus(error.message);
@@ -534,6 +586,99 @@ async function openBillingPortal() {
   } catch (error) {
     state.billingMessage = localizeStatus(error.message);
   } finally {
+    state.billingBusy = false;
+  }
+}
+
+function isProPlanRecord() {
+  return auth.membership?.plan === "pro";
+}
+
+function shouldManageProPlan() {
+  return Boolean(auth.membership?.active || auth.membership?.status === "past_due");
+}
+
+function pricingPlanStateLabel(plan) {
+  if (!auth.user) return "";
+  if (plan.id === "free" && !auth.membership?.active && !isProPlanRecord()) return "当前套餐";
+  if (plan.id !== "pro" || !isProPlanRecord()) return "";
+  if (auth.membership?.active) return "当前已开通";
+  if (auth.membership?.status === "past_due") return "付款失败";
+  return "已过期";
+}
+
+function pricingPlanStatusCopy(plan) {
+  if (!auth.user) {
+    return plan.id === "pro" ? "登录后选择套餐，确认后再进入 Stripe 支付页面。" : "";
+  }
+  if (plan.id === "free") {
+    if (!auth.membership?.active && !isProPlanRecord()) return `当前套餐，${authUsageText.value}`;
+    return "下载功能继续免费，可随时保留本地工作区。";
+  }
+  if (plan.id !== "pro") return "";
+  if (auth.membership?.active && auth.membership?.cancel_at_period_end) return "已取消续费，本周期内仍可使用";
+  if (auth.membership?.active) return "当前已开通";
+  if (auth.membership?.status === "past_due") return "付款失败，请更新支付方式";
+  if (isProPlanRecord()) return "专业版已过期，可重新开通恢复高频 AI 总结。";
+  return "选择这个套餐后再进入支付页面，支付成功会自动回到这里确认状态。";
+}
+
+async function goToPricingForUpgrade() {
+  state.billingMessage = "请选择专业版套餐，确认后再进入支付页面。";
+  await navigateToPage(PRICING_PAGE_ID);
+}
+
+async function handleProPlanAction() {
+  if (shouldManageProPlan()) {
+    await openBillingPortal();
+    return;
+  }
+  await startCheckout();
+}
+
+async function confirmCheckoutReturn({ force = false } = {}) {
+  if (typeof window === "undefined") return;
+  const params = hashParams(window.location.hash);
+  const sessionId = params.get("session_id") || "";
+  if (state.checkoutStatus !== "success" || !sessionId) return;
+  if (!force && state.checkoutConfirmedSessionId === sessionId) return;
+  if (!auth.user) {
+    await refreshMe({ silent: true });
+  }
+  if (!auth.user) {
+    state.billingMessage = "登录后继续确认支付。";
+    openAuth("login");
+    return;
+  }
+
+  state.checkoutConfirming = true;
+  state.billingBusy = true;
+  state.billingMessage = "正在确认支付，请稍等。";
+  const retryDelays = [0, 1200, 1800, 2400];
+  try {
+    for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+      if (retryDelays[attempt]) await wait(retryDelays[attempt]);
+      try {
+        const result = await confirmBillingCheckout(sessionId);
+        if (result.membership) auth.membership = result.membership;
+        auth.billingMode = result.mode || auth.billingMode;
+        state.checkoutConfirmedSessionId = sessionId;
+        await refreshMe({ silent: true });
+        state.billingMessage = "专业版已开通。";
+        return;
+      } catch (error) {
+        if (error.status === 409 && attempt < retryDelays.length - 1) continue;
+        if (error.status === 409) {
+          state.billingMessage = "支付已返回，仍在等待 Stripe 确认，可稍后刷新。";
+          await refreshMe({ silent: true });
+          return;
+        }
+        state.billingMessage = localizeStatus(error.message);
+        return;
+      }
+    }
+  } finally {
+    state.checkoutConfirming = false;
     state.billingBusy = false;
   }
 }
@@ -597,7 +742,7 @@ async function startSummaryForResult(result, { mode = "manual" } = {}) {
       url: result.webpage_url || state.url.trim(),
       title: result.title,
       language: "zh-CN",
-      force: mode !== "auto"
+      force: true
     });
     if (summary.usage) auth.usage = summary.usage;
     refreshMe({ silent: true });
@@ -1007,6 +1152,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearWorkspaceRestoreTimer();
+  clearAccountMenuCloseTimer();
   if (typeof window !== "undefined") {
     window.removeEventListener("hashchange", syncCurrentPageFromHash);
     window.removeEventListener("popstate", syncCurrentPageFromHash);
@@ -1048,8 +1194,8 @@ onBeforeUnmount(() => {
           v-else
           class="account-profile"
           :class="{ open: state.accountMenuOpen }"
-          @mouseenter="state.accountMenuOpen = true"
-          @mouseleave="closeAccountMenu"
+          @mouseenter="openAccountMenu"
+          @mouseleave="scheduleCloseAccountMenu"
           @keydown.escape="closeAccountMenu"
         >
           <button
@@ -1059,7 +1205,7 @@ onBeforeUnmount(() => {
             aria-controls="account-dropdown"
             :aria-expanded="state.accountMenuOpen ? 'true' : 'false'"
             @click="toggleAccountMenu"
-            @focus="state.accountMenuOpen = true"
+            @focus="openAccountMenu"
           >
             <span class="account-avatar" aria-hidden="true">{{ accountAvatarLabel }}</span>
             <span class="sr-only">打开账号菜单</span>
@@ -1216,9 +1362,9 @@ onBeforeUnmount(() => {
                 <h3>今日免费额度已用完</h3>
                 <p>{{ state.summaryError || FREE_QUOTA_EXHAUSTED_MESSAGE }}</p>
               </div>
-              <button class="primary-button" type="button" :disabled="state.billingBusy" @click="startCheckout">
+              <button class="primary-button" type="button" :disabled="state.billingBusy" @click="goToPricingForUpgrade">
                 <Star :size="18" aria-hidden="true" />
-                <span>开通专业版 ¥29/月</span>
+                <span>查看套餐方案</span>
               </button>
             </section>
 
@@ -1344,8 +1490,10 @@ onBeforeUnmount(() => {
         <article v-for="plan in pricingPlans" :key="plan.id" class="pricing-card" :class="{ featured: plan.featured }" :data-plan="plan.id">
           <div class="pricing-card-head">
             <span class="plan-badge">{{ plan.badge }}</span>
+            <span v-if="pricingPlanStateLabel(plan)" class="current-plan-badge">{{ pricingPlanStateLabel(plan) }}</span>
             <h3>{{ plan.name }}</h3>
             <p>{{ plan.description }}</p>
+            <p v-if="pricingPlanStatusCopy(plan)" class="plan-status-copy">{{ pricingPlanStatusCopy(plan) }}</p>
           </div>
           <div class="plan-price">
             <strong>{{ plan.price }}</strong>
@@ -1358,25 +1506,16 @@ onBeforeUnmount(() => {
             </li>
           </ul>
           <button
-            v-if="plan.id === 'pro' && !auth.membership?.active"
-            class="primary-button"
+            v-if="plan.id === 'pro'"
+            :class="shouldManageProPlan() ? 'secondary-button' : 'primary-button'"
             type="button"
             :disabled="state.billingBusy"
-            @click="startCheckout"
+            @click="handleProPlanAction"
           >
             <Loader2 v-if="state.billingBusy" :size="20" class="animate-spin" aria-hidden="true" />
-            <Star v-if="plan.featured" :size="20" aria-hidden="true" />
-            <span>开通专业版 ¥29/月</span>
-          </button>
-          <button
-            v-else-if="plan.id === 'pro'"
-            class="secondary-button"
-            type="button"
-            :disabled="state.billingBusy"
-            @click="openBillingPortal"
-          >
-            <CreditCard :size="20" aria-hidden="true" />
-            <span>管理订阅</span>
+            <CreditCard v-else-if="shouldManageProPlan()" :size="20" aria-hidden="true" />
+            <Star v-else :size="20" aria-hidden="true" />
+            <span>{{ proPlanButtonLabel }}</span>
           </button>
           <a v-else :class="plan.featured ? 'primary-button' : 'secondary-button'" :href="`#${plan.target}`" @click.prevent="navigateToPage(plan.target)">
             <Star v-if="plan.featured" :size="20" aria-hidden="true" />
@@ -1394,9 +1533,9 @@ onBeforeUnmount(() => {
           <CreditCard :size="20" aria-hidden="true" />
           <div>
             <p class="billing-status-label">账单状态</p>
-            <strong v-if="checkoutNotice">{{ checkoutNotice }}</strong>
-            <strong v-else-if="state.billingMessage">{{ state.billingMessage }}</strong>
-            <strong v-else>本地 mock billing 可用于验收会员状态。</strong>
+            <strong v-if="state.billingMessage">{{ state.billingMessage }}</strong>
+            <strong v-else-if="checkoutNotice">{{ checkoutNotice }}</strong>
+            <strong v-else>{{ billingStateText }}</strong>
             <span>{{ authMembershipLabel }} · {{ authUsageText }}</span>
           </div>
         </div>

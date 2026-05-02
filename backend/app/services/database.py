@@ -87,6 +87,7 @@ create table if not exists billing_attempts (
   status text not null,
   stripe_checkout_session_id text,
   stripe_checkout_url text,
+  stripe_return_url text,
   created_at real not null,
   updated_at real not null
 );
@@ -141,6 +142,8 @@ def _migrate_billing_attempts(conn: sqlite3.Connection) -> None:
     }
     if "stripe_checkout_url" not in columns:
         conn.execute("alter table billing_attempts add column stripe_checkout_url text")
+    if "stripe_return_url" not in columns:
+        conn.execute("alter table billing_attempts add column stripe_return_url text")
 
 
 @contextmanager

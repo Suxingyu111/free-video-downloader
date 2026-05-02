@@ -5,6 +5,7 @@ import {
   authInitialState,
   clearAuthState,
   membershipLabel,
+  membershipStatusText,
   remainingSummaryText,
   updateAuthState
 } from "../src/services/authSession.js";
@@ -52,4 +53,17 @@ test("clearAuthState resets account state without losing billing mode", () => {
   assert.equal(state.billingMode, "mock");
   assert.equal(membershipLabel(state), "未登录");
   assert.equal(remainingSummaryText(state), "登录后每天可免费总结 3 次");
+});
+
+test("membershipStatusText explains pro edge states", () => {
+  const state = authInitialState();
+  updateAuthState(state, {
+    user: { email: "past-due@example.com" },
+    membership: { active: false, plan: "pro", status: "past_due" },
+    usage: { daily_free_limit: 3, used_today: 3, remaining_today: 0 }
+  });
+
+  assert.equal(membershipStatusText(state), "付款失败，请更新支付方式");
+  assert.equal(membershipLabel(state), "专业版付款失败");
+  assert.equal(remainingSummaryText(state), "付款失败后 AI 总结额度已暂停");
 });

@@ -206,6 +206,17 @@ textarea:focus-visible {
   align-items: center;
 }
 
+.account-profile:hover::after,
+.account-profile:focus-within::after,
+.account-profile.open::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: min(320px, calc(100vw - 28px));
+  height: 12px;
+}
+
 .account-avatar-button {
   display: grid;
   width: 44px;
@@ -236,7 +247,7 @@ textarea:focus-visible {
 
 .account-dropdown {
   position: absolute;
-  top: calc(100% + 12px);
+  top: calc(100% + 8px);
   right: 0;
   z-index: 80;
   display: grid;
@@ -1362,6 +1373,22 @@ select {
   font-weight: 900;
 }
 
+.current-plan-badge {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  margin-left: 8px;
+  border: 1px solid rgba(22, 163, 74, 0.24);
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.12);
+  padding: 0 10px;
+  color: #166534;
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 900;
+  vertical-align: top;
+}
+
 .pricing-card h3 {
   margin: 16px 0 0;
   color: var(--color-paper-text);
@@ -1375,6 +1402,18 @@ select {
   font-size: 15px;
   font-weight: 620;
   line-height: 1.7;
+}
+
+.plan-status-copy {
+  min-height: 46px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-md);
+  background: rgba(248, 250, 252, 0.82);
+  padding: 10px 12px;
+  color: var(--color-paper-text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .plan-price {

@@ -12,6 +12,8 @@ const summaryCss = readFileSync(new URL("../src/assets/summary.css", import.meta
 test("analyzing a video automatically starts the AI summary task", () => {
   assert.match(appSource, /startSummaryForResult\(result,\s*\{\s*mode:\s*"auto"\s*\}\)/);
   assert.match(appSource, /async function startSummaryForResult/);
+  assert.match(appSource, /force:\s*true/);
+  assert.doesNotMatch(appSource, /force:\s*mode\s*!==\s*"auto"/);
   assert.doesNotMatch(appSource, /@click="handleSummary"/);
 });
 
@@ -202,7 +204,10 @@ test("restored workspaces are offered above the workbench before applying state"
 
 test("logged-in navigation uses an avatar account menu instead of a full account strip", () => {
   assert.match(appSource, /accountMenuOpen:\s*false/);
+  assert.match(appSource, /let accountMenuCloseTimer = null/);
   assert.match(appSource, /const accountAvatarLabel = computed/);
+  assert.match(appSource, /function scheduleCloseAccountMenu/);
+  assert.match(appSource, /window\.setTimeout\(\(\)\s*=>\s*\{[\s\S]*state\.accountMenuOpen = false/);
   assert.match(appSource, /class="account-avatar-button"/);
   assert.match(appSource, /aria-haspopup="menu"/);
   assert.match(appSource, /class="account-dropdown"/);
@@ -212,6 +217,7 @@ test("logged-in navigation uses an avatar account menu instead of a full account
   assert.doesNotMatch(appSource, /class="account-chip"/);
   assert.match(mainCss, /\.account-profile\s*\{/);
   assert.match(mainCss, /\.account-dropdown\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(mainCss, /\.account-profile:hover::after,\s*\n\.account-profile:focus-within::after,\s*\n\.account-profile\.open::after/);
   assert.match(mainCss, /\.account-profile:hover \.account-dropdown,\s*\n\.account-profile:focus-within \.account-dropdown,\s*\n\.account-profile\.open \.account-dropdown/);
 });
 
@@ -230,12 +236,26 @@ test("logged-out auto summary uses a gate state instead of a failure state", () 
 test("quota and billing feedback are unified into status panels", () => {
   assert.match(appSource, /summaryGate === 'quota'/);
   assert.match(appSource, /今日免费额度已用完/);
+  assert.match(appSource, /async function goToPricingForUpgrade/);
+  assert.match(appSource, /navigateToPage\(PRICING_PAGE_ID\)/);
+  assert.match(appSource, /查看套餐方案/);
+  assert.match(appSource, /@click="goToPricingForUpgrade"/);
+  assert.doesNotMatch(appSource, /summary-upgrade-card[\s\S]{0,500}@click="startCheckout"/);
   assert.match(appSource, /const billingPanelVisible = computed/);
+  assert.match(appSource, /confirmBillingCheckout/);
+  assert.match(appSource, /checkoutConfirming:\s*false/);
+  assert.match(appSource, /state\.checkoutStatus === "success"[\s\S]*await confirmCheckoutReturn\(\{ force: true \}\)/);
+  assert.match(appSource, /async function logout\(\)[\s\S]*state\.billingMessage = ""[\s\S]*state\.checkoutStatus = ""/);
   assert.match(appSource, /class="billing-status-panel"/);
   assert.match(appSource, /账单状态/);
+  assert.match(appSource, /class="current-plan-badge"/);
+  assert.match(appSource, /class="plan-status-copy"/);
   assert.match(appSource, /class="mock-billing-panel"/);
+  assert.match(appSource, /选择专业版并支付 ¥29\/月/);
   assert.doesNotMatch(appSource, /class="message pricing-message"/);
   assert.match(mainCss, /\.billing-status-panel\s*\{/);
+  assert.match(mainCss, /\.current-plan-badge\s*\{/);
+  assert.match(mainCss, /\.plan-status-copy\s*\{/);
   assert.match(mainCss, /\.summary-gate-card\s*\{/);
   assert.match(mainCss, /\.summary-upgrade-card\s*\{/);
 });

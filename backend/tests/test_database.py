@@ -90,3 +90,24 @@ def test_load_config_rejects_invalid_billing_mode(monkeypatch):
 
     with pytest.raises(ValueError, match="BILLING_MODE must be one of: mock, stripe"):
         load_config()
+
+
+def test_quota_schema_tables_are_created(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+
+    with database.connect(db_path) as conn:
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "select name from sqlite_master where type = 'table'"
+            ).fetchall()
+        }
+
+    assert "usage_periods" in tables
+    assert "anonymous_usage" in tables
+    assert "meter_reservations" in tables
+    assert "meter_reservation_pack_uses" in tables
+    assert "credit_packs" in tables
+    assert "summary_questions" in tables

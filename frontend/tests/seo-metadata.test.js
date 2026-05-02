@@ -144,16 +144,21 @@ test("hub and pricing pages define crawlable section contracts", () => {
   assert.ok(pricingPage, "/pricing/ should exist in SEO_PAGES");
   assertCrawlableSections(pricingPage);
 
-  const pricingPlans = Array.isArray(pricingPage.pricingPlans)
-    ? pricingPage.pricingPlans
-    : pricingPage.pricingPlans?.plans;
+  const expectedPricingTiers = [
+    { id: "free", name: "免费版" },
+    { id: "pro", name: "专业版" },
+    { id: "team", name: "团队版" }
+  ];
+  const pricingPlans = pricingPage.pricingPlans;
 
-  assert.ok(Array.isArray(pricingPlans), "/pricing/ should expose pricingPlans as an array or plans array");
-  assert.ok(pricingPlans.length > 0, "/pricing/ should define at least one crawlable pricing plan");
+  assert.ok(Array.isArray(pricingPlans), "/pricing/ should expose pricingPlans as a stable array");
+  assert.deepEqual(
+    pricingPlans.map((plan) => ({ id: plan.id, name: plan.name })),
+    expectedPricingTiers,
+    "/pricing/ should define the stable free, pro, and team pricing tiers"
+  );
 
   for (const [index, plan] of pricingPlans.entries()) {
-    assert.equal(typeof plan.name, "string", `/pricing/ plan ${index} should include a plan name`);
-    assert.notEqual(plan.name.trim(), "", `/pricing/ plan ${index} plan name should not be empty`);
     assert.equal(typeof plan.price, "string", `/pricing/ plan ${index} should include a crawlable price`);
     assert.notEqual(plan.price.trim(), "", `/pricing/ plan ${index} price should not be empty`);
     assert.equal(typeof plan.billingCycle, "string", `/pricing/ plan ${index} should include a billing cycle`);

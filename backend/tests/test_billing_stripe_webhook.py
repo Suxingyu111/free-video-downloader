@@ -977,3 +977,39 @@ def test_existing_subscription_cannot_be_reassigned_by_webhook_metadata(monkeypa
     assert subscription["stripe_customer_id"] == "cus_changed"
     assert subscription["stripe_price_id"] == "price_new"
     assert subscription["cancel_at_period_end"] == 1
+
+
+def test_stripe_checkout_payment_pack_grants_credit(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("pack-webhook@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_pack_completed",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_pack",
+                "mode": "payment",
+                "payment_status": "paid",
+                "payment_intent": "pi_pack",
+                "client_reference_id": user.id,
+                "metadata": {
+                    "saveany_user_id": user.id,
+                    "purchase_type": "credit_pack",
+                    "pack_id": "summary_small",
+                },
+                "line_items": {"data": [{"price": {"id": "price_summary_small"}}]},
+            }
+        },
+    }
+
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        pack = conn.execute("select * from credit_packs where user_id = ?", (user.id,)).fetchone()
+    assert pack["pack_id"] == "summary_small"
+    assert pack["remaining_amount"] == 20

@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import Callable
 from time import time
 
+from app.services.app_config import load_config
 from app.services.auth_service import User
 from app.services.database import connect, transaction
+from app.services.plan_catalog import CREDIT_PACK_CATALOG
 
 
 ACTIVE_STATUSES = {"active", "trialing"}
@@ -374,6 +376,35 @@ def fail_mock_payment(user: User) -> Membership:
             (time(), user.id),
         )
     return get_membership(user.id)
+
+
+def grant_credit_pack(
+    user_id: str,
+    pack_id: str,
+    *,
+    source: str,
+    payment_reference: str,
+    stripe_price_id: str | None = None,
+) -> dict:
+    from app.services.usage_meter import add_credit_pack
+
+    return add_credit_pack(
+        user_id,
+        pack_id=pack_id,
+        source=source,
+        payment_reference=payment_reference,
+        stripe_price_id=stripe_price_id,
+    )
+
+
+def credit_pack_from_price_id(price_id: str | None) -> str | None:
+    if not price_id:
+        return None
+    config = load_config()
+    for pack_id, pack in CREDIT_PACK_CATALOG.items():
+        if getattr(config, pack.stripe_config_field) == price_id:
+            return pack_id
+    return None
 
 
 def upsert_stripe_subscription(subscription: dict) -> Membership:

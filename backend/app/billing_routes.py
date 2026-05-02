@@ -16,9 +16,11 @@ from app.services.billing_service import (
     complete_stripe_checkout_attempt,
     confirm_stripe_checkout_session,
     create_mock_checkout,
+    credit_pack_from_price_id,
     ensure_stripe_customer_id,
     expire_mock_subscription,
     fail_mock_payment,
+    grant_credit_pack,
     get_open_stripe_checkout_attempt,
     get_membership,
     mark_stripe_event_pending,
@@ -33,6 +35,7 @@ from app.services.billing_service import (
     upsert_stripe_subscription,
 )
 from app.services.database import connect
+from app.services.plan_catalog import get_credit_pack
 
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
@@ -44,6 +47,8 @@ class CheckoutConfirmRequest(BaseModel):
 
 class CheckoutRequest(BaseModel):
     return_url: str | None = None
+    purchase_type: str = "subscription"
+    pack_id: str | None = None
 
 
 def _url_origin(value: str | None) -> str | None:
@@ -81,6 +86,52 @@ def billing_checkout(
     user: User = Depends(current_user),
 ) -> dict:
     config = load_config()
+    purchase_type = payload.purchase_type if payload else "subscription"
+    if purchase_type == "credit_pack":
+        if not payload or not payload.pack_id:
+            raise HTTPException(status_code=400, detail="缺少按量包类型")
+        pack = get_credit_pack(payload.pack_id)
+        if config.billing_mode == "mock":
+            credit_pack = grant_credit_pack(
+                user.id,
+                pack.id,
+                source="mock",
+                payment_reference=f"mock_{pack.id}",
+            )
+            return {"mode": "mock", "credit_pack": credit_pack, "url": "/#pricing"}
+        price_id = getattr(config, pack.stripe_config_field)
+        if not config.stripe_secret_key or not price_id:
+            raise HTTPException(status_code=503, detail="Stripe 按量包支付尚未配置")
+        return_base_url = _checkout_return_base_url(
+            config.public_app_url,
+            request,
+            payload.return_url,
+        )
+        stripe.api_key = config.stripe_secret_key
+        customer_id = ensure_stripe_customer_id(
+            user,
+            lambda: stripe.Customer.create(
+                email=user.email,
+                metadata={"saveany_user_id": user.id},
+            ).id,
+        )
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            customer=customer_id,
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=f"{return_base_url}/#pricing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{return_base_url}/#pricing?checkout=cancel",
+            client_reference_id=user.id,
+            metadata={
+                "saveany_user_id": user.id,
+                "purchase_type": "credit_pack",
+                "pack_id": pack.id,
+            },
+        )
+        record_stripe_checkout_attempt(user.id, session.id, session.url, return_base_url)
+        return {"mode": "stripe", "url": session.url, "session_id": session.id}
+    if purchase_type != "subscription":
+        raise HTTPException(status_code=400, detail="未知购买类型")
     membership = get_membership(user.id)
     if membership.active:
         raise HTTPException(status_code=409, detail="你已经是专业版会员，请前往会员管理。")
@@ -211,6 +262,26 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
         if event_type == "checkout.session.completed":
             checkout_session = event["data"]["object"]
             upsert_stripe_checkout_session(checkout_session)
+            metadata = checkout_session.get("metadata") or {}
+            if checkout_session.get("mode") == "payment" and metadata.get("purchase_type") == "credit_pack":
+                pack_id = metadata.get("pack_id")
+                user_id = metadata.get("saveany_user_id") or checkout_session.get("client_reference_id")
+                if not pack_id or not user_id:
+                    raise ValueError("Stripe credit pack checkout is missing metadata")
+                price_id = None
+                line_items = ((checkout_session.get("line_items") or {}).get("data") or [])
+                if line_items:
+                    price_id = (line_items[0].get("price") or {}).get("id")
+                configured_pack_id = credit_pack_from_price_id(price_id)
+                if configured_pack_id and configured_pack_id != pack_id:
+                    raise ValueError("Stripe credit pack price does not match pack metadata")
+                grant_credit_pack(
+                    user_id,
+                    pack_id,
+                    source="stripe",
+                    payment_reference=checkout_session.get("payment_intent") or checkout_session["id"],
+                    stripe_price_id=price_id,
+                )
             if checkout_session.get("id"):
                 complete_stripe_checkout_attempt(checkout_session["id"])
         elif event_type in {
@@ -235,6 +306,21 @@ def mock_activate(user: User = Depends(current_user)) -> dict:
     if load_config().billing_mode != "mock":
         raise HTTPException(status_code=404, detail="Mock billing is disabled")
     return {"membership": activate_mock_subscription(user).as_dict()}
+
+
+@router.post("/mock/credit-pack/{pack_id}")
+def mock_credit_pack(pack_id: str, user: User = Depends(current_user)) -> dict:
+    if load_config().billing_mode != "mock":
+        raise HTTPException(status_code=404, detail="Mock billing is disabled")
+    pack = get_credit_pack(pack_id)
+    return {
+        "credit_pack": grant_credit_pack(
+            user.id,
+            pack.id,
+            source="mock",
+            payment_reference=f"mock_{pack.id}",
+        )
+    }
 
 
 @router.post("/mock/cancel")

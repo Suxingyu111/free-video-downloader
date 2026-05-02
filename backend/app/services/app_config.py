@@ -11,11 +11,8 @@ RUNTIME_DIR = PROJECT_DIR / "runtime"
 DEFAULT_STRIPE_CONFIG_FILE = BACKEND_DIR / "config" / "stripe.env"
 
 
-def _bool_env(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+def _bool_value(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _load_env_file(path: Path) -> dict[str, str]:
@@ -112,24 +109,24 @@ def load_config() -> AppConfig:
     if not allowed_origins_value and environment != "production":
         allowed_origins_value = "http://localhost:5173,http://127.0.0.1:5173"
     allowed_origins = _split_csv(allowed_origins_value)
-    session_cookie_name = os.getenv(
+    session_cookie_name = config_value(
         "SAVEANY_SESSION_COOKIE",
         "__Host-saveany_session" if environment == "production" else "saveany_session",
     )
     config = AppConfig(
         environment=environment,
-        db_path=Path(os.getenv("SAVEANY_DB_PATH", RUNTIME_DIR / "saveany.db")),
+        db_path=Path(config_value("SAVEANY_DB_PATH", str(RUNTIME_DIR / "saveany.db"))),
         billing_mode=billing_mode,
-        dev_mode=_bool_env("SAVEANY_DEV_MODE", False),
-        auth_rate_limit_attempts=int(os.getenv("AUTH_RATE_LIMIT_ATTEMPTS", "5")),
-        auth_rate_limit_window_seconds=int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300")),
-        free_summary_daily_limit=int(os.getenv("FREE_SUMMARY_DAILY_LIMIT", "3")),
+        dev_mode=_bool_value(config_value("SAVEANY_DEV_MODE", "false")),
+        auth_rate_limit_attempts=int(config_value("AUTH_RATE_LIMIT_ATTEMPTS", "5")),
+        auth_rate_limit_window_seconds=int(config_value("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300")),
+        free_summary_daily_limit=int(config_value("FREE_SUMMARY_DAILY_LIMIT", "3")),
         allowed_origins=allowed_origins,
-        password_reset_token_minutes=int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30")),
+        password_reset_token_minutes=int(config_value("PASSWORD_RESET_TOKEN_MINUTES", "30")),
         session_cookie_name=session_cookie_name,
-        session_days=int(os.getenv("SAVEANY_SESSION_DAYS", "30")),
-        session_idle_days=int(os.getenv("SAVEANY_SESSION_IDLE_DAYS", "7")),
-        secure_cookies=_bool_env("SAVEANY_SECURE_COOKIES", False),
+        session_days=int(config_value("SAVEANY_SESSION_DAYS", "30")),
+        session_idle_days=int(config_value("SAVEANY_SESSION_IDLE_DAYS", "7")),
+        secure_cookies=_bool_value(config_value("SAVEANY_SECURE_COOKIES", "false")),
         public_app_url=config_value("PUBLIC_APP_URL", "http://localhost:5173").rstrip("/"),
         stripe_secret_key=config_value("STRIPE_SECRET_KEY").strip(),
         stripe_webhook_secret=config_value("STRIPE_WEBHOOK_SECRET").strip(),

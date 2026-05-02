@@ -6,13 +6,19 @@ from app.services.app_config import load_config
 
 
 APP_CONFIG_ENV_KEYS = [
+    "AUTH_RATE_LIMIT_ATTEMPTS",
+    "AUTH_RATE_LIMIT_WINDOW_SECONDS",
     "BILLING_MODE",
+    "FREE_SUMMARY_DAILY_LIMIT",
     "PUBLIC_APP_URL",
     "SAVEANY_ALLOWED_ORIGINS",
+    "SAVEANY_DB_PATH",
     "SAVEANY_DEV_MODE",
     "SAVEANY_ENV",
+    "SAVEANY_IP_HASH_SALT",
     "SAVEANY_SECURE_COOKIES",
     "SAVEANY_SESSION_COOKIE",
+    "SAVEANY_SESSION_DAYS",
     "SAVEANY_SESSION_IDLE_DAYS",
     "STRIPE_CONFIG_FILE",
     "STRIPE_SECRET_KEY",
@@ -79,6 +85,56 @@ def test_load_config_env_overrides_stripe_env_file(monkeypatch, tmp_path):
     assert config.stripe_secret_key == "sk_test_env"
     assert config.stripe_webhook_secret == "whsec_env"
     assert config.stripe_pro_monthly_price_id == "price_env"
+
+
+def test_load_config_reads_complete_production_config_from_file(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    config_path = tmp_path / "stripe.env"
+    config_path.write_text(
+        """
+        SAVEANY_ENV=production
+        SAVEANY_SECURE_COOKIES=true
+        SAVEANY_DEV_MODE=false
+        SAVEANY_ALLOWED_ORIGINS=https://app.example.com/
+        SAVEANY_SESSION_COOKIE=custom_session
+        PASSWORD_RESET_TOKEN_MINUTES=45
+        SAVEANY_SESSION_IDLE_DAYS=5
+        SAVEANY_SESSION_DAYS=14
+        SAVEANY_DB_PATH=/tmp/saveany-prod.db
+        SAVEANY_IP_HASH_SALT=file-salt
+        AUTH_RATE_LIMIT_ATTEMPTS=9
+        AUTH_RATE_LIMIT_WINDOW_SECONDS=120
+        FREE_SUMMARY_DAILY_LIMIT=2
+        BILLING_MODE=stripe
+        PUBLIC_APP_URL=https://app.example.com/
+        STRIPE_SECRET_KEY=sk_live_file
+        STRIPE_WEBHOOK_SECRET=whsec_live_file
+        STRIPE_PRO_MONTHLY_PRICE_ID=price_live_file
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(config_path))
+
+    config = load_config()
+
+    assert config.environment == "production"
+    assert config.secure_cookies is True
+    assert config.dev_mode is False
+    assert config.allowed_origins == ("https://app.example.com",)
+    assert config.session_cookie_name == "custom_session"
+    assert config.password_reset_token_minutes == 45
+    assert config.session_idle_days == 5
+    assert config.session_days == 14
+    assert str(config.db_path) == "/tmp/saveany-prod.db"
+    assert config.ip_hash_salt == "file-salt"
+    assert config.auth_rate_limit_attempts == 9
+    assert config.auth_rate_limit_window_seconds == 120
+    assert config.free_summary_daily_limit == 2
+    assert config.billing_mode == "stripe"
+    assert config.public_app_url == "https://app.example.com"
+    assert config.stripe_secret_key == "sk_live_file"
+    assert config.stripe_webhook_secret == "whsec_live_file"
+    assert config.stripe_pro_monthly_price_id == "price_live_file"
 
 
 def test_app_config_loads_credit_pack_price_ids(monkeypatch, tmp_path):

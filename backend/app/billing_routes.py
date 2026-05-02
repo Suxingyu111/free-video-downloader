@@ -272,8 +272,10 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
                 line_items = ((checkout_session.get("line_items") or {}).get("data") or [])
                 if line_items:
                     price_id = (line_items[0].get("price") or {}).get("id")
+                if not price_id:
+                    raise ValueError("Stripe credit pack price does not match pack metadata")
                 configured_pack_id = credit_pack_from_price_id(price_id)
-                if configured_pack_id and configured_pack_id != pack_id:
+                if configured_pack_id != pack_id:
                     raise ValueError("Stripe credit pack price does not match pack metadata")
                 grant_credit_pack(
                     user_id,

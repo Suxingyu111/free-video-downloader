@@ -80,6 +80,15 @@ def get_latest_stripe_customer_id(user_id: str) -> str | None:
     try:
         row = conn.execute(
             """
+            select stripe_customer_id from stripe_customers
+            where user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        if row is not None:
+            return row["stripe_customer_id"]
+        row = conn.execute(
+            """
             select stripe_customer_id from subscriptions
             where user_id = ? and stripe_customer_id is not null
             order by updated_at desc
@@ -97,33 +106,17 @@ def get_latest_stripe_customer_id(user_id: str) -> str | None:
 def store_stripe_customer_id(user_id: str, customer_id: str) -> None:
     now = time()
     with transaction() as conn:
-        row = conn.execute(
+        conn.execute(
             """
-            select id from subscriptions
-            where user_id = ? and stripe_customer_id is not null
-            order by updated_at desc
-            limit 1
+            insert into stripe_customers
+            (user_id, stripe_customer_id, created_at, updated_at)
+            values (?, ?, ?, ?)
+            on conflict(user_id)
+            do update set stripe_customer_id = excluded.stripe_customer_id,
+                          updated_at = excluded.updated_at
             """,
-            (user_id,),
-        ).fetchone()
-        if row is None:
-            conn.execute(
-                """
-                insert into subscriptions
-                (id, user_id, plan, status, stripe_customer_id, created_at, updated_at)
-                values (?, ?, 'pro', 'incomplete', ?, ?, ?)
-                """,
-                (f"sub_{secrets.token_urlsafe(10)}", user_id, customer_id, now, now),
-            )
-        else:
-            conn.execute(
-                """
-                update subscriptions
-                set stripe_customer_id = ?, updated_at = ?
-                where id = ?
-                """,
-                (customer_id, now, row["id"]),
-            )
+            (user_id, customer_id, now, now),
+        )
 
 
 def ensure_stripe_customer_id(user: User, create_customer: Callable[[], str]) -> str:

@@ -378,7 +378,11 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
         }:
             checkout_session = event["data"]["object"]
             if _is_credit_pack_checkout_session(checkout_session):
-                if event_type != "checkout.session.async_payment_failed":
+                payment_succeeded = event_type == "checkout.session.async_payment_succeeded" or (
+                    event_type == "checkout.session.completed"
+                    and checkout_session.get("payment_status") == "paid"
+                )
+                if payment_succeeded:
                     _grant_credit_pack_checkout_session(config, checkout_session)
                     if checkout_session.get("id"):
                         complete_stripe_checkout_attempt(checkout_session["id"])

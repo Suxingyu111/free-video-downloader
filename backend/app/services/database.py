@@ -54,6 +54,13 @@ create table if not exists subscriptions (
   updated_at real not null
 );
 
+create table if not exists stripe_customers (
+  user_id text primary key references users(id) on delete cascade,
+  stripe_customer_id text not null unique,
+  created_at real not null,
+  updated_at real not null
+);
+
 create table if not exists stripe_events (
   event_id text primary key,
   event_type text not null,

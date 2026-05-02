@@ -27,6 +27,7 @@ def test_initialize_database_creates_membership_tables(tmp_path, monkeypatch):
         "sessions",
         "password_reset_tokens",
         "subscriptions",
+        "stripe_customers",
         "stripe_events",
         "usage_daily",
         "summary_quota_reservations",
@@ -111,6 +112,37 @@ def test_quota_schema_tables_are_created(monkeypatch, tmp_path):
     assert "meter_reservation_pack_uses" in tables
     assert "credit_packs" in tables
     assert "summary_questions" in tables
+
+
+def test_stripe_customer_schema_table_is_created(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+
+    with database.connect(db_path) as conn:
+        columns = {
+            row["name"]
+            for row in conn.execute("pragma table_info(stripe_customers)").fetchall()
+        }
+        unique_index_columns = []
+        for index in conn.execute("pragma index_list(stripe_customers)").fetchall():
+            if index["unique"]:
+                unique_index_columns.append(
+                    [
+                        row["name"]
+                        for row in conn.execute(
+                            f"pragma index_info({index['name']})"
+                        ).fetchall()
+                    ]
+                )
+
+    assert {
+        "user_id",
+        "stripe_customer_id",
+        "created_at",
+        "updated_at",
+    }.issubset(columns)
+    assert ["stripe_customer_id"] in unique_index_columns
 
 
 def test_billing_attempts_migration_adds_purchase_metadata(monkeypatch, tmp_path):

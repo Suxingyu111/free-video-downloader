@@ -92,17 +92,19 @@ def _credit_pack_checkout_event(
     event_id,
     user_id,
     *,
+    session_id=None,
     event_type="checkout.session.completed",
     pack_id="summary_small",
     payment_status="paid",
+    payment_intent=None,
     price_id="price_summary_small",
     include_line_items=True,
 ):
     checkout_session = {
-        "id": f"cs_{event_id}",
+        "id": session_id or f"cs_{event_id}",
         "mode": "payment",
         "payment_status": payment_status,
-        "payment_intent": f"pi_{event_id}",
+        "payment_intent": payment_intent or f"pi_{event_id}",
         "client_reference_id": user_id,
         "metadata": {
             "saveany_user_id": user_id,
@@ -139,6 +141,24 @@ def _assert_rejected_credit_pack_event(client, tmp_path, event, user_id):
     assert event_row["processed_at"] == 0
 
 
+def _assert_processed_credit_pack_event_without_grant(client, tmp_path, event, user_id):
+    response = _post_event(client, event)
+
+    assert response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        pack_count = conn.execute(
+            "select count(*) as count from credit_packs where user_id = ?",
+            (user_id,),
+        ).fetchone()
+        event_row = conn.execute(
+            "select status, processed_at from stripe_events where event_id = ?",
+            (event["id"],),
+        ).fetchone()
+    assert pack_count["count"] == 0
+    assert event_row["status"] == "processed"
+    assert event_row["processed_at"] > 0
+
+
 def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
     database.initialize_database(tmp_path / "saveany.db")
@@ -167,20 +187,62 @@ def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
         "cus_reused",
     ]
     assert FakeStripeCheckoutSession.created[0]["client_reference_id"]
-    conn = database.connect(tmp_path / "saveany.db")
-    try:
+    with database.connect(tmp_path / "saveany.db") as conn:
         rows = conn.execute(
             """
-            select stripe_customer_id, count(*) as count
-            from subscriptions
-            group by stripe_customer_id
+            select stripe_customer_id
+            from stripe_customers
             """
         ).fetchall()
-    finally:
-        conn.close()
+        subscription_count = conn.execute(
+            """
+            select count(*) as count
+            from subscriptions
+            """
+        ).fetchone()
     assert len(rows) == 1
     assert rows[0]["stripe_customer_id"] == "cus_reused"
-    assert rows[0]["count"] == 1
+    assert subscription_count["count"] == 0
+
+
+def test_stripe_credit_pack_checkout_does_not_change_membership(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    FakeStripeCustomer.created = []
+    FakeStripeCheckoutSession.created = []
+    monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
+    monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
+    client = TestClient(app)
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "pack-checkout-free@example.com", "password": "checkout-password"},
+    ).json()
+    user_id = registered["user"]["id"]
+
+    response = client.post(
+        "/api/billing/checkout",
+        json={"purchase_type": "credit_pack", "pack_id": "summary_small"},
+    )
+    me = client.get("/api/me").json()
+    membership = get_membership(user_id)
+
+    assert response.status_code == 200
+    assert me["membership"]["plan"] == "free"
+    assert me["membership"]["status"] == "free"
+    assert membership.plan == "free"
+    assert membership.status == "free"
+    with database.connect(tmp_path / "saveany.db") as conn:
+        subscription_count = conn.execute(
+            "select count(*) as count from subscriptions where user_id = ?",
+            (user_id,),
+        ).fetchone()
+        customer = conn.execute(
+            "select stripe_customer_id from stripe_customers where user_id = ?",
+            (user_id,),
+        ).fetchone()
+    assert subscription_count["count"] == 0
+    assert customer["stripe_customer_id"] == "cus_reused"
 
 
 def test_stripe_checkout_uses_request_origin_for_return_urls(monkeypatch, tmp_path):
@@ -1080,22 +1142,73 @@ def test_stripe_checkout_payment_pack_grants_credit(monkeypatch, tmp_path):
     assert pack["remaining_amount"] == 20
 
 
-def test_stripe_checkout_completed_pack_requires_paid_payment_status(
-    monkeypatch, tmp_path
-):
+def test_stripe_checkout_completed_unpaid_waits_for_async_success(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
     monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("pack-unpaid@example.com", "stripe-password")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
-    client = TestClient(app, raise_server_exceptions=False)
-    event = _credit_pack_checkout_event(
-        "evt_pack_unpaid",
+    client = TestClient(app)
+    completed = _credit_pack_checkout_event(
+        "evt_pack_unpaid_completed",
         user.id,
+        session_id="cs_pack_delayed",
+        payment_intent="pi_pack_delayed",
+        payment_status="unpaid",
+    )
+    async_success = _credit_pack_checkout_event(
+        "evt_pack_unpaid_async_success",
+        user.id,
+        session_id="cs_pack_delayed",
+        event_type="checkout.session.async_payment_succeeded",
+        payment_intent="pi_pack_delayed",
+    )
+
+    completed_response = _post_event(client, completed)
+    assert completed_response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        pack_count = conn.execute(
+            "select count(*) as count from credit_packs where user_id = ?",
+            (user.id,),
+        ).fetchone()
+        completed_event = conn.execute(
+            "select status, processed_at from stripe_events where event_id = ?",
+            (completed["id"],),
+        ).fetchone()
+    assert pack_count["count"] == 0
+    assert completed_event["status"] == "processed"
+    assert completed_event["processed_at"] > 0
+
+    async_response = _post_event(client, async_success)
+    duplicate_async_response = _post_event(client, async_success)
+
+    assert async_response.status_code == 200
+    assert duplicate_async_response.status_code == 200
+    with database.connect(tmp_path / "saveany.db") as conn:
+        packs = conn.execute(
+            "select * from credit_packs where user_id = ?",
+            (user.id,),
+        ).fetchall()
+    assert len(packs) == 1
+    assert packs[0]["pack_id"] == "summary_small"
+    assert packs[0]["remaining_amount"] == 20
+
+
+def test_stripe_async_payment_failed_pack_does_not_grant(monkeypatch, tmp_path):
+    _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("pack-async-failed@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
+    client = TestClient(app)
+    event = _credit_pack_checkout_event(
+        "evt_pack_async_failed",
+        user.id,
+        event_type="checkout.session.async_payment_failed",
         payment_status="unpaid",
     )
 
-    _assert_rejected_credit_pack_event(client, tmp_path, event, user.id)
+    _assert_processed_credit_pack_event_without_grant(client, tmp_path, event, user.id)
 
 
 def test_stripe_async_payment_succeeded_pack_grants_credit(monkeypatch, tmp_path):

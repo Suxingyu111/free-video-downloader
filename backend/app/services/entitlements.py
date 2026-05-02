@@ -48,8 +48,7 @@ class UsageSummary:
 
 
 def get_usage_summary(user: User) -> UsageSummary:
-    _seed_summary_meter_from_legacy_usage(user)
-    status = entitlement_status(user)
+    status = get_entitlement_status(user)
     summary = status["meters"]["summary"]
     membership_active = status["plan"] == "pro"
     daily_free_limit = load_config().free_summary_daily_limit
@@ -69,6 +68,11 @@ def get_usage_summary(user: User) -> UsageSummary:
         meters=status["meters"],
         credit_packs=status["credit_packs"],
     )
+
+
+def get_entitlement_status(user: User) -> dict:
+    _seed_summary_meter_from_legacy_usage(user)
+    return entitlement_status(user)
 
 
 def reserve_summary_quota(user: User, reservation_id: str) -> UsageSummary:

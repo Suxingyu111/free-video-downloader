@@ -4,6 +4,7 @@ from app.main import app
 from app.services import database
 from app.services.auth_service import get_user_by_id
 from app.services.billing_service import activate_mock_subscription
+from app.services.plan_catalog import PeriodType
 
 
 def test_register_login_me_logout_flow(monkeypatch, tmp_path):
@@ -206,6 +207,35 @@ def test_me_includes_entitlement_status(monkeypatch, tmp_path):
     assert response.json()["plan"] == "free"
     assert response.json()["meters"]["summary"]["limit"] == 3
     assert response.json()["meters"]["transcription_minutes"]["limit"] == 30
+
+
+def test_entitlement_status_seeds_legacy_daily_usage(monkeypatch, tmp_path):
+    def fixed_period_key(period_type: PeriodType) -> str:
+        return "2026-05-01" if period_type == PeriodType.DAY else "2026-05"
+
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setattr("app.services.usage_meter.current_period_key", fixed_period_key)
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "legacy-status@example.com", "password": "correct horse battery staple"},
+    )
+    user_id = registered.json()["user"]["id"]
+    with database.transaction(tmp_path / "saveany.db") as conn:
+        conn.execute(
+            """
+            insert into usage_daily (user_id, usage_date, summary_count, created_at, updated_at)
+            values (?, ?, 3, 1, 1)
+            """,
+            (user_id, "2026-05-01"),
+        )
+
+    response = client.get("/api/entitlements/status")
+
+    assert response.status_code == 200
+    assert response.json()["meters"]["summary"]["used"] == 3
+    assert response.json()["meters"]["summary"]["remaining"] == 0
 
 
 def test_me_keeps_legacy_daily_usage_fields_for_pro(monkeypatch, tmp_path):

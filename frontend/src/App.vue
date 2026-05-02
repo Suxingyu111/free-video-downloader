@@ -131,7 +131,7 @@ const pricingPlans = [
 ];
 const creditPacks = [
   { id: "summary_small", group: "AI 总结次数包", name: "总结小包", price: "¥6", amount: "20 次 AI 总结", validity: "90 天有效" },
-  { id: "summary_large", group: "AI 总结次数包", name: "总结大包", price: "¥19", amount: "100 次 AI 总结", validity: "180 天有效" },
+  { id: "summary_large", group: "AI 总结次数包", name: "总结加量包", price: "¥19", amount: "100 次 AI 总结", validity: "180 天有效" },
   { id: "transcription_small", group: "语音转写分钟包", name: "转写小包", price: "¥8", amount: "120 分钟语音转写", validity: "90 天有效" },
   { id: "transcription_large", group: "语音转写分钟包", name: "转写大包", price: "¥29", amount: "600 分钟语音转写", validity: "180 天有效" }
 ];
@@ -1648,6 +1648,16 @@ onBeforeUnmount(() => {
               {{ authMembershipLabel }} · {{ summaryQuotaText }}
               <template v-if="transcriptionQuotaText"> · {{ transcriptionQuotaText }}</template>
             </span>
+          </div>
+        </div>
+        <div class="account-quota-list billing-quota-list" aria-label="额度余量">
+          <div class="account-quota-row">
+            <span>{{ summaryQuotaText }}</span>
+            <div class="account-quota-track"><span :style="{ width: `${summaryQuotaRatio}%` }"></span></div>
+          </div>
+          <div v-if="transcriptionQuotaText" class="account-quota-row">
+            <span>{{ transcriptionQuotaText }}</span>
+            <div class="account-quota-track"><span :style="{ width: `${transcriptionQuotaRatio}%` }"></span></div>
           </div>
         </div>
         <div v-if="showMockBilling" class="mock-billing-panel" aria-label="本地模拟支付">

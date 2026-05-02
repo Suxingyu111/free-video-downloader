@@ -144,6 +144,8 @@ test("pricing page shows personal free and pro plans plus credit packs", () => {
   assert.doesNotMatch(appSource, /¥99/);
   assert.match(appSource, /const creditPacks = \[/);
   assert.match(appSource, /总结小包/);
+  assert.match(appSource, /id:\s*"summary_large"[\s\S]*name:\s*"总结加量包"/);
+  assert.doesNotMatch(appSource, /name:\s*"总结大包"/);
   assert.match(appSource, /转写大包/);
   assert.match(appSource, /v-for="plan in pricingPlans"/);
   assert.match(appSource, /class="pricing-grid"/);
@@ -251,6 +253,10 @@ test("quota and billing feedback are unified into status panels", () => {
   assert.match(appSource, /state\.checkoutStatus === "success"[\s\S]*await confirmCheckoutReturn\(\{ force: true \}\)/);
   assert.match(appSource, /async function logout\(\)[\s\S]*state\.billingMessage = ""[\s\S]*state\.checkoutStatus = ""/);
   assert.match(appSource, /class="billing-status-panel"/);
+  assert.match(
+    appSource,
+    /class="billing-status-panel"[\s\S]*:style="\{ width: `\$\{summaryQuotaRatio\}%` \}"[\s\S]*:style="\{ width: `\$\{transcriptionQuotaRatio\}%` \}"/
+  );
   assert.match(appSource, /账单状态/);
   assert.match(appSource, /class="current-plan-badge"/);
   assert.match(appSource, /class="plan-status-copy"/);

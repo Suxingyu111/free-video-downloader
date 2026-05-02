@@ -1612,6 +1612,11 @@ select {
   font-weight: 750;
 }
 
+.billing-quota-list {
+  border-top: 1px solid rgba(245, 158, 11, 0.18);
+  padding-top: var(--space-3);
+}
+
 .mock-billing-panel {
   display: flex;
   flex-wrap: wrap;

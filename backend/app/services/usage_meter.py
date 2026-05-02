@@ -133,8 +133,13 @@ def allowance_for_user(user: User, meter_type: MeterType) -> MeterAllowance:
 
 
 def consume_anonymous_meter(
-    ip: str, meter_type: MeterType, reservation_id: str | None = None
+    ip: str,
+    meter_type: MeterType,
+    reservation_id: str | None = None,
+    amount: int = 1,
 ) -> dict:
+    if amount <= 0:
+        raise ValueError("amount must be positive")
     if meter_type not in {MeterType.ANALYZE, MeterType.DOWNLOAD}:
         raise MeterExceeded("登录后才能使用该能力。")
     limits = get_plan_limits("anonymous")
@@ -154,10 +159,10 @@ def consume_anonymous_meter(
             (ip_hash, usage_date),
         ).fetchone()
         used = int(row[column]) if row else 0
-        if used >= limit:
+        if used + amount > limit:
             label = "解析" if meter_type == MeterType.ANALYZE else "下载"
             raise MeterExceeded(f"今天的访客{label}次数已用完，登录后可获得更多免费额度。")
-        next_used = used + 1
+        next_used = used + amount
         conn.execute(
             f"""
             insert into anonymous_usage (ip_hash, usage_date, {column}, created_at, updated_at)

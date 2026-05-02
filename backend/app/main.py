@@ -21,7 +21,7 @@ from app.auth_routes import optional_user
 from app.auth_routes import router as auth_router
 from app.billing_routes import router as billing_router
 from app.entitlement_routes import router as entitlement_router
-from app.services.analysis_store import analysis_store
+from app.services.analysis_store import AnalysisSnapshot, analysis_store
 from app.services.asset_store import asset_store
 from app.services.auth_service import User
 from app.services.database import initialize_database
@@ -115,6 +115,10 @@ def _client_ip(request: Request) -> str:
     if request.client:
         return request.client.host
     return "unknown"
+
+
+def _analysis_snapshot_matches(snapshot: AnalysisSnapshot, url: str) -> bool:
+    return snapshot.url == url or snapshot.result.get("webpage_url") == url
 
 
 class DownloadRequest(BaseModel):
@@ -417,7 +421,7 @@ def create_download(
     user: User | None = Depends(optional_user),
 ) -> dict[str, str]:
     snapshot = analysis_store.get(payload.analysis_token)
-    result = snapshot.result if snapshot and snapshot.url == payload.url else None
+    result = snapshot.result if snapshot and _analysis_snapshot_matches(snapshot, payload.url) else None
     if result is None:
         try:
             demo_result = demo_analyze_result(payload.url)
@@ -425,13 +429,11 @@ def create_download(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
     entry_count = len(payload.entry_ids) if payload.entry_ids else max(len(result.get("entries") or []), 1)
-    duration = float(result.get("duration") or 0)
     try:
         if user:
             reserve_user_meter(user, MeterType.DOWNLOAD, entry_count, reservation_id=f"download_{secrets.token_urlsafe(10)}")
         else:
-            for _ in range(entry_count):
-                consume_anonymous_meter(_client_ip(request), MeterType.DOWNLOAD)
+            consume_anonymous_meter(_client_ip(request), MeterType.DOWNLOAD, amount=entry_count)
     except MeterExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
 

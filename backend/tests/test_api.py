@@ -251,3 +251,105 @@ def test_download_uses_analysis_token_and_anonymous_limit(monkeypatch, tmp_path)
     assert first.status_code == 200
     assert second.status_code == 429
     assert "访客下载次数已用完" in second.json()["detail"]
+
+
+def test_anonymous_multi_entry_download_limit_is_atomic(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    client = TestClient(app)
+    url = "https://example.com/playlist"
+    token = main.analysis_store.create(
+        url,
+        {
+            "kind": "playlist",
+            "webpage_url": url,
+            "entries": [
+                {"id": "one", "url": "https://example.com/playlist/one"},
+                {"id": "two", "url": "https://example.com/playlist/two"},
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "analysis_token": token,
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute("select coalesce(sum(download_count), 0) as used from anonymous_usage").fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 429
+    assert "访客下载次数已用完" in response.json()["detail"]
+    assert int(usage["used"]) == 0
+
+
+def test_download_analysis_token_matches_canonical_webpage_url(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    original_url = "https://example.com/watch?id=original"
+    canonical_url = "https://example.com/watch/canonical"
+
+    class CanonicalService:
+        def __init__(self):
+            self.analyze_calls = []
+
+        def analyze(self, url):
+            self.analyze_calls.append(url)
+            return {
+                "kind": "video",
+                "id": "canonical",
+                "title": "Canonical",
+                "webpage_url": canonical_url,
+                "thumbnail": None,
+                "entries": [],
+            }
+
+        def download(
+            self,
+            url,
+            output_dir,
+            format_id,
+            subtitle_langs,
+            write_auto_subs,
+            prefer_srt,
+            progress_hook,
+            entry_ids,
+        ):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / "canonical.mp4"
+            output_file.write_bytes(b"canonical")
+            return output_file
+
+    fake_service = CanonicalService()
+    monkeypatch.setattr(main, "service", fake_service)
+    client = TestClient(app)
+
+    analyzed = client.post("/api/analyze", data={"url": original_url}).json()
+    response = client.post(
+        "/api/download",
+        json={
+            "url": analyzed["webpage_url"],
+            "analysis_token": analyzed["analysis_token"],
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_service.analyze_calls == [original_url]

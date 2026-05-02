@@ -70,3 +70,20 @@ def test_load_config_env_overrides_stripe_env_file(monkeypatch, tmp_path):
     assert config.stripe_secret_key == "sk_test_env"
     assert config.stripe_webhook_secret == "whsec_env"
     assert config.stripe_pro_monthly_price_id == "price_env"
+
+
+def test_app_config_loads_credit_pack_price_ids(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID", "price_summary_small")
+    monkeypatch.setenv("STRIPE_SUMMARY_LARGE_PACK_PRICE_ID", "price_summary_large")
+    monkeypatch.setenv("STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID", "price_transcription_small")
+    monkeypatch.setenv("STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID", "price_transcription_large")
+    monkeypatch.setenv("SAVEANY_IP_HASH_SALT", "test-salt")
+
+    config = load_config()
+
+    assert config.stripe_summary_small_pack_price_id == "price_summary_small"
+    assert config.stripe_summary_large_pack_price_id == "price_summary_large"
+    assert config.stripe_transcription_small_pack_price_id == "price_transcription_small"
+    assert config.stripe_transcription_large_pack_price_id == "price_transcription_large"
+    assert config.ip_hash_salt == "test-salt"

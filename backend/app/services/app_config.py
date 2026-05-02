@@ -59,6 +59,11 @@ class AppConfig:
     stripe_secret_key: str
     stripe_webhook_secret: str
     stripe_pro_monthly_price_id: str
+    stripe_summary_small_pack_price_id: str
+    stripe_summary_large_pack_price_id: str
+    stripe_transcription_small_pack_price_id: str
+    stripe_transcription_large_pack_price_id: str
+    ip_hash_salt: str
 
 
 def load_config() -> AppConfig:
@@ -85,4 +90,9 @@ def load_config() -> AppConfig:
         stripe_secret_key=config_value("STRIPE_SECRET_KEY").strip(),
         stripe_webhook_secret=config_value("STRIPE_WEBHOOK_SECRET").strip(),
         stripe_pro_monthly_price_id=config_value("STRIPE_PRO_MONTHLY_PRICE_ID").strip(),
+        stripe_summary_small_pack_price_id=config_value("STRIPE_SUMMARY_SMALL_PACK_PRICE_ID").strip(),
+        stripe_summary_large_pack_price_id=config_value("STRIPE_SUMMARY_LARGE_PACK_PRICE_ID").strip(),
+        stripe_transcription_small_pack_price_id=config_value("STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID").strip(),
+        stripe_transcription_large_pack_price_id=config_value("STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID").strip(),
+        ip_hash_salt=config_value("SAVEANY_IP_HASH_SALT", "saveany-local-ip-meter").strip(),
     )

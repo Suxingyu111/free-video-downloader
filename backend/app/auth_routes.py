@@ -15,8 +15,15 @@ from app.services.auth_service import (
     get_user_by_session_token,
     reset_password,
     revoke_session,
+    verify_session_csrf_token,
 )
 from app.services.billing_service import get_membership
+from app.services.csrf import (
+    assert_same_origin,
+    create_prelogin_csrf_token,
+    csrf_header,
+    verify_prelogin_csrf_token,
+)
 from app.services.entitlements import get_usage_summary
 from app.services.rate_limit import (
     RateLimitExceeded,
@@ -109,18 +116,42 @@ def optional_user(request: Request) -> User | None:
     return get_user_by_session_token(request.cookies.get(config.session_cookie_name))
 
 
-def _me_payload(user: User) -> dict:
+def _assert_prelogin_csrf(request: Request) -> None:
+    assert_same_origin(request)
+    verify_prelogin_csrf_token(csrf_header(request))
+
+
+def _assert_session_csrf(request: Request) -> None:
+    assert_same_origin(request)
+    config = load_config()
+    if not verify_session_csrf_token(
+        request.cookies.get(config.session_cookie_name),
+        csrf_header(request),
+    ):
+        raise HTTPException(status_code=403, detail="CSRF token 无效")
+
+
+def _me_payload(user: User, csrf_token: str | None = None) -> dict:
     membership = get_membership(user.id)
     usage = get_usage_summary(user)
-    return {
+    payload = {
         "user": user.as_dict(),
         "membership": membership.as_dict(),
         "usage": usage.as_dict(),
     }
+    if csrf_token:
+        payload["csrf_token"] = csrf_token
+    return payload
+
+
+@router.get("/csrf")
+def csrf() -> dict[str, str]:
+    return {"csrf_token": create_prelogin_csrf_token()}
 
 
 @router.post("/auth/register")
 def register(payload: AuthRequest, request: Request, response: Response) -> dict:
+    _assert_prelogin_csrf(request)
     keys = _assert_auth_rate_limit("register", request, payload.email)
     _record_auth_rate_limit(keys)
     try:
@@ -131,26 +162,38 @@ def register(payload: AuthRequest, request: Request, response: Response) -> dict
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail="注册失败") from exc
-    _set_session_cookie(response, create_session(user.id))
-    return _me_payload(user)
+    session = create_session(
+        user.id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    _set_session_cookie(response, session.session_token)
+    return _me_payload(user, session.csrf_token)
 
 
 @router.post("/auth/login")
 def login(payload: AuthRequest, request: Request, response: Response) -> dict:
+    _assert_prelogin_csrf(request)
     keys = _assert_auth_rate_limit("login", request, payload.email)
     user = authenticate_user(payload.email, payload.password)
     if user is None:
         _record_auth_rate_limit(keys)
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
     _clear_auth_rate_limit(keys)
-    _set_session_cookie(response, create_session(user.id))
-    return _me_payload(user)
+    session = create_session(
+        user.id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    _set_session_cookie(response, session.session_token)
+    return _me_payload(user, session.csrf_token)
 
 
 @router.post("/auth/logout")
 def logout(request: Request, response: Response, _: User = Depends(current_user)) -> dict[str, bool]:
     config = load_config()
-    revoke_session(request.cookies.get(config.session_cookie_name))
+    _assert_session_csrf(request)
+    revoke_session(request.cookies.get(config.session_cookie_name), reason="logout")
     response.delete_cookie(config.session_cookie_name, path="/")
     return {"ok": True}
 
@@ -162,6 +205,7 @@ def me(user: User = Depends(current_user)) -> dict:
 
 @router.post("/auth/password-reset/request")
 def request_password_reset(payload: PasswordResetRequest, request: Request) -> dict:
+    _assert_prelogin_csrf(request)
     keys = _assert_auth_rate_limit("password-reset", request, payload.email)
     _record_auth_rate_limit(keys)
     token = create_password_reset_token(payload.email)
@@ -172,7 +216,8 @@ def request_password_reset(payload: PasswordResetRequest, request: Request) -> d
 
 
 @router.post("/auth/password-reset/confirm")
-def confirm_password_reset(payload: PasswordResetConfirm) -> dict[str, bool]:
+def confirm_password_reset(payload: PasswordResetConfirm, request: Request) -> dict[str, bool]:
+    _assert_prelogin_csrf(request)
     try:
         changed = reset_password(payload.token, payload.password)
     except ValueError as exc:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 from dataclasses import dataclass
 from time import time
@@ -9,6 +10,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
 from app.services.app_config import load_config
+from app.services.csrf import create_session_csrf_token
 from app.services.database import connect, transaction
 
 
@@ -23,6 +25,12 @@ class User:
 
     def as_dict(self) -> dict:
         return {"id": self.id, "email": self.email, "status": self.status}
+
+
+@dataclass(frozen=True)
+class SessionTokens:
+    session_token: str
+    csrf_token: str
 
 
 def normalize_email(email: str) -> str:
@@ -71,26 +79,57 @@ def authenticate_user(email: str, password: str) -> User | None:
     return _row_to_user(row)
 
 
-def create_session(user_id: str) -> str:
+def _hash_context(value: str | None) -> str | None:
+    if not value:
+        return None
+    salted = f"{load_config().ip_hash_salt}:{value}"
+    return hashlib.sha256(salted.encode("utf-8")).hexdigest()
+
+
+def create_session(
+    user_id: str,
+    *,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    rotated_from_session_id: str | None = None,
+) -> SessionTokens:
     config = load_config()
     now = time()
     token = secrets.token_urlsafe(32)
+    csrf_token = create_session_csrf_token()
     with transaction() as conn:
         conn.execute(
             """
-            insert into sessions (id, user_id, session_token_hash, expires_at, created_at, last_seen_at)
-            values (?, ?, ?, ?, ?, ?)
+            insert into sessions (
+                id,
+                user_id,
+                session_token_hash,
+                csrf_token_hash,
+                expires_at,
+                absolute_expires_at,
+                created_at,
+                last_seen_at,
+                ip_hash,
+                user_agent_hash,
+                rotated_from_session_id
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 f"sess_{secrets.token_urlsafe(12)}",
                 user_id,
                 _hash_token(token),
+                _hash_token(csrf_token),
+                now + config.session_idle_days * 86400,
                 now + config.session_days * 86400,
                 now,
                 now,
+                _hash_context(ip_address),
+                _hash_context(user_agent),
+                rotated_from_session_id,
             ),
         )
-    return token
+    return SessionTokens(session_token=token, csrf_token=csrf_token)
 
 
 def get_user_by_session_token(token: str | None) -> User | None:
@@ -104,10 +143,11 @@ def get_user_by_session_token(token: str | None) -> User | None:
             join users on users.id = sessions.user_id
             where sessions.session_token_hash = ?
               and sessions.expires_at > ?
+              and coalesce(sessions.absolute_expires_at, sessions.expires_at) > ?
               and sessions.revoked_at is null
               and users.status = 'active'
             """,
-            (_hash_token(token), now),
+            (_hash_token(token), now, now),
         ).fetchone()
         if row is None:
             return None
@@ -118,13 +158,35 @@ def get_user_by_session_token(token: str | None) -> User | None:
     return _row_to_user(row)
 
 
-def revoke_session(token: str | None) -> None:
+def verify_session_csrf_token(session_token: str | None, csrf_token: str | None) -> bool:
+    if not session_token or not csrf_token:
+        return False
+    conn = connect()
+    try:
+        row = conn.execute(
+            """
+            select csrf_token_hash from sessions
+            where session_token_hash = ?
+              and expires_at > ?
+              and coalesce(absolute_expires_at, expires_at) > ?
+              and revoked_at is null
+            """,
+            (_hash_token(session_token), time(), time()),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None or not row["csrf_token_hash"]:
+        return False
+    return hmac.compare_digest(row["csrf_token_hash"], _hash_token(csrf_token))
+
+
+def revoke_session(token: str | None, reason: str | None = None) -> None:
     if not token:
         return
     with transaction() as conn:
         conn.execute(
-            "update sessions set revoked_at = ? where session_token_hash = ?",
-            (time(), _hash_token(token)),
+            "update sessions set revoked_at = ?, revoked_reason = ? where session_token_hash = ?",
+            (time(), reason, _hash_token(token)),
         )
 
 

@@ -24,10 +24,16 @@ create table if not exists sessions (
   id text primary key,
   user_id text not null references users(id) on delete cascade,
   session_token_hash text not null unique,
+  csrf_token_hash text,
   expires_at real not null,
+  absolute_expires_at real,
   created_at real not null,
   last_seen_at real not null,
-  revoked_at real
+  revoked_at real,
+  revoked_reason text,
+  ip_hash text,
+  user_agent_hash text,
+  rotated_from_session_id text
 );
 
 create table if not exists password_reset_tokens (
@@ -115,6 +121,7 @@ def initialize_database(db_path: Path | str | None = None) -> None:
         conn.executescript(SCHEMA)
         _migrate_stripe_events(conn)
         _migrate_billing_attempts(conn)
+        _migrate_sessions(conn)
         conn.commit()
     finally:
         conn.close()
@@ -144,6 +151,26 @@ def _migrate_billing_attempts(conn: sqlite3.Connection) -> None:
         conn.execute("alter table billing_attempts add column stripe_checkout_url text")
     if "stripe_return_url" not in columns:
         conn.execute("alter table billing_attempts add column stripe_return_url text")
+
+
+def _migrate_sessions(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute("pragma table_info(sessions)").fetchall()
+    }
+    if "csrf_token_hash" not in columns:
+        conn.execute("alter table sessions add column csrf_token_hash text")
+    if "absolute_expires_at" not in columns:
+        conn.execute("alter table sessions add column absolute_expires_at real")
+        conn.execute("update sessions set absolute_expires_at = expires_at where absolute_expires_at is null")
+    if "revoked_reason" not in columns:
+        conn.execute("alter table sessions add column revoked_reason text")
+    if "ip_hash" not in columns:
+        conn.execute("alter table sessions add column ip_hash text")
+    if "user_agent_hash" not in columns:
+        conn.execute("alter table sessions add column user_agent_hash text")
+    if "rotated_from_session_id" not in columns:
+        conn.execute("alter table sessions add column rotated_from_session_id text")
 
 
 @contextmanager

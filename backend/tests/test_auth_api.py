@@ -187,3 +187,20 @@ def test_password_reset_token_is_single_use(monkeypatch, tmp_path):
 
     assert first.status_code == 200
     assert second.status_code == 400
+
+
+def test_me_includes_entitlement_status(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"email": "entitlements@example.com", "password": "correct horse battery staple"},
+    )
+
+    response = client.get("/api/entitlements/status")
+
+    assert response.status_code == 200
+    assert response.json()["plan"] == "free"
+    assert response.json()["meters"]["summary"]["limit"] == 3
+    assert response.json()["meters"]["transcription_minutes"]["limit"] == 30

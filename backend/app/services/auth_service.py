@@ -21,6 +21,10 @@ class User:
     email: str
     status: str
 
+    @classmethod
+    def from_row(cls, row) -> User:
+        return cls(id=row["id"], email=row["email"], status=row["status"])
+
     def as_dict(self) -> dict:
         return {"id": self.id, "email": self.email, "status": self.status}
 
@@ -34,7 +38,7 @@ def _hash_token(token: str) -> str:
 
 
 def _row_to_user(row) -> User:
-    return User(id=row["id"], email=row["email"], status=row["status"])
+    return User.from_row(row)
 
 
 def create_user(email: str, password: str) -> User:
@@ -116,6 +120,15 @@ def get_user_by_session_token(token: str | None) -> User | None:
             (now, _hash_token(token)),
         )
     return _row_to_user(row)
+
+
+def get_user_by_id(user_id: str) -> User | None:
+    conn = connect()
+    try:
+        row = conn.execute("select * from users where id = ?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+    return User.from_row(row) if row else None
 
 
 def revoke_session(token: str | None) -> None:

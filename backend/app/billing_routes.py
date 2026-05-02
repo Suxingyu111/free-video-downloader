@@ -6,6 +6,7 @@ import stripe
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from app import auth_routes
 from app.auth_routes import current_user
 from app.services.app_config import load_config
 from app.services.auth_service import User
@@ -36,6 +37,7 @@ from app.services.database import connect
 
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
+assert_session_csrf = getattr(auth_routes, "assert_session_csrf", auth_routes._assert_session_csrf)
 
 
 class CheckoutConfirmRequest(BaseModel):
@@ -80,6 +82,7 @@ def billing_checkout(
     payload: CheckoutRequest | None = Body(default=None),
     user: User = Depends(current_user),
 ) -> dict:
+    assert_session_csrf(request)
     config = load_config()
     membership = get_membership(user.id)
     if membership.active:
@@ -122,9 +125,11 @@ def billing_checkout(
 
 @router.post("/checkout/confirm")
 def billing_checkout_confirm(
+    request: Request,
     payload: CheckoutConfirmRequest,
     user: User = Depends(current_user),
 ) -> dict:
+    assert_session_csrf(request)
     config = load_config()
     session_id = payload.session_id.strip()
     if not session_id:
@@ -156,7 +161,8 @@ def billing_checkout_confirm(
 
 
 @router.post("/portal")
-def billing_portal(user: User = Depends(current_user)) -> dict:
+def billing_portal(request: Request, user: User = Depends(current_user)) -> dict:
+    assert_session_csrf(request)
     config = load_config()
     if config.billing_mode == "mock":
         return {"mode": "mock", "url": "/#pricing"}
@@ -231,28 +237,32 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
 
 
 @router.post("/mock/activate")
-def mock_activate(user: User = Depends(current_user)) -> dict:
+def mock_activate(request: Request, user: User = Depends(current_user)) -> dict:
+    assert_session_csrf(request)
     if load_config().billing_mode != "mock":
         raise HTTPException(status_code=404, detail="Mock billing is disabled")
     return {"membership": activate_mock_subscription(user).as_dict()}
 
 
 @router.post("/mock/cancel")
-def mock_cancel(user: User = Depends(current_user)) -> dict:
+def mock_cancel(request: Request, user: User = Depends(current_user)) -> dict:
+    assert_session_csrf(request)
     if load_config().billing_mode != "mock":
         raise HTTPException(status_code=404, detail="Mock billing is disabled")
     return {"membership": cancel_mock_subscription(user).as_dict()}
 
 
 @router.post("/mock/expire")
-def mock_expire(user: User = Depends(current_user)) -> dict:
+def mock_expire(request: Request, user: User = Depends(current_user)) -> dict:
+    assert_session_csrf(request)
     if load_config().billing_mode != "mock":
         raise HTTPException(status_code=404, detail="Mock billing is disabled")
     return {"membership": expire_mock_subscription(user).as_dict()}
 
 
 @router.post("/mock/payment-failed")
-def mock_payment_failed(user: User = Depends(current_user)) -> dict:
+def mock_payment_failed(request: Request, user: User = Depends(current_user)) -> dict:
+    assert_session_csrf(request)
     if load_config().billing_mode != "mock":
         raise HTTPException(status_code=404, detail="Mock billing is disabled")
     return {"membership": fail_mock_payment(user).as_dict()}

@@ -5,11 +5,37 @@ from app.services import database
 from app.services.database import transaction
 
 
-def _login(client):
-    client.post(
+def csrf_headers(client):
+    response = client.get("/api/csrf")
+    return {"x-csrf-token": response.json()["csrf_token"], "origin": "http://localhost:5173"}
+
+
+def register_and_get_csrf(client, email="member@example.com"):
+    response = client.post(
         "/api/auth/register",
-        json={"email": "member@example.com", "password": "member-password"},
+        json={"email": email, "password": "member-password"},
+        headers=csrf_headers(client),
     )
+    return {"x-csrf-token": response.json()["csrf_token"], "origin": "http://localhost:5173"}
+
+
+def _login(client):
+    return register_and_get_csrf(client)
+
+
+def test_mock_billing_requires_session_csrf(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    headers = _login(client)
+
+    missing = client.post("/api/billing/mock/activate", headers={"Origin": "http://localhost:5173"})
+    assert missing.status_code == 403
+
+    activated = client.post("/api/billing/mock/activate", headers=headers)
+    assert activated.status_code == 200
+    assert activated.json()["membership"]["active"] is True
 
 
 def test_mock_checkout_activates_subscription(monkeypatch, tmp_path):
@@ -17,14 +43,14 @@ def test_mock_checkout_activates_subscription(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "mock")
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
-    _login(client)
+    headers = _login(client)
 
-    checkout = client.post("/api/billing/checkout")
+    checkout = client.post("/api/billing/checkout", headers=headers)
     assert checkout.status_code == 200
     assert checkout.json()["mode"] == "mock"
     assert checkout.json()["url"].endswith("#pricing")
 
-    activated = client.post("/api/billing/mock/activate")
+    activated = client.post("/api/billing/mock/activate", headers=headers)
     assert activated.status_code == 200
     assert activated.json()["membership"]["active"] is True
     assert activated.json()["membership"]["plan"] == "pro"
@@ -38,15 +64,15 @@ def test_mock_cancel_and_expire_subscription(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "mock")
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
-    _login(client)
-    client.post("/api/billing/mock/activate")
+    headers = _login(client)
+    client.post("/api/billing/mock/activate", headers=headers)
 
-    canceled = client.post("/api/billing/mock/cancel")
+    canceled = client.post("/api/billing/mock/cancel", headers=headers)
     assert canceled.status_code == 200
     assert canceled.json()["membership"]["cancel_at_period_end"] is True
     assert canceled.json()["membership"]["active"] is True
 
-    expired = client.post("/api/billing/mock/expire")
+    expired = client.post("/api/billing/mock/expire", headers=headers)
     assert expired.status_code == 200
     assert expired.json()["membership"]["active"] is False
     assert expired.json()["membership"]["status"] == "canceled"
@@ -57,8 +83,8 @@ def test_membership_inactive_after_period_end(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "mock")
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
-    _login(client)
-    client.post("/api/billing/mock/activate")
+    headers = _login(client)
+    client.post("/api/billing/mock/activate", headers=headers)
 
     with transaction(tmp_path / "saveany.db") as conn:
         conn.execute(
@@ -81,11 +107,11 @@ def test_mock_payment_failed_does_not_update_canceled_subscription(monkeypatch, 
     monkeypatch.setenv("BILLING_MODE", "mock")
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
-    _login(client)
-    client.post("/api/billing/mock/activate")
-    client.post("/api/billing/mock/expire")
+    headers = _login(client)
+    client.post("/api/billing/mock/activate", headers=headers)
+    client.post("/api/billing/mock/expire", headers=headers)
 
-    failed = client.post("/api/billing/mock/payment-failed")
+    failed = client.post("/api/billing/mock/payment-failed", headers=headers)
     assert failed.status_code == 200
     assert failed.json()["membership"]["status"] == "canceled"
     assert failed.json()["membership"]["active"] is False
@@ -96,11 +122,11 @@ def test_mock_expire_clears_cancel_at_period_end(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "mock")
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
-    _login(client)
-    client.post("/api/billing/mock/activate")
-    client.post("/api/billing/mock/cancel")
+    headers = _login(client)
+    client.post("/api/billing/mock/activate", headers=headers)
+    client.post("/api/billing/mock/cancel", headers=headers)
 
-    expired = client.post("/api/billing/mock/expire")
+    expired = client.post("/api/billing/mock/expire", headers=headers)
     assert expired.status_code == 200
     assert expired.json()["membership"]["status"] == "canceled"
     assert expired.json()["membership"]["cancel_at_period_end"] is False
@@ -112,7 +138,7 @@ def test_stripe_portal_missing_secret_returns_503(monkeypatch, tmp_path):
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     database.initialize_database(tmp_path / "saveany.db")
     client = TestClient(app)
-    _login(client)
+    headers = _login(client)
     with transaction(tmp_path / "saveany.db") as conn:
         user = conn.execute("select id from users where email = 'member@example.com'").fetchone()
         conn.execute(
@@ -128,7 +154,7 @@ def test_stripe_portal_missing_secret_returns_503(monkeypatch, tmp_path):
             (user["id"],),
         )
 
-    response = client.post("/api/billing/portal")
+    response = client.post("/api/billing/portal", headers=headers)
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Stripe 支付尚未配置"

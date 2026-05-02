@@ -86,6 +86,20 @@ def _post_event(client, event):
     )
 
 
+def csrf_headers(client):
+    response = client.get("/api/csrf")
+    return {"x-csrf-token": response.json()["csrf_token"], "origin": "http://localhost:5173"}
+
+
+def register_and_get_csrf(client, email="member@example.com"):
+    response = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "stripe-password"},
+        headers=csrf_headers(client),
+    )
+    return {"x-csrf-token": response.json()["csrf_token"], "origin": "http://localhost:5173"}
+
+
 def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
     database.initialize_database(tmp_path / "saveany.db")
@@ -94,13 +108,10 @@ def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
     monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
     client = TestClient(app)
-    client.post(
-        "/api/auth/register",
-        json={"email": "checkout@example.com", "password": "checkout-password"},
-    )
+    headers = register_and_get_csrf(client, "checkout@example.com")
 
-    first = client.post("/api/billing/checkout")
-    second = client.post("/api/billing/checkout")
+    first = client.post("/api/billing/checkout", headers=headers)
+    second = client.post("/api/billing/checkout", headers=headers)
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -132,21 +143,19 @@ def test_stripe_checkout_creates_and_reuses_customer(monkeypatch, tmp_path):
 
 def test_stripe_checkout_uses_request_origin_for_return_urls(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5175")
     database.initialize_database(tmp_path / "saveany.db")
     FakeStripeCustomer.created = []
     FakeStripeCheckoutSession.created = []
     monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
     client = TestClient(app)
-    client.post(
-        "/api/auth/register",
-        json={"email": "origin-checkout@example.com", "password": "checkout-password"},
-    )
+    headers = register_and_get_csrf(client, "origin-checkout@example.com")
 
     response = client.post(
         "/api/billing/checkout",
         json={"return_url": "http://127.0.0.1:5175"},
-        headers={"Origin": "http://127.0.0.1:5175"},
+        headers={**headers, "origin": "http://127.0.0.1:5175"},
     )
 
     assert response.status_code == 200
@@ -159,22 +168,20 @@ def test_stripe_checkout_uses_request_origin_for_return_urls(monkeypatch, tmp_pa
 
 def test_stripe_checkout_recreates_session_when_return_origin_changes(monkeypatch, tmp_path):
     _stripe_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5175")
     database.initialize_database(tmp_path / "saveany.db")
     FakeStripeCustomer.created = []
     FakeStripeCheckoutSession.created = []
     monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
     client = TestClient(app)
-    client.post(
-        "/api/auth/register",
-        json={"email": "origin-change@example.com", "password": "checkout-password"},
-    )
+    headers = register_and_get_csrf(client, "origin-change@example.com")
 
-    first = client.post("/api/billing/checkout")
+    first = client.post("/api/billing/checkout", headers=headers)
     second = client.post(
         "/api/billing/checkout",
         json={"return_url": "http://127.0.0.1:5175"},
-        headers={"Origin": "http://127.0.0.1:5175"},
+        headers={**headers, "origin": "http://127.0.0.1:5175"},
     )
 
     assert first.status_code == 200
@@ -209,12 +216,9 @@ def test_stripe_checkout_creates_new_session_after_open_attempt_expires(
     monkeypatch.setattr(billing_routes.stripe, "Customer", FakeStripeCustomer)
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckout)
     client = TestClient(app)
-    client.post(
-        "/api/auth/register",
-        json={"email": "expired-checkout@example.com", "password": "checkout-password"},
-    )
+    headers = register_and_get_csrf(client, "expired-checkout@example.com")
 
-    first = client.post("/api/billing/checkout")
+    first = client.post("/api/billing/checkout", headers=headers)
     with transaction(tmp_path / "saveany.db") as conn:
         conn.execute(
             """
@@ -224,7 +228,7 @@ def test_stripe_checkout_creates_new_session_after_open_attempt_expires(
             """,
             (first.json()["session_id"],),
         )
-    second = client.post("/api/billing/checkout")
+    second = client.post("/api/billing/checkout", headers=headers)
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -258,11 +262,8 @@ def test_checkout_confirm_syncs_paid_subscription(monkeypatch, tmp_path):
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
     monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
     client = TestClient(app)
-    registered = client.post(
-        "/api/auth/register",
-        json={"email": "confirm-paid@example.com", "password": "stripe-password"},
-    ).json()
-    user_id = registered["user"]["id"]
+    headers = register_and_get_csrf(client, "confirm-paid@example.com")
+    user_id = client.get("/api/me").json()["user"]["id"]
     FakeStripeCheckoutSessionConfirm.payloads["cs_paid"] = {
         "id": "cs_paid",
         "customer": "cus_confirm",
@@ -285,6 +286,7 @@ def test_checkout_confirm_syncs_paid_subscription(monkeypatch, tmp_path):
     response = client.post(
         "/api/billing/checkout/confirm",
         json={"session_id": "cs_paid"},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -323,12 +325,14 @@ def test_checkout_confirm_rejects_session_for_another_user(monkeypatch, tmp_path
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
     monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
     client = TestClient(app)
-    current = client.post(
-        "/api/auth/register",
-        json={"email": "current-confirm@example.com", "password": "stripe-password"},
-    ).json()
+    headers = register_and_get_csrf(client, "current-confirm@example.com")
+    current = client.get("/api/me").json()
 
-    response = client.post("/api/billing/checkout/confirm", json={"session_id": "cs_other"})
+    response = client.post(
+        "/api/billing/checkout/confirm",
+        json={"session_id": "cs_other"},
+        headers=headers,
+    )
 
     assert response.status_code == 403
     assert get_membership(current["user"]["id"]).active is False
@@ -343,11 +347,8 @@ def test_checkout_confirm_waits_for_unpaid_session(monkeypatch, tmp_path):
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
     monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
     client = TestClient(app)
-    registered = client.post(
-        "/api/auth/register",
-        json={"email": "confirm-unpaid@example.com", "password": "stripe-password"},
-    ).json()
-    user_id = registered["user"]["id"]
+    headers = register_and_get_csrf(client, "confirm-unpaid@example.com")
+    user_id = client.get("/api/me").json()["user"]["id"]
     FakeStripeCheckoutSessionConfirm.payloads["cs_unpaid"] = {
         "id": "cs_unpaid",
         "customer": "cus_unpaid",
@@ -364,7 +365,11 @@ def test_checkout_confirm_waits_for_unpaid_session(monkeypatch, tmp_path):
         "items": {"data": [{"price": {"id": "price_monthly"}}]},
     }
 
-    response = client.post("/api/billing/checkout/confirm", json={"session_id": "cs_unpaid"})
+    response = client.post(
+        "/api/billing/checkout/confirm",
+        json={"session_id": "cs_unpaid"},
+        headers=headers,
+    )
 
     assert response.status_code == 409
     assert get_membership(user_id).active is False
@@ -378,11 +383,8 @@ def test_checkout_confirm_uses_subscription_item_period_fields(monkeypatch, tmp_
     monkeypatch.setattr(billing_routes.stripe, "checkout", FakeStripeCheckoutConfirm)
     monkeypatch.setattr(billing_routes.stripe, "Subscription", FakeStripeSubscription)
     client = TestClient(app)
-    registered = client.post(
-        "/api/auth/register",
-        json={"email": "confirm-item-period@example.com", "password": "stripe-password"},
-    ).json()
-    user_id = registered["user"]["id"]
+    headers = register_and_get_csrf(client, "confirm-item-period@example.com")
+    user_id = client.get("/api/me").json()["user"]["id"]
     FakeStripeCheckoutSessionConfirm.payloads["cs_item_period"] = {
         "id": "cs_item_period",
         "customer": "cus_item_period",
@@ -411,6 +413,7 @@ def test_checkout_confirm_uses_subscription_item_period_fields(monkeypatch, tmp_
     response = client.post(
         "/api/billing/checkout/confirm",
         json={"session_id": "cs_item_period"},
+        headers=headers,
     )
 
     assert response.status_code == 200

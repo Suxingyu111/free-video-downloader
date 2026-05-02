@@ -92,16 +92,16 @@ test("topic cluster pages define taxonomy and conversion CTAs", () => {
     { path: "/features/", cluster: "features", pageType: "hub", ctaLabel: "查看所有功能" },
     { path: "/features/video-download/", cluster: "features", pageType: "feature", ctaLabel: "粘贴公开视频链接试试解析" },
     { path: "/features/ai-video-summary/", cluster: "features", pageType: "feature", ctaLabel: "生成 AI 视频学习笔记" },
-    { path: "/features/subtitle-extraction/", cluster: "features", pageType: "feature", ctaLabel: "提取公开视频字幕" },
-    { path: "/features/mind-map/", cluster: "features", pageType: "feature", ctaLabel: "生成视频思维导图" },
+    { path: "/features/subtitle-extraction/", cluster: "features", pageType: "feature", ctaLabel: "提取字幕并导出 Markdown" },
+    { path: "/features/mind-map/", cluster: "features", pageType: "feature", ctaLabel: "把公开视频变成思维导图" },
     { path: "/platforms/", cluster: "platforms", pageType: "hub", ctaLabel: "查看支持平台" },
     { path: "/platforms/youtube/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 YouTube 公开视频" },
-    { path: "/platforms/bilibili/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 Bilibili 公开视频" },
+    { path: "/platforms/bilibili/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 B站公开视频" },
     { path: "/platforms/douyin/", cluster: "platforms", pageType: "platform", ctaLabel: "解析抖音公开视频" },
     { path: "/platforms/tiktok/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 TikTok 公开视频" },
     { path: "/use-cases/", cluster: "use-cases", pageType: "hub", ctaLabel: "查看使用场景" },
     { path: "/use-cases/course-learning/", cluster: "use-cases", pageType: "use-case", ctaLabel: "生成课程复习笔记" },
-    { path: "/use-cases/content-archive/", cluster: "use-cases", pageType: "use-case", ctaLabel: "归档公开视频素材" },
+    { path: "/use-cases/content-archive/", cluster: "use-cases", pageType: "use-case", ctaLabel: "整理公开视频素材" },
     { path: "/use-cases/meeting-review/", cluster: "use-cases", pageType: "use-case", ctaLabel: "生成会议复盘笔记" },
     { path: "/compare/", cluster: "compare", pageType: "hub", ctaLabel: "查看对比页面" },
     { path: "/pricing/", cluster: "brand", pageType: "pricing", ctaLabel: "查看套餐方案" }
@@ -116,6 +116,8 @@ test("topic cluster pages define taxonomy and conversion CTAs", () => {
     assert.equal(page.cluster, expectedPage.cluster);
     assert.equal(page.pageType, expectedPage.pageType);
     assert.equal(page.ctaLabel, expectedPage.ctaLabel);
+    assert.ok(Array.isArray(page.relatedPaths), `${expectedPage.path} should define relatedPaths`);
+    assert.ok(page.relatedPaths.length >= 3, `${expectedPage.path} should define at least three related paths`);
   }
 });
 
@@ -125,11 +127,13 @@ test("hub and pricing pages define crawlable section contracts", () => {
     assert.ok(page.sections.length > 0, `${page.path} should define at least one section`);
 
     for (const section of page.sections) {
-      assert.equal(typeof section.heading, "string", `${page.path} section should include a heading`);
-      assert.notEqual(section.heading.trim(), "", `${page.path} section heading should not be empty`);
-      assert.equal(typeof section.body, "string", `${page.path} section should include body copy`);
-      assert.notEqual(section.body.trim(), "", `${page.path} section body should not be empty`);
+      assert.equal(typeof section, "string", `${page.path} section should be crawlable text`);
+      assert.notEqual(section.trim(), "", `${page.path} section text should not be empty`);
     }
+  };
+  const assertTopicLinks = (page) => {
+    assert.ok(Array.isArray(page.topicLinks), `${page.path} should define topicLinks`);
+    assert.ok(page.topicLinks.length >= 3, `${page.path} should define at least three topic links`);
   };
   const hubPaths = ["/features/", "/platforms/", "/use-cases/", "/compare/"];
 
@@ -138,6 +142,7 @@ test("hub and pricing pages define crawlable section contracts", () => {
 
     assert.ok(page, `${path} should exist in SEO_PAGES`);
     assertCrawlableSections(page);
+    assertTopicLinks(page);
   }
 
   const pricingPage = SEO_PAGES.find((item) => item.path === "/pricing/");
@@ -161,8 +166,10 @@ test("hub and pricing pages define crawlable section contracts", () => {
   for (const [index, plan] of pricingPlans.entries()) {
     assert.equal(typeof plan.price, "string", `/pricing/ plan ${index} should include a crawlable price`);
     assert.notEqual(plan.price.trim(), "", `/pricing/ plan ${index} price should not be empty`);
-    assert.equal(typeof plan.billingCycle, "string", `/pricing/ plan ${index} should include a billing cycle`);
-    assert.notEqual(plan.billingCycle.trim(), "", `/pricing/ plan ${index} billing cycle should not be empty`);
+    assert.equal(typeof plan.priceCurrency, "string", `/pricing/ plan ${index} should include a price currency`);
+    assert.notEqual(plan.priceCurrency.trim(), "", `/pricing/ plan ${index} price currency should not be empty`);
+    assert.equal(typeof plan.billingPeriod, "string", `/pricing/ plan ${index} should include a billing period`);
+    assert.notEqual(plan.billingPeriod.trim(), "", `/pricing/ plan ${index} billing period should not be empty`);
     assert.equal(typeof plan.description, "string", `/pricing/ plan ${index} should include a description`);
     assert.notEqual(plan.description.trim(), "", `/pricing/ plan ${index} description should not be empty`);
     assert.ok(Array.isArray(plan.features), `/pricing/ plan ${index} should include a feature list`);

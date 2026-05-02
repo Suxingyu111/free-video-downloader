@@ -90,15 +90,24 @@ test("seo pages cover stable route matrix and primary landing metadata", () => {
 test("topic cluster pages define taxonomy and conversion CTAs", () => {
   const expectedPages = [
     { path: "/features/", cluster: "features", pageType: "hub", ctaLabel: "查看所有功能" },
-    { path: "/platforms/", cluster: "platforms", pageType: "hub", ctaLabel: "查看支持平台" },
-    { path: "/use-cases/", cluster: "use-cases", pageType: "hub", ctaLabel: "查看使用场景" },
-    { path: "/compare/", cluster: "compare", pageType: "hub", ctaLabel: "查看对比页面" },
-    { path: "/pricing/", cluster: "brand", pageType: "pricing", ctaLabel: "查看套餐方案" },
     { path: "/features/video-download/", cluster: "features", pageType: "feature", ctaLabel: "粘贴公开视频链接试试解析" },
     { path: "/features/ai-video-summary/", cluster: "features", pageType: "feature", ctaLabel: "生成 AI 视频学习笔记" },
+    { path: "/features/subtitle-extraction/", cluster: "features", pageType: "feature", ctaLabel: "提取公开视频字幕" },
+    { path: "/features/mind-map/", cluster: "features", pageType: "feature", ctaLabel: "生成视频思维导图" },
+    { path: "/platforms/", cluster: "platforms", pageType: "hub", ctaLabel: "查看支持平台" },
     { path: "/platforms/youtube/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 YouTube 公开视频" },
-    { path: "/use-cases/course-learning/", cluster: "use-cases", pageType: "use-case", ctaLabel: "生成课程复习笔记" }
+    { path: "/platforms/bilibili/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 Bilibili 公开视频" },
+    { path: "/platforms/douyin/", cluster: "platforms", pageType: "platform", ctaLabel: "解析抖音公开视频" },
+    { path: "/platforms/tiktok/", cluster: "platforms", pageType: "platform", ctaLabel: "解析 TikTok 公开视频" },
+    { path: "/use-cases/", cluster: "use-cases", pageType: "hub", ctaLabel: "查看使用场景" },
+    { path: "/use-cases/course-learning/", cluster: "use-cases", pageType: "use-case", ctaLabel: "生成课程复习笔记" },
+    { path: "/use-cases/content-archive/", cluster: "use-cases", pageType: "use-case", ctaLabel: "归档公开视频素材" },
+    { path: "/use-cases/meeting-review/", cluster: "use-cases", pageType: "use-case", ctaLabel: "生成会议复盘笔记" },
+    { path: "/compare/", cluster: "compare", pageType: "hub", ctaLabel: "查看对比页面" },
+    { path: "/pricing/", cluster: "brand", pageType: "pricing", ctaLabel: "查看套餐方案" }
   ];
+
+  assert.equal(expectedPages.length, 16);
 
   for (const expectedPage of expectedPages) {
     const page = SEO_PAGES.find((item) => item.path === expectedPage.path);
@@ -110,7 +119,7 @@ test("topic cluster pages define taxonomy and conversion CTAs", () => {
   }
 });
 
-test("hub and pricing pages render crawlable sections", () => {
+test("hub and pricing pages define crawlable section contracts", () => {
   const assertCrawlableSections = (page) => {
     assert.ok(Array.isArray(page.sections), `${page.path} should define sections`);
     assert.ok(page.sections.length > 0, `${page.path} should define at least one section`);
@@ -134,14 +143,31 @@ test("hub and pricing pages render crawlable sections", () => {
   const pricingPage = SEO_PAGES.find((item) => item.path === "/pricing/");
   assert.ok(pricingPage, "/pricing/ should exist in SEO_PAGES");
   assertCrawlableSections(pricingPage);
-  assert.ok(
-    pricingPage.pricingPlans === true ||
-      (Array.isArray(pricingPage.pricingPlans) && pricingPage.pricingPlans.length > 0) ||
-      (pricingPage.pricingPlans !== null &&
-        typeof pricingPage.pricingPlans === "object" &&
-        Object.keys(pricingPage.pricingPlans).length > 0),
-    "/pricing/ should explicitly expose crawlable pricing plans"
-  );
+
+  const pricingPlans = Array.isArray(pricingPage.pricingPlans)
+    ? pricingPage.pricingPlans
+    : pricingPage.pricingPlans?.plans;
+
+  assert.ok(Array.isArray(pricingPlans), "/pricing/ should expose pricingPlans as an array or plans array");
+  assert.ok(pricingPlans.length > 0, "/pricing/ should define at least one crawlable pricing plan");
+
+  for (const [index, plan] of pricingPlans.entries()) {
+    assert.equal(typeof plan.name, "string", `/pricing/ plan ${index} should include a plan name`);
+    assert.notEqual(plan.name.trim(), "", `/pricing/ plan ${index} plan name should not be empty`);
+    assert.equal(typeof plan.price, "string", `/pricing/ plan ${index} should include a crawlable price`);
+    assert.notEqual(plan.price.trim(), "", `/pricing/ plan ${index} price should not be empty`);
+    assert.equal(typeof plan.billingCycle, "string", `/pricing/ plan ${index} should include a billing cycle`);
+    assert.notEqual(plan.billingCycle.trim(), "", `/pricing/ plan ${index} billing cycle should not be empty`);
+    assert.equal(typeof plan.description, "string", `/pricing/ plan ${index} should include a description`);
+    assert.notEqual(plan.description.trim(), "", `/pricing/ plan ${index} description should not be empty`);
+    assert.ok(Array.isArray(plan.features), `/pricing/ plan ${index} should include a feature list`);
+    assert.ok(plan.features.length > 0, `/pricing/ plan ${index} feature list should not be empty`);
+
+    for (const [featureIndex, feature] of plan.features.entries()) {
+      assert.equal(typeof feature, "string", `/pricing/ plan ${index} feature ${featureIndex} should be text`);
+      assert.notEqual(feature.trim(), "", `/pricing/ plan ${index} feature ${featureIndex} should not be empty`);
+    }
+  }
 });
 
 test("seo pages have unique, keyword-led TDK metadata", () => {

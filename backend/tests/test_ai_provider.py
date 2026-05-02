@@ -186,7 +186,7 @@ def test_openai_provider_falls_back_when_streaming_summary_exceeds_total_timeout
         ),
         client=client,
     )
-    ticks = iter([0, 10, 50, 51])
+    ticks = iter([0, 10, 125, 126])
     monkeypatch.setattr("app.services.ai_provider.monotonic", lambda: next(ticks, 52))
 
     result = provider.summarize_transcript(
@@ -196,7 +196,7 @@ def test_openai_provider_falls_back_when_streaming_summary_exceeds_total_timeout
         stream_hook=lambda _preview: None,
     )
 
-    assert "超过 45 秒" in result["overview"]
+    assert "超过 120 秒" in result["overview"]
     assert result["outline"]
 
 
@@ -256,7 +256,7 @@ def test_openai_provider_falls_back_when_summary_json_is_truncated():
     assert result["key_points"]
 
 
-def test_openai_provider_uses_fast_fallback_when_summary_request_times_out():
+def test_openai_provider_uses_configured_timeout_when_summary_request_times_out():
     client = TimeoutClient()
     provider = OpenAICompatibleProvider(
         AIProviderConfig(
@@ -276,8 +276,8 @@ def test_openai_provider_uses_fast_fallback_when_summary_request_times_out():
     )
 
     _, kwargs = client.calls[0]
-    assert kwargs["timeout"] <= 45
-    assert "超过 45 秒" in result["overview"]
+    assert kwargs["timeout"] == 120
+    assert "超过 120 秒" in result["overview"]
     assert result["outline"]
 
 
@@ -380,6 +380,33 @@ def test_anthropic_provider_shapes_messages_request():
     assert result["key_points"] == ["A"]
     assert result["mind_map"]["title"] == "Demo"
     assert result["qa_pairs"] == [{"question": "Q", "answer": "A"}]
+
+
+def test_anthropic_provider_uses_non_streaming_request_even_with_stream_hook():
+    class StreamingAvailableClient(FakeClient):
+        def stream(self, *_args, **_kwargs):
+            raise AssertionError("Anthropic-compatible summaries should use the stable non-streaming path")
+
+    client = StreamingAvailableClient()
+    provider = AnthropicCompatibleProvider(
+        AIProviderConfig(
+            base_url="https://api.deepseek.com/anthropic",
+            api_key="secret",
+            text_model="deepseek-v4-pro",
+            transcribe_model="speech-model",
+        ),
+        client=client,
+    )
+
+    result = provider.summarize_transcript(
+        title="Demo",
+        transcript="[00:01] hello",
+        language="zh-CN",
+        stream_hook=lambda _preview: None,
+    )
+
+    assert result["overview"] == "概览"
+    assert client.calls[0][0] == "https://api.deepseek.com/anthropic/v1/messages"
 
 
 def test_openai_provider_answers_question_with_transcript_context():

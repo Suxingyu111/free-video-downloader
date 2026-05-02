@@ -8,6 +8,8 @@ from typing import Literal
 
 from yt_dlp import YoutubeDL
 
+from app.services.douyin_browser_service import is_douyin_url
+from app.services.douyin_public_resolver import is_douyin_public_only_enabled
 from app.services.ytdlp_service import build_extractor_args, build_http_headers, prepare_url
 
 
@@ -121,6 +123,9 @@ class TranscriptService:
     def fetch_transcript(self, url: str, output_dir: Path) -> Transcript | None:
         output_dir.mkdir(parents=True, exist_ok=True)
         prepared_url = prepare_url(url)
+        if is_douyin_url(prepared_url) and is_douyin_public_only_enabled():
+            return None
+
         before = set(output_dir.glob("*"))
         options = build_transcript_ytdlp_options(
             prepared_url=prepared_url,

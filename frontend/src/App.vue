@@ -132,6 +132,7 @@ const pricingPlans = [
 const pricingGuarantees = ["只处理用户有权访问的公开视频", "不托管登录态或付费绕过能力", "会员状态以服务端和 Stripe webhook 为准"];
 const compactFaqs = seoFaqs.slice(0, 3);
 const compactCompliancePoints = seoCompliancePoints.slice(0, 3);
+const initialWorkspaceSnapshot = loadWorkspaceSnapshot();
 
 function hashTarget(hash = "") {
   return hash.replace(/^#/, "").split("?")[0].trim();
@@ -172,10 +173,14 @@ const state = reactive({
   currentTaskId: null,
   currentSummaryId: null,
   summaryTask: null,
+  summaryGate: "",
   tasks: [],
   checkoutStatus: "",
   billingBusy: false,
-  billingMessage: ""
+  billingMessage: "",
+  accountMenuOpen: false,
+  pendingWorkspaceSnapshot: initialWorkspaceSnapshot,
+  workspaceRestoreVisible: hasPersistedWorkspace(initialWorkspaceSnapshot)
 });
 
 const auth = reactive(authInitialState());
@@ -190,9 +195,8 @@ const authForm = reactive({
   notice: ""
 });
 
-applyWorkspaceSnapshot(state, loadWorkspaceSnapshot());
-
 if (typeof window !== "undefined") {
+  if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
   state.currentPage = normalizePageHash(window.location.hash);
   state.activeAnchor = state.currentPage === HOME_PAGE_ID ? normalizeHomeAnchorHash(window.location.hash) : "";
   state.checkoutStatus = hashParams(window.location.hash).get("checkout") || "";
@@ -208,10 +212,15 @@ const disconnectors = new Map();
 const pollers = new Map();
 const summaryDisconnectors = new Map();
 const summaryPollers = new Map();
+let workspaceRestoreTimer = null;
 
 const currentPage = computed(() => state.currentPage);
 const authMembershipLabel = computed(() => membershipLabel(auth));
 const authUsageText = computed(() => remainingSummaryText(auth));
+const accountAvatarLabel = computed(() => {
+  const emailPrefix = (auth.user?.email || "用户").split("@")[0].trim();
+  return (emailPrefix || "用户").slice(0, 2).toUpperCase();
+});
 const showMockBilling = computed(() => Boolean(auth.user && auth.billingMode === "mock"));
 const authTitle = computed(() => {
   if (authForm.mode === "register") return "注册账号";
@@ -282,6 +291,22 @@ const summaryStatusText = computed(() => {
   return "";
 });
 const summaryActionLabel = computed(() => (state.summaryError ? "重试总结" : "重新总结"));
+const workspaceRestoredTitle = computed(() => {
+  const snapshot = state.pendingWorkspaceSnapshot;
+  if (snapshot?.result?.title) return snapshot.result.title;
+  if (snapshot?.analyzedUrl) return snapshot.analyzedUrl;
+  if (snapshot?.url) return snapshot.url;
+  return "上次解析的视频工作区";
+});
+const workspaceRestoredMeta = computed(() => {
+  const snapshot = state.pendingWorkspaceSnapshot;
+  if (snapshot?.currentSummaryId && snapshot?.currentTaskId) return "包含下载任务与 AI 总结记录";
+  if (snapshot?.currentSummaryId || snapshot?.summaryTask) return "包含 AI 总结记录";
+  if (snapshot?.currentTaskId || snapshot?.tasks?.length) return "包含下载任务记录";
+  return "已保留视频链接和解析结果";
+});
+const showWorkspaceRestore = computed(() => state.workspaceRestoreVisible && hasPersistedWorkspace(state.pendingWorkspaceSnapshot));
+const billingPanelVisible = computed(() => Boolean(checkoutNotice.value || state.billingMessage || showMockBilling.value));
 
 function scrollPageToTop(behavior = "auto") {
   if (typeof window === "undefined") return;
@@ -291,6 +316,16 @@ function scrollPageToTop(behavior = "auto") {
   } else {
     scroll();
   }
+}
+
+function resetPageScrollOnRefresh() {
+  if (typeof window === "undefined") return;
+  const target = hashTarget(window.location.hash);
+  if (target && target !== HOME_PAGE_ID) return;
+  scrollPageToTop("auto");
+  const scroll = () => scrollPageToTop("auto");
+  if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
+  window.setTimeout(scroll, 0);
 }
 
 function scrollToHomeAnchor(anchorId, behavior = "auto") {
@@ -344,6 +379,7 @@ async function navigateToHomeAnchor(anchorId) {
 }
 
 function navigateToNavLink(link) {
+  state.accountMenuOpen = false;
   if (link.type === "page") {
     navigateToPage(link.id);
   } else {
@@ -352,6 +388,7 @@ function navigateToNavLink(link) {
 }
 
 async function navigateToPage(pageId) {
+  state.accountMenuOpen = false;
   const nextPage = normalizePageHash(`#${pageId}`);
   state.currentPage = nextPage;
   state.activeAnchor = "";
@@ -362,6 +399,19 @@ async function navigateToPage(pageId) {
   updateHash(nextHash);
   await nextTick();
   scrollPageToTop("smooth");
+}
+
+function toggleAccountMenu() {
+  state.accountMenuOpen = !state.accountMenuOpen;
+}
+
+function closeAccountMenu() {
+  state.accountMenuOpen = false;
+}
+
+function openAccountCenter() {
+  state.accountMenuOpen = false;
+  navigateToPage(PRICING_PAGE_ID);
 }
 
 function isNavLinkCurrent(link) {
@@ -434,6 +484,10 @@ async function submitAuth() {
     await refreshMe({ silent: true });
     authForm.open = false;
     authForm.password = "";
+    if (state.summaryGate === "login" && state.result) {
+      state.summaryGate = "";
+      await startSummaryForResult(state.result, { mode: "auto" });
+    }
   } catch (error) {
     authForm.error = error.message;
   } finally {
@@ -442,6 +496,7 @@ async function submitAuth() {
 }
 
 async function logout() {
+  state.accountMenuOpen = false;
   try {
     await logoutAccount();
   } finally {
@@ -503,6 +558,7 @@ async function runMockBilling(action) {
 }
 
 async function handleAnalyze() {
+  if (showWorkspaceRestore.value) dismissWorkspaceRestore();
   state.error = "";
   state.result = null;
   state.analyzedUrl = "";
@@ -526,12 +582,13 @@ async function handleAnalyze() {
 async function startSummaryForResult(result, { mode = "manual" } = {}) {
   if (!result || state.summarizing || isSummaryRunning.value) return;
   if (!auth.user) {
-    openAuth("login");
-    state.summaryError = "登录后每天可免费总结 3 次。";
+    state.summaryGate = "login";
+    state.summaryError = "";
     return;
   }
 
   clearCurrentSummary();
+  state.summaryGate = "";
   state.summaryError = "";
   resetSummaryInteraction();
   state.summarizing = true;
@@ -549,8 +606,16 @@ async function startSummaryForResult(result, { mode = "manual" } = {}) {
       message: cacheHit ? "Restored summary from cache" : mode === "auto" ? "正在自动总结视频内容" : "AI 总结任务已排队"
     });
   } catch (error) {
-    state.summaryError = localizeSummaryStatus(error.message);
-    if (error.message.includes("请先登录")) openAuth("login");
+    const message = localizeSummaryStatus(error.message);
+    if (error.message.includes("请先登录")) {
+      state.summaryGate = "login";
+      state.summaryError = "";
+    } else if (message.includes(FREE_QUOTA_EXHAUSTED_MESSAGE.slice(0, 14))) {
+      state.summaryGate = "quota";
+      state.summaryError = message;
+    } else {
+      state.summaryError = message;
+    }
   } finally {
     state.summarizing = false;
   }
@@ -685,6 +750,7 @@ function clearCurrentSummary() {
   state.currentSummaryId = null;
   state.summaryTask = null;
   state.summaryError = "";
+  state.summaryGate = "";
 }
 
 function registerTask(taskId, formatId = state.selectedFormatId) {
@@ -822,6 +888,45 @@ function resumePersistedWorkspace() {
   if (state.currentSummaryId) resumeSummary(state.currentSummaryId);
 }
 
+function hasPersistedWorkspace(snapshot) {
+  return Boolean(snapshot?.url || snapshot?.result || snapshot?.currentTaskId || snapshot?.currentSummaryId || snapshot?.summaryTask);
+}
+
+function clearWorkspaceRestoreTimer() {
+  if (typeof window === "undefined" || !workspaceRestoreTimer) return;
+  window.clearTimeout(workspaceRestoreTimer);
+  workspaceRestoreTimer = null;
+}
+
+function dismissWorkspaceRestore() {
+  clearWorkspaceRestoreTimer();
+  state.workspaceRestoreVisible = false;
+  state.pendingWorkspaceSnapshot = null;
+  saveWorkspaceSnapshot(pickWorkspaceSnapshot(state));
+}
+
+function startWorkspaceRestoreTimer() {
+  if (typeof window === "undefined" || !showWorkspaceRestore.value || workspaceRestoreTimer) return;
+  workspaceRestoreTimer = window.setTimeout(() => {
+    dismissWorkspaceRestore();
+  }, 10000);
+}
+
+async function restoreWorkspaceSnapshot() {
+  const snapshot = state.pendingWorkspaceSnapshot;
+  if (!hasPersistedWorkspace(snapshot)) {
+    dismissWorkspaceRestore();
+    return;
+  }
+  clearWorkspaceRestoreTimer();
+  applyWorkspaceSnapshot(state, snapshot);
+  state.pendingWorkspaceSnapshot = null;
+  state.workspaceRestoreVisible = false;
+  await nextTick();
+  resumePersistedWorkspace();
+  navigateToHomeAnchor(HOME_DOWNLOAD_ANCHOR_ID);
+}
+
 function localizeStatus(message = "") {
   return message
     .replaceAll("Queued", "排队中")
@@ -893,13 +998,15 @@ function formatDuration(seconds) {
 
 onMounted(() => {
   syncCurrentPageFromHash();
+  resetPageScrollOnRefresh();
   refreshMe({ silent: true });
   window.addEventListener("hashchange", syncCurrentPageFromHash);
   window.addEventListener("popstate", syncCurrentPageFromHash);
-  resumePersistedWorkspace();
+  startWorkspaceRestoreTimer();
 });
 
 onBeforeUnmount(() => {
+  clearWorkspaceRestoreTimer();
   if (typeof window !== "undefined") {
     window.removeEventListener("hashchange", syncCurrentPageFromHash);
     window.removeEventListener("popstate", syncCurrentPageFromHash);
@@ -937,16 +1044,46 @@ onBeforeUnmount(() => {
           <UserRound :size="18" aria-hidden="true" />
           <span>登录 / 注册</span>
         </button>
-        <div v-else class="account-chip">
-          <div>
-            <span>{{ auth.user.email }}</span>
-            <strong>{{ authMembershipLabel }}</strong>
-          </div>
-          <small>{{ authUsageText }}</small>
-          <button type="button" aria-label="退出登录" @click="logout">
-            <LogOut :size="17" aria-hidden="true" />
-            <span>退出登录</span>
+        <div
+          v-else
+          class="account-profile"
+          :class="{ open: state.accountMenuOpen }"
+          @mouseenter="state.accountMenuOpen = true"
+          @mouseleave="closeAccountMenu"
+          @keydown.escape="closeAccountMenu"
+        >
+          <button
+            class="account-avatar-button"
+            type="button"
+            aria-haspopup="menu"
+            aria-controls="account-dropdown"
+            :aria-expanded="state.accountMenuOpen ? 'true' : 'false'"
+            @click="toggleAccountMenu"
+            @focus="state.accountMenuOpen = true"
+          >
+            <span class="account-avatar" aria-hidden="true">{{ accountAvatarLabel }}</span>
+            <span class="sr-only">打开账号菜单</span>
           </button>
+          <section id="account-dropdown" class="account-dropdown" role="menu" aria-label="账号菜单">
+            <div class="account-dropdown-profile">
+              <span class="account-avatar account-avatar-large" aria-hidden="true">{{ accountAvatarLabel }}</span>
+              <div>
+                <strong>{{ auth.user.email }}</strong>
+                <span>{{ authMembershipLabel }} · {{ authUsageText }}</span>
+              </div>
+            </div>
+            <div class="account-quota-track" aria-hidden="true"><span></span></div>
+            <button class="account-menu-row" role="menuitem" type="button" @click="openAccountCenter">
+              <UserRound :size="20" aria-hidden="true" />
+              <span>个人中心</span>
+              <small>账号与套餐信息</small>
+              <span class="account-row-arrow" aria-hidden="true">›</span>
+            </button>
+            <button class="account-menu-row account-logout-row" role="menuitem" type="button" @click="logout">
+              <LogOut :size="20" aria-hidden="true" />
+              <span>退出登录</span>
+            </button>
+          </section>
         </div>
       </div>
     </header>
@@ -981,6 +1118,31 @@ onBeforeUnmount(() => {
         <section v-if="state.error" class="message error" role="alert">
           <XCircle :size="18" aria-hidden="true" />
           <span>{{ state.error }}</span>
+        </section>
+
+        <section
+          v-if="showWorkspaceRestore"
+          class="restore-toast"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="restore-toast-title"
+          aria-live="polite"
+        >
+          <div class="restore-toast-copy">
+            <span class="restore-status">发现上次解析结果</span>
+            <strong id="restore-toast-title">{{ workspaceRestoredTitle }}</strong>
+            <small>{{ workspaceRestoredMeta }}，10 秒后保持首页清空。</small>
+          </div>
+          <div class="restore-toast-actions">
+            <button class="secondary-button" type="button" @click="restoreWorkspaceSnapshot">
+              <CheckCircle2 :size="18" aria-hidden="true" />
+              <span>恢复工作区</span>
+            </button>
+            <button class="secondary-button subtle-button" type="button" @click="dismissWorkspaceRestore">
+              <XCircle :size="18" aria-hidden="true" />
+              <span>保持清空</span>
+            </button>
+          </div>
         </section>
 
         <section v-if="hasResult" class="analysis-workbench" aria-label="视频信息和 AI 总结">
@@ -1027,24 +1189,49 @@ onBeforeUnmount(() => {
           </aside>
 
           <section class="summary-column" aria-label="AI 总结工作区">
-            <section v-if="state.summaryError" class="summary-fallback-card summary-error-card" role="alert">
+            <section v-if="state.summaryGate === 'login'" class="summary-fallback-card summary-gate-card" aria-live="polite">
+              <UserRound :size="24" aria-hidden="true" />
+              <div>
+                <p class="summary-fallback-eyebrow">AI 总结门禁</p>
+                <h3>登录后继续自动总结</h3>
+                <p>解析结果已保留。登录或注册后会继续生成摘要、字幕、思维导图和 AI 问答；你也可以先下载视频文件。</p>
+                <p class="summary-gate-quota">{{ authUsageText }}</p>
+              </div>
+              <div class="summary-gate-actions">
+                <button class="primary-button" type="button" @click="openAuth('login')">
+                  <UserRound :size="18" aria-hidden="true" />
+                  <span>登录 / 注册</span>
+                </button>
+                <button class="secondary-button" type="button" :disabled="state.downloading || isTaskRunning" @click="handleDownload">
+                  <Download :size="18" aria-hidden="true" />
+                  <span>先下载视频</span>
+                </button>
+              </div>
+            </section>
+
+            <section v-else-if="state.summaryGate === 'quota' || (state.summaryError && hasSummaryQuotaError)" class="summary-fallback-card summary-upgrade-card" role="alert">
+              <Star :size="24" aria-hidden="true" />
+              <div>
+                <p class="summary-fallback-eyebrow">AI 总结额度</p>
+                <h3>今日免费额度已用完</h3>
+                <p>{{ state.summaryError || FREE_QUOTA_EXHAUSTED_MESSAGE }}</p>
+              </div>
+              <button class="primary-button" type="button" :disabled="state.billingBusy" @click="startCheckout">
+                <Star :size="18" aria-hidden="true" />
+                <span>开通专业版 ¥29/月</span>
+              </button>
+            </section>
+
+            <section v-else-if="state.summaryError" class="summary-fallback-card summary-error-card" role="alert">
               <XCircle :size="22" aria-hidden="true" />
               <div>
-                <p class="summary-fallback-eyebrow">AI 总结失败</p>
-                <h3>可以继续下载，也可以重试总结</h3>
+                <p class="summary-fallback-eyebrow">接口失败</p>
+                <h3>总结没有完成，下载结果仍可用</h3>
                 <p>{{ state.summaryError }}</p>
               </div>
               <button class="secondary-button" type="button" :disabled="state.summarizing || isSummaryRunning" @click="retrySummary">
                 <Sparkles :size="18" aria-hidden="true" />
                 <span>重试总结</span>
-              </button>
-              <button v-if="!auth.user" class="secondary-button" type="button" @click="openAuth('login')">
-                <UserRound :size="18" aria-hidden="true" />
-                <span>登录 / 注册</span>
-              </button>
-              <button v-else-if="!auth.membership?.active && hasSummaryQuotaError" class="primary-button" type="button" @click="startCheckout">
-                <Star :size="18" aria-hidden="true" />
-                <span>开通专业版 ¥29/月</span>
               </button>
             </section>
 
@@ -1198,25 +1385,28 @@ onBeforeUnmount(() => {
         </article>
       </div>
 
-      <p v-if="checkoutNotice" class="message pricing-message" aria-live="polite">
-        <CreditCard :size="18" aria-hidden="true" />
-        <span>{{ checkoutNotice }}</span>
-      </p>
-      <p v-if="state.billingMessage" class="message pricing-message" aria-live="polite">
-        <span>{{ state.billingMessage }}</span>
-      </p>
-
       <div class="pricing-assurance" aria-label="套餐边界说明">
         <span v-for="item in pricingGuarantees" :key="item"><ShieldCheck :size="18" aria-hidden="true" />{{ item }}</span>
       </div>
 
-      <div v-if="showMockBilling" class="mock-billing-panel" aria-label="本地模拟支付">
-        <p>本地 mock billing 可在无外网时验收会员状态。</p>
-        <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('activate')">模拟开通</button>
-        <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('cancel')">模拟取消</button>
-        <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('expire')">模拟过期</button>
-        <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('payment-failed')">模拟付款失败</button>
-      </div>
+      <section v-if="billingPanelVisible" class="billing-status-panel" aria-label="会员账单状态">
+        <div class="billing-status-copy">
+          <CreditCard :size="20" aria-hidden="true" />
+          <div>
+            <p class="billing-status-label">账单状态</p>
+            <strong v-if="checkoutNotice">{{ checkoutNotice }}</strong>
+            <strong v-else-if="state.billingMessage">{{ state.billingMessage }}</strong>
+            <strong v-else>本地 mock billing 可用于验收会员状态。</strong>
+            <span>{{ authMembershipLabel }} · {{ authUsageText }}</span>
+          </div>
+        </div>
+        <div v-if="showMockBilling" class="mock-billing-panel" aria-label="本地模拟支付">
+          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('activate')">模拟开通</button>
+          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('cancel')">模拟取消</button>
+          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('expire')">模拟过期</button>
+          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('payment-failed')">模拟付款失败</button>
+        </div>
+      </section>
     </section>
 
     <section v-if="authForm.open" class="auth-modal" role="dialog" aria-modal="true" aria-label="账号登录">

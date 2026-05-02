@@ -247,6 +247,7 @@ def test_summary_service_falls_back_to_speech_to_text_without_subtitles(tmp_path
         {"start": 0.0, "end": 30.0, "time": "00:00", "text": "语音转写内容"}
     ]
     assert markdown_path.exists()
+    assert "转写来源：语音转写" in markdown_path.read_text(encoding="utf-8")
 
 
 def test_summary_service_emits_quick_draft_from_audio_preview_before_full_transcription(tmp_path: Path, monkeypatch):

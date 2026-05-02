@@ -41,3 +41,41 @@ def test_audio_extraction_uses_resilient_youtube_audio_options(monkeypatch, tmp_
     assert options["extractor_retries"] == 5
     assert options["js_runtimes"] == {"node": {}}
     assert options["extractor_args"] == {"youtube": {"player_client": ["android", "web"]}}
+
+
+class FakeDouyinResolver:
+    def __init__(self):
+        self.downloads = []
+
+    def download(self, **kwargs):
+        self.downloads.append(kwargs)
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        media_path = output_dir / "douyin-video.mp4"
+        media_path.write_bytes(b"video")
+        return media_path
+
+
+def test_audio_extraction_uses_public_douyin_resolver_before_ffmpeg(monkeypatch, tmp_path):
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"audio")
+
+    monkeypatch.setattr(audio_service.subprocess, "run", fake_run)
+    douyin = FakeDouyinResolver()
+
+    path = AudioExtractionService(douyin_service=douyin).extract_audio(
+        "https://v.douyin.com/0B3khUkIwRw/",
+        tmp_path,
+    )
+
+    assert path == tmp_path / "douyin-video.m4a"
+    assert path.read_bytes() == b"audio"
+    assert douyin.downloads[0]["url"] == "https://v.douyin.com/0B3khUkIwRw/"
+    assert douyin.downloads[0]["format_id"] == "best"
+    assert douyin.downloads[0]["output_dir"] == tmp_path / "source"
+    assert commands[0][0] == "ffmpeg"
+    assert "-vn" in commands[0]
+    assert str(tmp_path / "source" / "douyin-video.mp4") in commands[0]

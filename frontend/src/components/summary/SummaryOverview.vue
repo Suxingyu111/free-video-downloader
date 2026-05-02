@@ -60,7 +60,7 @@ function handleDownloadSummary() {
 
     <div v-if="summaryResult" class="summary-overview-body">
       <section class="summary-section">
-        <h5>一句话概览</h5>
+        <h5>概括</h5>
         <p class="summary-line-reveal" :style="lineRevealStyle(0)">{{ summaryResult.overview || "当前总结结果没有返回概览。" }}</p>
       </section>
 

@@ -102,15 +102,15 @@ export function buildHtmlSitemapPage(siteUrl = normalizeSiteUrl()) {
     <link rel="canonical" href="${origin}/sitemap/" />
     <title>网站地图 - 万能视频下载总结器 | SaveAny</title>
     <style>
-      :root { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #121826; background: #f7fbff; }
+      :root { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #1d1913; background: #f3efe6; }
       body { margin: 0; }
       main { width: min(100% - 40px, 980px); margin: 0 auto; padding: 54px 0; }
       h1 { margin: 0; font-size: 42px; }
-      p { color: #596477; line-height: 1.8; }
+      p { color: #676158; line-height: 1.8; }
       ul { display: grid; gap: 12px; padding: 0; list-style: none; }
-      li { border: 1px solid #dfe8f4; border-radius: 14px; background: #fff; padding: 16px; }
-      a { color: #1f6eea; font-weight: 850; text-decoration: none; }
-      span { display: block; margin-top: 6px; color: #596477; line-height: 1.65; }
+      li { border: 1px solid rgba(41,37,30,.13); border-radius: 14px; background: #fffdf7; padding: 16px; }
+      a { color: #92400e; font-weight: 850; text-decoration: none; }
+      span { display: block; margin-top: 6px; color: #676158; line-height: 1.65; }
     </style>
   </head>
   <body>
@@ -138,12 +138,12 @@ export function buildNotFoundPage(siteUrl = normalizeSiteUrl()) {
     <link rel="canonical" href="${origin}/404.html" />
     <title>页面未找到 - 万能视频下载总结器 | SaveAny</title>
     <style>
-      :root { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #121826; background: #f7fbff; }
+      :root { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #1d1913; background: #f3efe6; }
       body { margin: 0; }
       main { width: min(100% - 40px, 760px); margin: 0 auto; padding: 72px 0; }
       h1 { margin: 0; font-size: 42px; }
-      p { color: #596477; line-height: 1.8; }
-      a { color: #1f6eea; font-weight: 850; text-decoration: none; }
+      p { color: #676158; line-height: 1.8; }
+      a { color: #92400e; font-weight: 850; text-decoration: none; }
       nav { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 24px; }
     </style>
   </head>
@@ -294,23 +294,23 @@ ${webmasterMetaHtml}
     <script type="application/ld+json">${jsonLd}</script>
     <title>${escapeHtml(page.title)}</title>
     <style>
-      :root { color-scheme: light; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #121826; background: #f7fbff; }
-      body { margin: 0; background: linear-gradient(180deg, #f1f7ff 0%, #fff 72%); }
+      :root { color-scheme: light; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #1d1913; background: #f3efe6; }
+      body { margin: 0; background: linear-gradient(180deg, #f6efe2 0%, #fffdf7 72%); }
       main { width: min(100% - 40px, 980px); margin: 0 auto; padding: 56px 0; }
-      a { color: #1f6eea; text-decoration: none; }
-      .brand { font-size: 18px; font-weight: 900; color: #2f7df4; }
+      a { color: #92400e; text-decoration: none; }
+      .brand { font-size: 18px; font-weight: 900; color: #92400e; }
       h1 { max-width: 820px; margin: 26px 0 0; font-size: clamp(34px, 5vw, 58px); line-height: 1.08; letter-spacing: 0; }
-      .lead, .summary { max-width: 780px; color: #4b5565; font-size: 18px; line-height: 1.8; }
+      .lead, .summary { max-width: 780px; color: #676158; font-size: 18px; line-height: 1.8; }
       .lead { margin: 20px 0 0; }
-      .summary { margin: 22px 0 0; border-left: 4px solid #2f7df4; padding-left: 16px; }
-      .cta { display: inline-flex; margin-top: 28px; border-radius: 999px; background: #2f7df4; padding: 14px 22px; color: #fff; font-weight: 850; }
+      .summary { margin: 22px 0 0; border-left: 4px solid #f59e0b; padding-left: 16px; }
+      .cta { display: inline-flex; margin-top: 28px; border-radius: 999px; background: #0b0d0e; padding: 14px 22px; color: #f59e0b; font-weight: 850; }
       section { margin-top: 46px; }
       h2 { margin: 0; font-size: 26px; }
       ul { display: grid; gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }
       ol { display: grid; gap: 14px; margin: 18px 0 0; padding-left: 24px; }
       ol li { list-style: decimal; }
-      li, article { border: 1px solid #dfe8f4; border-radius: 16px; background: rgba(255,255,255,.84); padding: 16px; color: #4b5565; line-height: 1.7; }
-      article h3 { margin: 0; color: #121826; font-size: 18px; }
+      li, article { border: 1px solid rgba(41,37,30,.13); border-radius: 16px; background: rgba(255,253,247,.84); padding: 16px; color: #676158; line-height: 1.7; }
+      article h3 { margin: 0; color: #1d1913; font-size: 18px; }
       article p { margin: 10px 0 0; }
       li span { display: block; margin-top: 6px; }
       .question-grid { display: grid; gap: 14px; margin-top: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }

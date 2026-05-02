@@ -487,4 +487,5 @@ def _source_label(source: str | None) -> str:
     return {
         "subtitle": "字幕",
         "auto_subtitle": "自动字幕",
+        "speech_to_text": "语音转写",
     }.get(source or "", "未知")

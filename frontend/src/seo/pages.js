@@ -4,7 +4,7 @@ export const seoSite = {
   productName: "万能视频下载总结器",
   defaultUrl: "https://saveany.local",
   language: "zh-CN",
-  themeColor: "#2f7df4",
+  themeColor: "#0b0d0e",
   appCategory: "MultimediaApplication",
   operatingSystem: "Web",
   lastUpdated: "2026-04-30",

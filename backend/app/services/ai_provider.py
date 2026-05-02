@@ -103,6 +103,7 @@ class OpenAICompatibleProvider:
         language: str,
         stream_hook: Callable[[str], None] | None = None,
     ) -> dict:
+        timeout_seconds = _summary_timeout_seconds(self.config)
         request_payload = {
             "model": self.config.text_model,
             "temperature": 0.1,
@@ -135,7 +136,7 @@ class OpenAICompatibleProvider:
                 response = self.client.post(
                     f"{self.config.base_url}/chat/completions",
                     headers={**self._headers(), "Content-Type": "application/json"},
-                    timeout=_summary_timeout_seconds(self.config),
+                    timeout=timeout_seconds,
                     json=request_payload,
                 )
                 response.raise_for_status()
@@ -146,7 +147,7 @@ class OpenAICompatibleProvider:
                 build_fallback_summary_payload(
                     title=title,
                     transcript=transcript,
-                    reason=f"AI 总结请求超过 {int(SUMMARY_REQUEST_TIMEOUT_SECONDS)} 秒，已先用字幕生成快速摘要。",
+                    reason=f"AI 总结请求超过 {int(timeout_seconds)} 秒，已先用字幕生成快速摘要。",
                 ),
                 title=title,
                 transcript=transcript,
@@ -257,6 +258,7 @@ class AnthropicCompatibleProvider:
         language: str,
         stream_hook: Callable[[str], None] | None = None,
     ) -> dict:
+        timeout_seconds = _summary_timeout_seconds(self.config)
         request_payload = {
             "model": self.config.text_model,
             "max_tokens": SUMMARY_RESPONSE_MAX_TOKENS,
@@ -279,34 +281,26 @@ class AnthropicCompatibleProvider:
             ],
         }
         try:
-            if stream_hook and hasattr(self.client, "stream"):
-                text = self._stream_summary_completion(
-                    request_payload,
-                    title=title,
-                    transcript=transcript,
-                    stream_hook=stream_hook,
-                )
-            else:
-                response = self.client.post(
-                    f"{self.config.base_url}/v1/messages",
-                    headers=self._headers(),
-                    timeout=_summary_timeout_seconds(self.config),
-                    json=request_payload,
-                )
-                response.raise_for_status()
-                data = response.json()
-                content_blocks = data.get("content") if isinstance(data, dict) else []
-                text = "\n".join(
-                    str(block.get("text") or "")
-                    for block in content_blocks
-                    if isinstance(block, dict) and block.get("type") == "text"
-                ).strip()
+            response = self.client.post(
+                f"{self.config.base_url}/v1/messages",
+                headers=self._headers(),
+                timeout=timeout_seconds,
+                json=request_payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content_blocks = data.get("content") if isinstance(data, dict) else []
+            text = "\n".join(
+                str(block.get("text") or "")
+                for block in content_blocks
+                if isinstance(block, dict) and block.get("type") == "text"
+            ).strip()
         except httpx.TimeoutException:
             return normalize_summary_payload(
                 build_fallback_summary_payload(
                     title=title,
                     transcript=transcript,
-                    reason=f"AI 总结请求超过 {int(SUMMARY_REQUEST_TIMEOUT_SECONDS)} 秒，已先用字幕生成快速摘要。",
+                    reason=f"AI 总结请求超过 {int(timeout_seconds)} 秒，已先用字幕生成快速摘要。",
                 ),
                 title=title,
                 transcript=transcript,
@@ -1122,7 +1116,8 @@ def format_fallback_time(index: int) -> str:
 
 
 def _summary_timeout_seconds(config: AIProviderConfig) -> float:
-    return min(float(config.timeout_seconds), SUMMARY_REQUEST_TIMEOUT_SECONDS)
+    configured_timeout = float(config.timeout_seconds or SUMMARY_REQUEST_TIMEOUT_SECONDS)
+    return max(1.0, configured_timeout)
 
 
 def _question_timeout_seconds(config: AIProviderConfig) -> float:

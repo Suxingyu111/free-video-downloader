@@ -107,3 +107,17 @@ def test_transcript_service_reads_cookie_auth_from_environment(monkeypatch):
 
     assert service.cookie_file == Path("/tmp/bilibili-cookies.txt")
     assert service.cookies_from_browser == ("safari", None, None, None)
+
+
+def test_transcript_service_skips_public_douyin_ytdlp_cookie_probe(monkeypatch, tmp_path):
+    def fail_if_called(_options):
+        raise AssertionError("Douyin public-only summaries should not ask yt-dlp for subtitles")
+
+    monkeypatch.setattr("app.services.transcript_service.YoutubeDL", fail_if_called)
+
+    transcript = TranscriptService().fetch_transcript(
+        "https://v.douyin.com/0B3khUkIwRw/",
+        tmp_path,
+    )
+
+    assert transcript is None

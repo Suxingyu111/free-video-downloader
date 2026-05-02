@@ -52,15 +52,18 @@ function handleDownloadQa() {
       </button>
     </div>
 
-    <div v-if="generatedPairs.length" class="qa-list">
-      <article v-for="(item, index) in generatedPairs" :key="`${item.question}-${index}`" class="qa-item">
-        <strong>问：{{ item.question }}</strong>
-        <p>答：{{ item.answer }}</p>
-      </article>
+    <div v-if="generatedPairs.length" class="qa-group">
+      <p class="summary-module-eyebrow">推荐问答</p>
+      <div class="qa-list">
+        <article v-for="(item, index) in generatedPairs" :key="`${item.question}-${index}`" class="qa-item">
+          <strong>问：{{ item.question }}</strong>
+          <p>答：{{ item.answer }}</p>
+        </article>
+      </div>
     </div>
 
     <form class="qa-form" @submit.prevent="emit('submit-question')">
-      <label class="sr-only" for="summary-question">AI 问答</label>
+      <label class="qa-form-label" for="summary-question">继续追问</label>
       <textarea
         id="summary-question"
         :value="summaryQuestion"
@@ -80,11 +83,14 @@ function handleDownloadQa() {
       <span>{{ summaryQuestionError }}</span>
     </div>
 
-    <div v-if="summaryQaHistory.length" class="qa-list qa-history">
-      <article v-for="(item, index) in summaryQaHistory" :key="`${item.question}-${index}`" class="qa-item">
-        <strong>问：{{ item.question }}</strong>
-        <p>答：{{ item.answer }}</p>
-      </article>
+    <div v-if="summaryQaHistory.length" class="qa-group qa-history">
+      <p class="summary-module-eyebrow">本次追问</p>
+      <div class="qa-list">
+        <article v-for="(item, index) in summaryQaHistory" :key="`${item.question}-${index}`" class="qa-item">
+          <strong>问：{{ item.question }}</strong>
+          <p>答：{{ item.answer }}</p>
+        </article>
+      </div>
     </div>
 
     <p v-if="!hasQa" class="summary-empty">这里会显示生成问答和本次会话追问记录。</p>

@@ -30,7 +30,7 @@ test("hero search area uses compact vertical spacing so results enter the first 
   assert.match(mainCss, /\.kicker\s*\{[\s\S]*min-height:\s*34px/);
   assert.match(mainCss, /\.hero h1\s*\{[\s\S]*margin:\s*16px\s+auto\s+0/);
   assert.match(mainCss, /\.hero-copy,\s*\n\.section-copy\s*\{[\s\S]*margin:\s*10px\s+auto\s+0/);
-  assert.match(mainCss, /\.console\s*\{[\s\S]*width:\s*min\(85vw,\s*100%\)/);
+  assert.match(mainCss, /\.console\s*\{[\s\S]*width:\s*min\(100%,\s*1180px\)/);
   assert.match(mainCss, /\.console\s*\{[\s\S]*margin-top:\s*22px/);
   assert.match(mainCss, /\.search-panel\s*\{[\s\S]*width:\s*min\(100%,\s*920px\)/);
   assert.match(mainCss, /\.search-panel\s*\{[\s\S]*margin:\s*0\s+auto/);
@@ -72,10 +72,47 @@ test("top navigation scrolls to homepage sections while pricing remains a separa
   assert.doesNotMatch(appSource, /const modulePages = \[/);
   assert.doesNotMatch(appSource, /<template v-for="module in modulePages"/);
   assert.match(mainCss, /\.nav-links a\[aria-current="page"\]/);
-  assert.match(mainCss, /\.nav-cta:hover,\s*\n\.nav-cta:focus-visible,\s*\n\.nav-cta:active,\s*\n\.nav-cta\[aria-current="page"\]\s*\{[\s\S]*color:\s*var\(--primary-strong\)/);
+  assert.match(mainCss, /\.nav-cta:hover,\s*\n\.nav-cta:focus-visible,\s*\n\.nav-cta:active,\s*\n\.nav-cta\[aria-current="page"\]\s*\{[\s\S]*color:\s*var\(--color-accent-strong\)/);
   assert.doesNotMatch(mainCss, /\.nav-cta\[aria-current="page"\]\s*\{[^}]*color:\s*#ffffff/);
   assert.match(mainCss, /@media \(max-width:\s*760px\)[\s\S]*\.nav-links\s*\{[\s\S]*overflow-x:\s*auto/);
   assert.doesNotMatch(mainCss, /\.nav-links a:not\(\.nav-cta\)[\s\S]*display:\s*none/);
+});
+
+test("global styles use the Industrial Media Console token system", () => {
+  for (const token of [
+    "--color-bg",
+    "--color-surface",
+    "--color-elevated",
+    "--color-line",
+    "--color-text",
+    "--color-muted",
+    "--color-accent",
+    "--color-accent-strong",
+    "--color-success",
+    "--color-danger",
+    "--radius-sm",
+    "--radius-md",
+    "--radius-lg",
+    "--radius-xl",
+    "--shadow-sm",
+    "--shadow-md",
+    "--shadow-lg",
+    "--space-2",
+    "--space-3",
+    "--space-4",
+    "--space-5",
+    "--space-6",
+    "--space-8",
+    "--font-body",
+    "--font-label"
+  ]) {
+    assert.match(mainCss, new RegExp(`${token}:`));
+  }
+
+  assert.doesNotMatch(mainCss, /--primary:/);
+  assert.doesNotMatch(mainCss, /--bg:/);
+  assert.doesNotMatch(summaryCss, /--summary-/);
+  assert.doesNotMatch(`${mainCss}\n${summaryCss}`, /#2f7df4|#1f6eea|#f7fbff/);
 });
 
 test("homepage capability cards are compact and not navigation targets", () => {
@@ -118,6 +155,7 @@ test("homepage keeps SEO content compact while static pages own long-form discov
   assert.match(appSource, /compactFaqs = seoFaqs\.slice\(0,\s*3\)/);
   assert.match(appSource, /compactCompliancePoints = seoCompliancePoints\.slice\(0,\s*3\)/);
   assert.match(mainCss, /\.home-faq-summary\s*\{/);
+  assert.match(mainCss, /\.home-faq-summary\s*\{[\s\S]*width:\s*min\(100%,\s*1180px\)/);
   assert.doesNotMatch(appSource, /首页只保留和真实工作流直接相关的信息/);
   assert.doesNotMatch(appSource, /更完整的搜索落地页、AI 可读说明和专题内容继续由静态页面承接/);
   assert.doesNotMatch(appSource, /只留下开始前必须知道的事/);
@@ -139,6 +177,67 @@ test("video details and AI summary use a left-narrow right-wide workbench layout
   assert.match(mainCss, /\.video-column\s*\{[\s\S]*flex:\s*0\s+1\s+40%/);
   assert.match(mainCss, /\.summary-column\s*\{[\s\S]*flex:\s*1\s+1\s+60%/);
   assert.match(mainCss, /@media \(max-width:\s*920px\)[\s\S]*\.analysis-workbench[\s\S]*flex-direction:\s*column/);
+});
+
+test("restored workspaces are offered above the workbench before applying state", () => {
+  assert.match(appSource, /initialWorkspaceSnapshot = loadWorkspaceSnapshot\(\)/);
+  assert.match(appSource, /pendingWorkspaceSnapshot:\s*initialWorkspaceSnapshot/);
+  assert.match(appSource, /workspaceRestoreVisible:\s*hasPersistedWorkspace\(initialWorkspaceSnapshot\)/);
+  assert.match(appSource, /scrollRestoration"\s+in\s+window\.history/);
+  assert.match(appSource, /function resetPageScrollOnRefresh/);
+  assert.doesNotMatch(appSource, /applyWorkspaceSnapshot\(state,\s*initialWorkspaceSnapshot\)/);
+  assert.match(appSource, /const showWorkspaceRestore = computed/);
+  assert.match(appSource, /<form class="search-panel"[\s\S]*class="restore-toast"[\s\S]*class="analysis-workbench"/);
+  assert.match(appSource, /发现上次解析结果/);
+  assert.match(appSource, /恢复工作区/);
+  assert.match(appSource, /保持清空/);
+  assert.match(appSource, /window\.setTimeout\(\(\)\s*=>\s*\{[\s\S]*dismissWorkspaceRestore\(\);[\s\S]*\},\s*10000\)/);
+  assert.match(appSource, /async function restoreWorkspaceSnapshot/);
+  assert.match(appSource, /applyWorkspaceSnapshot\(state,\s*snapshot\)/);
+  assert.match(appSource, /function dismissWorkspaceRestore/);
+  assert.match(mainCss, /\.restore-toast\s*\{[\s\S]*width:\s*min\(100%,\s*760px\)/);
+  assert.doesNotMatch(mainCss, /\.restore-toast\s*\{[^}]*position:\s*fixed/);
+  assert.doesNotMatch(appSource, /class="restore-banner"/);
+});
+
+test("logged-in navigation uses an avatar account menu instead of a full account strip", () => {
+  assert.match(appSource, /accountMenuOpen:\s*false/);
+  assert.match(appSource, /const accountAvatarLabel = computed/);
+  assert.match(appSource, /class="account-avatar-button"/);
+  assert.match(appSource, /aria-haspopup="menu"/);
+  assert.match(appSource, /class="account-dropdown"/);
+  assert.match(appSource, /role="menu"/);
+  assert.match(appSource, /个人中心/);
+  assert.match(appSource, /退出登录/);
+  assert.doesNotMatch(appSource, /class="account-chip"/);
+  assert.match(mainCss, /\.account-profile\s*\{/);
+  assert.match(mainCss, /\.account-dropdown\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(mainCss, /\.account-profile:hover \.account-dropdown,\s*\n\.account-profile:focus-within \.account-dropdown,\s*\n\.account-profile\.open \.account-dropdown/);
+});
+
+test("logged-out auto summary uses a gate state instead of a failure state", () => {
+  assert.match(appSource, /summaryGate:\s*""/);
+  assert.match(appSource, /state\.summaryGate = "login"/);
+  assert.match(appSource, /state\.summaryError = ""/);
+  assert.match(appSource, /state\.summaryGate === 'login'/);
+  assert.match(appSource, /AI 总结门禁/);
+  assert.match(appSource, /登录后继续自动总结/);
+  assert.match(appSource, /先下载视频/);
+  assert.match(appSource, /await startSummaryForResult\(state\.result,\s*\{\s*mode:\s*"auto"\s*\}\)/);
+  assert.doesNotMatch(appSource, /if \(!auth\.user\)\s*\{\s*openAuth\("login"\);\s*state\.summaryError/);
+});
+
+test("quota and billing feedback are unified into status panels", () => {
+  assert.match(appSource, /summaryGate === 'quota'/);
+  assert.match(appSource, /今日免费额度已用完/);
+  assert.match(appSource, /const billingPanelVisible = computed/);
+  assert.match(appSource, /class="billing-status-panel"/);
+  assert.match(appSource, /账单状态/);
+  assert.match(appSource, /class="mock-billing-panel"/);
+  assert.doesNotMatch(appSource, /class="message pricing-message"/);
+  assert.match(mainCss, /\.billing-status-panel\s*\{/);
+  assert.match(mainCss, /\.summary-gate-card\s*\{/);
+  assert.match(mainCss, /\.summary-upgrade-card\s*\{/);
 });
 
 test("completed downloads stay bound to the selected format", () => {
@@ -178,9 +277,14 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryPanelSource, /revealedStreamLines/);
   assert.match(summaryPanelSource, /summary-stream-preview/);
   assert.match(summaryPanelSource, /summary-loading-bars/);
+  assert.match(summaryOverviewSource, /<h5>概括<\/h5>/);
   assert.match(summaryCss, /\.summary-module-grid\s*\{[\s\S]*gap:\s*10px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*gap:\s*14px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*padding:\s*18px/);
+  assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*background:\s*var\(--color-paper-surface\)/);
+  assert.match(summaryCss, /\.summary-overview-body\s*\{[\s\S]*background:\s*var\(--color-paper-elevated\)/);
+  assert.match(summaryCss, /\.summary-section h5\s*\{[\s\S]*border-bottom:\s*1px solid var\(--color-line\)/);
+  assert.match(summaryCss, /\.summary-list\s*\{[\s\S]*list-style:\s*disc/);
   assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*min-height:\s*76px/);
   assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*padding:\s*10px/);
   assert.match(summaryCss, /\.summary-loading-state\s*\{[\s\S]*min-height:\s*220px/);

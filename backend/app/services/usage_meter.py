@@ -206,7 +206,22 @@ def reserve_user_meter(
         raise ValueError("amount must be positive")
     allowance = allowance_for_user(user, meter_type)
     now = time()
+    existing_meter_type: MeterType | None = None
     with transaction() as conn:
+        existing = conn.execute(
+            "select * from meter_reservations where reservation_id = ?",
+            (reservation_id,),
+        ).fetchone()
+        if existing is not None:
+            if (
+                existing["user_id"] != user.id
+                or existing["meter_type"] != meter_type.value
+                or int(existing["amount"]) != amount
+            ):
+                raise ValueError("reservation_id 已被其他用量请求使用")
+            existing_meter_type = MeterType(existing["meter_type"])
+            return _meter_status(user, existing_meter_type)
+
         row = conn.execute(
             f"""
             select {allowance.column}
@@ -396,6 +411,18 @@ def add_credit_pack(
     expires_at = now + pack.valid_days * 86400
     credit_pack_id = f"pack_{secrets.token_urlsafe(10)}"
     with transaction() as conn:
+        existing = conn.execute(
+            """
+            select id, pack_id, remaining_amount, expires_at
+            from credit_packs
+            where user_id = ? and source = ? and stripe_payment_intent_id = ?
+              and pack_id = ?
+            """,
+            (user_id, source, payment_reference, pack.id),
+        ).fetchone()
+        if existing is not None:
+            return _credit_pack_response(existing)
+
         conn.execute(
             """
             insert into credit_packs
@@ -424,6 +451,15 @@ def add_credit_pack(
         "pack_id": pack.id,
         "remaining_amount": pack.amount,
         "expires_at": expires_at,
+    }
+
+
+def _credit_pack_response(row) -> dict:
+    return {
+        "id": row["id"],
+        "pack_id": row["pack_id"],
+        "remaining_amount": int(row["remaining_amount"]),
+        "expires_at": row["expires_at"],
     }
 
 

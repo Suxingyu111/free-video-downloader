@@ -154,6 +154,9 @@ create table if not exists credit_packs (
   updated_at real not null
 );
 
+create unique index if not exists idx_credit_packs_payment_idempotency
+on credit_packs (user_id, source, stripe_payment_intent_id, pack_id);
+
 create table if not exists meter_reservation_pack_uses (
   reservation_id text not null references meter_reservations(reservation_id) on delete cascade,
   credit_pack_id text not null references credit_packs(id) on delete cascade,

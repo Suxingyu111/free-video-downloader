@@ -65,6 +65,119 @@ def test_credit_pack_is_consumed_after_plan_allowance(monkeypatch, tmp_path):
     assert status["credit_packs"]["summary"]["remaining"] == 19
 
 
+def test_add_credit_pack_is_idempotent_for_payment_reference(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    user = create_user("pack-idempotent@example.com", "meter-password")
+
+    first = add_credit_pack(
+        user.id,
+        pack_id="summary_small",
+        source="mock",
+        payment_reference="payment_1",
+    )
+    second = add_credit_pack(
+        user.id,
+        pack_id="summary_small",
+        source="mock",
+        payment_reference="payment_1",
+    )
+
+    with database.connect(db_path) as conn:
+        row = conn.execute(
+            """
+            select count(*) as pack_count, coalesce(sum(remaining_amount), 0) as remaining
+            from credit_packs
+            where user_id = ?
+            """,
+            (user.id,),
+        ).fetchone()
+
+    assert second["id"] == first["id"]
+    assert row["pack_count"] == 1
+    assert row["remaining"] == 20
+    assert entitlement_status(user)["credit_packs"]["summary"]["remaining"] == 20
+
+
+def test_duplicate_reservation_is_idempotent(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    user = create_user("reservation-idempotent@example.com", "meter-password")
+
+    first = reserve_user_meter(user, MeterType.SUMMARY, 1, reservation_id="same_summary")
+    second = reserve_user_meter(user, MeterType.SUMMARY, 1, reservation_id="same_summary")
+
+    with database.connect(db_path) as conn:
+        row = conn.execute(
+            """
+            select count(*) as reservation_count
+            from meter_reservations
+            where reservation_id = 'same_summary'
+            """
+        ).fetchone()
+
+    assert first["used"] == 1
+    assert second["used"] == 1
+    assert second["remaining"] == 2
+    assert row["reservation_count"] == 1
+    assert entitlement_status(user)["meters"]["summary"]["used"] == 1
+
+    with pytest.raises(ValueError, match="reservation_id"):
+        reserve_user_meter(user, MeterType.SUMMARY, 2, reservation_id="same_summary")
+
+
+def test_insufficient_credit_pack_reserve_rolls_back_partial_pack_updates(
+    monkeypatch, tmp_path
+):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    user = create_user("pack-rollback@example.com", "meter-password")
+    add_credit_pack(
+        user.id,
+        pack_id="summary_small",
+        source="mock",
+        payment_reference="rollback_1",
+    )
+
+    for index in range(3):
+        reserve_user_meter(
+            user,
+            MeterType.SUMMARY,
+            1,
+            reservation_id=f"rollback_plan_{index}",
+        )
+
+    with pytest.raises(MeterExceeded):
+        reserve_user_meter(user, MeterType.SUMMARY, 25, reservation_id="too_large_pack")
+
+    with database.connect(db_path) as conn:
+        pack = conn.execute(
+            """
+            select remaining_amount, status
+            from credit_packs
+            where user_id = ?
+            """,
+            (user.id,),
+        ).fetchone()
+        failed_reservation = conn.execute(
+            """
+            select count(*) as reservation_count
+            from meter_reservations
+            where reservation_id = 'too_large_pack'
+            """
+        ).fetchone()
+
+    assert pack["remaining_amount"] == 20
+    assert pack["status"] == "active"
+    assert failed_reservation["reservation_count"] == 0
+    status = entitlement_status(user)
+    assert status["meters"]["summary"]["used"] == 3
+    assert status["credit_packs"]["summary"]["remaining"] == 20
+
+
 def test_split_credit_pack_refund_restores_each_pack(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")

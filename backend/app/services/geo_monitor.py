@@ -61,6 +61,7 @@ GEO_PAGE_PREFIXES = {
     "/features/ai-video-summary/",
     "/features/subtitle-extraction/",
     "/features/mind-map/",
+    "/articles/",
     "/platforms/",
     "/platforms/youtube/",
     "/platforms/bilibili/",
@@ -93,9 +94,16 @@ def is_geo_surface_path(path: str) -> bool:
     return any(normalized == prefix or normalized.startswith(prefix) for prefix in GEO_PAGE_PREFIXES)
 
 
+def is_private_runtime_path(path: str) -> bool:
+    normalized = path if path.startswith("/") else f"/{path}"
+    return normalized in {"/api", "/files"} or normalized.startswith(("/api/", "/files/"))
+
+
 def should_log_geo_access(method: str, path: str, status_code: int, user_agent: str | None) -> bool:
     normalized_method = method.upper()
     if normalized_method not in {"GET", "HEAD"}:
+        return False
+    if is_private_runtime_path(path):
         return False
     if classify_crawler(user_agent):
         return True

@@ -19,13 +19,17 @@ def test_geo_monitor_classifies_ai_crawlers_and_surfaces():
     assert is_geo_surface_path("/features/")
     assert is_geo_surface_path("/platforms/youtube/")
     assert is_geo_surface_path("/use-cases/course-learning/index.html.md")
+    assert is_geo_surface_path("/articles/public-video-downloader-drm-boundary/")
+    assert is_geo_surface_path("/articles/ai-video-summary-subtitles-markdown/index.html.md")
     assert is_geo_surface_path("/pricing/")
     assert not is_geo_surface_path("/api/health")
 
 
 def test_geo_monitor_logs_only_safe_geo_or_crawler_events():
     assert should_log_geo_access("GET", "/llms.txt", 200, "regular browser")
-    assert should_log_geo_access("GET", "/api/health", 200, "OAI-SearchBot")
+    assert should_log_geo_access("GET", "/features/", 200, "OAI-SearchBot")
+    assert not should_log_geo_access("GET", "/api/health", 200, "OAI-SearchBot")
+    assert not should_log_geo_access("GET", "/files/download-token", 200, "ChatGPT-User")
     assert should_log_geo_access("GET", "/missing-page", 404, "regular browser")
     assert not should_log_geo_access("POST", "/api/analyze", 400, "regular browser")
     assert not should_log_geo_access("GET", "/api/missing", 404, "regular browser")

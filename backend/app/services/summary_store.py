@@ -5,6 +5,7 @@ import json
 import re
 import secrets
 import threading
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import time
@@ -261,8 +262,8 @@ class SummaryStore:
                 stage="completed",
                 progress=100.0,
                 message=source.message,
-                result=source.result,
-                draft_result=source.draft_result,
+                result=deepcopy(source.result),
+                draft_result=deepcopy(source.draft_result),
                 streamed_text=source.streamed_text,
                 markdown_url=f"/api/summaries/{clone_id}/markdown",
                 error=None,

@@ -113,7 +113,7 @@ def test_summary_store_restores_previous_completed_cache_after_forced_failure(tm
     store.complete_task(completed.id, result={"overview": "旧总结"}, markdown_path=markdown_path)
 
     forced = store.create_task("https://example.com/watch", title="Demo")
-    assert store.get_cached_task("https://example.com/watch", language="zh-CN").id == forced.id
+    assert store.get_cached_task("https://example.com/watch", language="zh-CN").id == completed.id
 
     store.fail_task(forced.id, "YouTube bot check")
 
@@ -140,6 +140,37 @@ def test_summary_store_recovers_completed_snapshots_from_disk(tmp_path):
     assert snapshot.markdown_url == f"/api/summaries/{task.id}/markdown"
     assert restored.resolve_markdown(task.id) == markdown_path
     assert restored.get_cached_task("https://example.com/watch", language="zh-CN").id == task.id
+
+
+def test_summary_store_clones_completed_task_result_without_sharing_mutable_objects(tmp_path):
+    store = SummaryStore(tmp_path)
+    source = store.create_task(
+        "https://example.com/shared-result",
+        title="Demo",
+        owner_user_id="user_source",
+    )
+    markdown_path = tmp_path / source.id / "summary.md"
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text("# Demo", encoding="utf-8")
+    store.complete_task(
+        source.id,
+        result={"overview": "Demo", "key_points": ["初始要点"]},
+        markdown_path=markdown_path,
+    )
+
+    cloned = store.clone_completed_task_for_owner(source.id, "user_clone")
+    assert cloned is not None
+
+    source_snapshot = store.get_task(source.id)
+    cloned_snapshot = store.get_task(cloned.id)
+    assert source_snapshot is not None
+    assert cloned_snapshot is not None
+
+    source_snapshot.result["key_points"].append("源任务修改")
+
+    assert cloned_snapshot.result == {"overview": "Demo", "key_points": ["初始要点"]}
+    assert cloned_snapshot.result is not source_snapshot.result
+    assert cloned_snapshot.result["key_points"] is not source_snapshot.result["key_points"]
 
 
 def test_summary_store_marks_active_disk_snapshots_failed_after_restart(tmp_path):

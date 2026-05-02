@@ -8,7 +8,7 @@
 
 ## 已完成能力
 
-- 视频链接解析：通过 `POST /api/analyze` 获取标题、封面、时长、来源站点、可选格式、字幕轨道和播放列表条目。
+- 视频链接解析：通过 `POST /api/analyze` 获取标题、封面、时长、来源站点、可选格式、字幕轨道、播放列表条目和后续下载使用的 `analysis_token`。
 - 主流站点下载：普通站点统一由 `yt-dlp` 承担解析和下载，避免重复实现各平台协议细节。
 - 抖音公开视频下载：通过 F2、douyinVd 兼容解析、浏览器抓取三段式 resolver chain 提高公开视频解析成功率。
 - 下载任务管理：后端创建内存任务，前端通过 SSE 和轮询兜底同步任务状态。
@@ -18,13 +18,14 @@
 - 格式选择：前端提供“稳定 MP4（推荐）”和“原始最高画质”，后端针对 Bilibili、TikTok、YouTube 等场景调整默认格式策略。
 - 输出校验：下载完成后使用 `ffprobe` 检查媒体流，避免把缺失音频、缺失视频或不兼容的 MP4 误报为成功。
 - 运行时清理：启动时和任务完成后清理临时下载碎片，只保留最近的完成目录，失败任务会清理临时文件。
+- 个人透明额度：未登录访客、登录免费版和 Pro 个人版分别执行解析、下载、AI 总结、语音转写和 AI 追问额度；额度不够时可购买 AI 总结次数包或语音转写分钟包。
 
 ## 用户流程
 
 1. 用户在前端输入 YouTube、Bilibili、抖音、TikTok 等公开视频链接。
-2. 前端调用 `/api/analyze`，展示封面、标题、时长、格式选项和播放列表数量。
+2. 前端调用 `/api/analyze`，展示封面、标题、时长、格式选项和播放列表数量，并保存 `analysis_token`。
 3. 用户选择格式并点击下载。
-4. 前端调用 `/api/download` 创建后台任务。
+4. 前端调用 `/api/download`，携带 `analysis_token` 创建后台任务。
 5. 后端在线程中执行下载，持续写入任务进度。
 6. 前端通过 `/api/tasks/{task_id}/events` 接收 SSE 事件，同时每秒轮询 `/api/tasks/{task_id}` 作为兜底。
 7. 任务完成后，前端展示保存按钮，用户通过 `/files/{token}` 下载文件。
@@ -52,12 +53,13 @@
 ## API 面
 
 - `GET /api/health`：服务健康检查。
-- `POST /api/analyze`：解析公开视频 URL，返回标准化视频或播放列表信息。
-- `POST /api/download`：创建下载任务，返回 `task_id`。
+- `POST /api/analyze`：解析公开视频 URL，返回标准化视频或播放列表信息和 `analysis_token`。
+- `POST /api/download`：携带 URL、格式、播放列表条目和可选 `analysis_token` 创建下载任务，返回 `task_id`。
 - `GET /api/tasks/{task_id}`：读取任务快照。
 - `GET /api/tasks/{task_id}/events`：以 Server-Sent Events 推送任务状态变化。
 - `GET /api/proxy/assets/{token}`：代理封面等远程媒体资源。
 - `GET /files/{token}`：下载已完成文件。
+- `GET /api/entitlements/status`：读取当前登录用户的个人套餐、解析/下载/总结/转写用量和按量包余量。
 
 ## 抖音解析策略
 
@@ -86,6 +88,11 @@
 - `DOUYINVD_TIMEOUT_SECONDS`：douyinVd resolver 超时时间。
 - `DOUYIN_BROWSER_TIMEOUT_MS`：Playwright 浏览器解析超时时间。
 - `DOUYIN_BROWSER_CHANNEL`：浏览器 channel，默认 `chrome`。
+- `SAVEANY_IP_HASH_SALT`：匿名访客解析/下载额度的 IP 哈希盐，生产环境必须替换为服务端随机值。
+- `STRIPE_PRO_MONTHLY_PRICE_ID`：Pro 个人版月付订阅 Price ID。
+- `STRIPE_SUMMARY_SMALL_PACK_PRICE_ID`、`STRIPE_SUMMARY_LARGE_PACK_PRICE_ID`：AI 总结次数包 Price ID。
+- `STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID`、`STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID`：语音转写分钟包 Price ID。
+- 个人额度目录：`backend/app/services/plan_catalog.py` 定义匿名访客、免费版、Pro 个人版和按量包的额度、有效期和价格标签。
 
 ## 已覆盖验证
 
@@ -93,10 +100,11 @@
 - yt-dlp 服务的格式选择、URL 清洗、输出文件选择、媒体流校验和错误文案。
 - 抖音 resolver 的 F2 标准化、无 Cookie 调用、resolver chain fallback、失败边界文案。
 - 任务存储、文件 token、运行时清理策略。
-- 账号注册/登录/退出、`/api/me` 会员和免费额度摘要。
-- Mock billing、Stripe Checkout、Customer Portal、webhook 验签、事件幂等和乱序处理。
-- AI 总结登录校验、免费额度扣减、会员免扣减、失败退款和重启后中断任务退款。
-- 前端格式常量与中文 UI 文案。
+- 账号注册/登录/退出、`/api/me` 会员摘要、`/api/entitlements/status` 个人额度和按量包余量。
+- 匿名访客解析/下载限额、登录免费额度、Pro 月度 AI 总结与语音转写额度、单视频时长限制。
+- Mock billing、Stripe Checkout、Customer Portal、webhook 验签、事件幂等和乱序处理，包括 Pro 订阅和按量包购买。
+- AI 总结登录校验、个人额度扣减、按量包消耗、失败退款和重启后中断任务退款。
+- 前端格式常量、中文 UI 文案、个人套餐页、按量包卡片、账号菜单和账单区 quota meter。
 
 建议交付前执行：
 

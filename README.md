@@ -16,8 +16,8 @@ It is designed for public video learning, review, and personal knowledge organiz
 - Generate AI video summaries, transcript views, mind maps, Q&A, and Markdown learning notes.
 - Fall back to local or cloud speech-to-text for public videos without usable subtitles.
 - Register and log in with email/password accounts.
-- Gate AI video summaries with a free daily quota and Pro membership.
-- Test membership offline with mock billing, or connect Stripe Checkout for real monthly subscriptions.
+- 执行个人透明额度：未登录访客解析/下载限额、登录免费版更多额度、Pro 月度 AI 总结和语音转写额度，以及可选按量包。
+- 支持用 mock billing 离线测试个人订阅和按量包，也可接入 Stripe Checkout 处理真实月付订阅和按量包购买。
 - Publish crawlable GEO pages, `sitemap.xml`, `llms.txt`, `llms-full.txt`, and Markdown mirrors for AI search discovery.
 
 ## Safety Notes
@@ -52,7 +52,7 @@ Membership defaults to local mock billing:
 BILLING_MODE=mock
 ```
 
-For Stripe test mode, copy `backend/config/stripe.env.example` to `backend/config/stripe.env`, fill in the Stripe keys and recurring Price ID, then restart the backend. Shell environment variables still override the file for deployment. See `docs/11-membership-stripe-setup.md`.
+Stripe test mode 下，复制 `backend/config/stripe.env.example` 到 `backend/config/stripe.env`，填写 Stripe key、Pro 订阅 Price ID 和按量包 Price ID，然后重启后端。部署时 shell 环境变量仍会覆盖文件配置。详见 `docs/11-membership-stripe-setup.md`。
 
 Account endpoints include a basic IP/email rate limit. Override it with `AUTH_RATE_LIMIT_ATTEMPTS` and `AUTH_RATE_LIMIT_WINDOW_SECONDS` when needed for local testing.
 

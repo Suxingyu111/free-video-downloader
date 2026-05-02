@@ -6,6 +6,7 @@ import {
   clearAuthState,
   membershipLabel,
   membershipStatusText,
+  quotaMeterText,
   remainingSummaryText,
   updateAuthState
 } from "../src/services/authSession.js";
@@ -66,4 +67,25 @@ test("membershipStatusText explains pro edge states", () => {
   assert.equal(membershipStatusText(state), "付款失败，请更新支付方式");
   assert.equal(membershipLabel(state), "专业版付款失败");
   assert.equal(remainingSummaryText(state), "付款失败后 AI 总结额度已暂停");
+});
+
+test("quotaMeterText renders plan and pack remaining values", () => {
+  const state = authInitialState();
+  updateAuthState(state, {
+    user: { email: "user@example.com" },
+    membership: { active: false, plan: "free", status: "free" },
+    usage: {
+      daily_free_limit: 3,
+      used_today: 1,
+      remaining_today: 2,
+      membership_active: false,
+      meters: {
+        summary: { limit: 3, used: 1, remaining: 2, plan_remaining: 2, pack_remaining: 0 },
+        transcription_minutes: { limit: 30, used: 5, remaining: 25, plan_remaining: 25, pack_remaining: 0 }
+      }
+    }
+  });
+
+  assert.equal(quotaMeterText(state, "summary"), "AI 总结还剩 2 次");
+  assert.equal(quotaMeterText(state, "transcription_minutes"), "语音转写还剩 25 分钟");
 });

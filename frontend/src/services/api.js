@@ -92,6 +92,17 @@ export async function getBillingStatus() {
   return response.json();
 }
 
+export async function getEntitlementStatus() {
+  const response = await fetch("/api/entitlements/status", { credentials: "include" });
+
+  if (!response.ok) {
+    const error = await readApiError(response);
+    throw new Error(error);
+  }
+
+  return response.json();
+}
+
 export async function createBillingCheckout(payload) {
   return postJson("/api/billing/checkout", payload);
 }

@@ -1,8 +1,17 @@
+const DEFAULT_USAGE = {
+  daily_free_limit: 3,
+  used_today: 0,
+  remaining_today: 0,
+  membership_active: false,
+  meters: {},
+  credit_packs: {}
+};
+
 export function authInitialState() {
   return {
     user: null,
     membership: { active: false, plan: "free", status: "anonymous" },
-    usage: { daily_free_limit: 3, used_today: 0, remaining_today: 0, membership_active: false },
+    usage: defaultUsage(),
     billingMode: "",
     loading: false,
     error: ""
@@ -12,12 +21,10 @@ export function authInitialState() {
 export function updateAuthState(state, payload = {}) {
   state.user = payload.user || null;
   state.membership = payload.membership || { active: false, plan: "free", status: state.user ? "free" : "anonymous" };
-  state.usage = payload.usage || {
-    daily_free_limit: 3,
-    used_today: 0,
-    remaining_today: state.user ? 3 : 0,
+  state.usage = defaultUsage(payload.usage || {
+    remaining_today: state.user ? DEFAULT_USAGE.daily_free_limit : 0,
     membership_active: Boolean(state.membership?.active)
-  };
+  });
   if (payload.mode) state.billingMode = payload.mode;
   state.error = "";
 }
@@ -25,7 +32,7 @@ export function updateAuthState(state, payload = {}) {
 export function clearAuthState(state) {
   state.user = null;
   state.membership = { active: false, plan: "free", status: "anonymous" };
-  state.usage = { daily_free_limit: 3, used_today: 0, remaining_today: 0, membership_active: false };
+  state.usage = defaultUsage();
   state.error = "";
 }
 
@@ -52,4 +59,29 @@ export function remainingSummaryText(state) {
   if (state.membership?.status === "past_due") return "付款失败后 AI 总结额度已暂停";
   if (!state.user) return "登录后每天可免费总结 3 次";
   return `今日还可免费总结 ${Math.max(state.usage?.remaining_today || 0, 0)} 次`;
+}
+
+export function quotaMeterText(state, meter) {
+  const value = state.usage?.meters?.[meter];
+  if (!value) return "";
+  if (meter === "summary") return `AI 总结还剩 ${Math.max(value.remaining || 0, 0)} 次`;
+  if (meter === "transcription_minutes") return `语音转写还剩 ${Math.max(value.remaining || 0, 0)} 分钟`;
+  if (meter === "analyze") return `解析还剩 ${Math.max(value.remaining || 0, 0)} 次`;
+  if (meter === "download") return `下载还剩 ${Math.max(value.remaining || 0, 0)} 次`;
+  return "";
+}
+
+export function quotaMeterRatio(state, meter) {
+  const value = state.usage?.meters?.[meter];
+  if (!value || !value.limit) return 0;
+  return Math.max(0, Math.min(100, Math.round(((value.limit - value.used) / value.limit) * 100)));
+}
+
+function defaultUsage(usage = {}) {
+  return {
+    ...DEFAULT_USAGE,
+    ...usage,
+    meters: { ...(usage.meters || {}) },
+    credit_packs: { ...(usage.credit_packs || {}) }
+  };
 }

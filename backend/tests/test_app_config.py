@@ -114,6 +114,15 @@ def test_production_requires_secure_cookies(monkeypatch, tmp_path):
         load_config()
 
 
+def test_rejects_invalid_saveany_env(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV", "staging")
+
+    with pytest.raises(ValueError, match="SAVEANY_ENV"):
+        load_config()
+
+
 def test_production_rejects_dev_mode_and_mock_billing(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
     monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
@@ -170,6 +179,16 @@ def test_production_requires_explicit_allowed_origins_without_wildcard(monkeypat
         load_config()
 
 
+def test_allowed_origins_trim_whitespace_and_trailing_slashes(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", " https://app.example.com/ , http://localhost:5173/ ")
+
+    config = load_config()
+
+    assert config.allowed_origins == ("https://app.example.com", "http://localhost:5173")
+
+
 def test_production_requires_stripe_config_and_defaults_to_host_session_cookie(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
     monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
@@ -209,4 +228,4 @@ def test_development_defaults_include_allowed_origins_and_session_idle_days(monk
     assert config.secure_cookies is False
     assert config.password_reset_token_minutes == 30
     assert config.session_cookie_name == "saveany_session"
-    assert config.session_idle_days == 30
+    assert config.session_idle_days == 7

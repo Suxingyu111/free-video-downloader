@@ -45,7 +45,7 @@ def _strip_optional_quotes(value: str) -> str:
 
 
 def _split_csv(value: str) -> tuple[str, ...]:
-    return tuple(item.strip() for item in value.split(",") if item.strip())
+    return tuple(item.strip().rstrip("/") for item in value.split(",") if item.strip())
 
 
 @dataclass(frozen=True)
@@ -103,6 +103,8 @@ def load_config() -> AppConfig:
         return os.getenv(name, file_values.get(name, default))
 
     environment = config_value("SAVEANY_ENV", "development").strip().lower()
+    if environment not in {"development", "production"}:
+        raise ValueError("SAVEANY_ENV must be one of: development, production")
     billing_mode = config_value("BILLING_MODE", "mock").strip().lower()
     if billing_mode not in {"mock", "stripe"}:
         raise ValueError("BILLING_MODE must be one of: mock, stripe")
@@ -126,7 +128,7 @@ def load_config() -> AppConfig:
         password_reset_token_minutes=int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30")),
         session_cookie_name=session_cookie_name,
         session_days=int(os.getenv("SAVEANY_SESSION_DAYS", "30")),
-        session_idle_days=int(os.getenv("SAVEANY_SESSION_IDLE_DAYS", "30")),
+        session_idle_days=int(os.getenv("SAVEANY_SESSION_IDLE_DAYS", "7")),
         secure_cookies=_bool_env("SAVEANY_SECURE_COOKIES", False),
         public_app_url=config_value("PUBLIC_APP_URL", "http://localhost:5173").rstrip("/"),
         stripe_secret_key=config_value("STRIPE_SECRET_KEY").strip(),

@@ -218,25 +218,26 @@ class SummaryStore:
     ) -> SummarySnapshot | None:
         cache_key = build_summary_cache_key(url, language=language)
         with self._lock:
+            completed_tasks = [
+                task
+                for task in self._tasks.values()
+                if task.cache_key == cache_key and task.status == "completed"
+            ]
             if owner_user_id is not None:
                 owned_tasks = [
                     task
-                    for task in self._tasks.values()
-                    if (
-                        task.cache_key == cache_key
-                        and task.status == "completed"
-                        and task.owner_user_id == owner_user_id
-                    )
+                    for task in completed_tasks
+                    if task.owner_user_id == owner_user_id
                 ]
                 if owned_tasks:
                     return max(owned_tasks, key=lambda task: task.updated_at)
             task_id = self._cache_index.get(cache_key)
-            if not task_id:
-                return None
-            task = self._tasks.get(task_id)
-            if task is None or task.status != "completed":
-                return None
-            return task
+            task = self._tasks.get(task_id) if task_id else None
+            if task is not None and task.status == "completed":
+                return task
+            if completed_tasks:
+                return max(completed_tasks, key=lambda task: task.updated_at)
+            return None
 
     def clone_completed_task_for_owner(
         self,

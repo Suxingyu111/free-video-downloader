@@ -248,6 +248,82 @@ def test_cached_summary_creates_owned_task_for_second_user(monkeypatch, isolated
     assert second_answer.json() == {"answer": "回答：缓存内容是什么？"}
 
 
+def test_force_cross_account_cache_hit_clones_without_regenerating(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    first_client = TestClient(app)
+    second_client = TestClient(app)
+    first_headers = login(first_client, "summary-force-owner@example.com")
+    second_headers = login(second_client, "summary-force-second@example.com")
+
+    first = first_client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/force-shared-cache", "title": "Demo", "language": "zh-CN"},
+        headers=first_headers,
+    )
+    first_summary_id = first.json()["summary_id"]
+    wait_for_status(first_client, first_summary_id, "completed")
+
+    second = second_client.post(
+        "/api/summaries",
+        json={
+            "url": "https://example.com/force-shared-cache",
+            "title": "Demo",
+            "language": "zh-CN",
+            "force": True,
+        },
+        headers=second_headers,
+    )
+    second_summary_id = second.json()["summary_id"]
+
+    assert second.status_code == 200
+    assert second.json()["cache_hit"] is True
+    assert second_summary_id != first_summary_id
+    assert len(fake.calls) == 1
+    assert second_client.get(f"/api/summaries/{second_summary_id}").status_code == 200
+    assert first_client.get(f"/api/summaries/{second_summary_id}").status_code == 404
+
+
+def test_completed_cache_survives_active_task_index_for_third_user(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    first_client = TestClient(app)
+    third_client = TestClient(app)
+    first_headers = login(first_client, "summary-active-cache-owner@example.com")
+    third_headers = login(third_client, "summary-active-cache-third@example.com")
+    url = "https://example.com/completed-cache-behind-active"
+
+    first = first_client.post(
+        "/api/summaries",
+        json={"url": url, "title": "Demo", "language": "zh-CN"},
+        headers=first_headers,
+    )
+    first_summary_id = first.json()["summary_id"]
+    wait_for_status(first_client, first_summary_id, "completed")
+
+    active = isolated_summary_store.create_task(
+        url,
+        title="Demo",
+        language="zh-CN",
+        owner_user_id="user_active_cache_shadow",
+        task_id="summary_active_cache_shadow",
+    )
+    isolated_summary_store.update_task(active.id, status="summarizing", stage="summary")
+
+    third = third_client.post(
+        "/api/summaries",
+        json={"url": url, "title": "Demo", "language": "zh-CN"},
+        headers=third_headers,
+    )
+    third_summary_id = third.json()["summary_id"]
+
+    assert third.status_code == 200
+    assert third.json()["cache_hit"] is True
+    assert third_summary_id not in {first_summary_id, active.id}
+    assert len(fake.calls) == 1
+    assert third_client.get(f"/api/summaries/{third_summary_id}").status_code == 200
+
+
 def test_create_summary_reuses_completed_task_for_equivalent_bilibili_url(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)

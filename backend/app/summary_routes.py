@@ -113,12 +113,19 @@ def create_summary(payload: SummaryRequest, user: User = Depends(current_user)) 
     cached_task = summary_store.get_cached_task(payload.url, language=payload.language, owner_user_id=user.id)
     seed_result = None
     if cached_task is not None:
+        if cached_task.owner_user_id != user.id:
+            cloned_task = summary_store.clone_completed_task_for_owner(cached_task.id, user.id)
+            if cloned_task is None:
+                raise HTTPException(status_code=404, detail="Summary task not found")
+            cached_task = cloned_task
+            usage = get_usage_summary(user)
+            return {
+                "summary_id": cached_task.id,
+                "cache_hit": True,
+                "status": cached_task.status,
+                "usage": usage.as_dict(),
+            }
         if not payload.force:
-            if cached_task.owner_user_id != user.id:
-                cloned_task = summary_store.clone_completed_task_for_owner(cached_task.id, user.id)
-                if cloned_task is None:
-                    raise HTTPException(status_code=404, detail="Summary task not found")
-                cached_task = cloned_task
             usage = get_usage_summary(user)
             return {
                 "summary_id": cached_task.id,

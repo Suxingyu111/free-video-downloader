@@ -71,10 +71,11 @@ def test_register_login_me_logout_flow(monkeypatch, tmp_path):
     assert me.json()["user"]["email"] == "user@example.com"
     assert me.json()["membership"]["plan"] == "free"
     assert me.json()["usage"]["daily_free_limit"] == 3
+    assert me.json()["csrf_token"]
 
     logout = client.post(
         "/api/auth/logout",
-        headers={"x-csrf-token": login.json()["csrf_token"], "origin": "http://localhost:5173"},
+        headers={"x-csrf-token": me.json()["csrf_token"], "origin": "http://localhost:5173"},
     )
     assert logout.status_code == 200
     assert client.get("/api/me").status_code == 401
@@ -158,6 +159,21 @@ def test_me_refreshes_idle_session_expiry(monkeypatch, tmp_path):
     refreshed_expires_at = session_expiry(db_path)
     assert refreshed_expires_at > original_expires_at
     assert refreshed_expires_at < absolute_expires_at
+
+
+def test_me_recovers_stable_session_csrf_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+    register_with_csrf(client, "stable-csrf@example.com", "correct horse battery staple")
+
+    first = client.get("/api/me")
+    second = client.get("/api/me")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["csrf_token"]
+    assert second.json()["csrf_token"] == first.json()["csrf_token"]
 
 
 def test_me_refreshes_idle_session_expiry_without_exceeding_absolute(monkeypatch, tmp_path):
@@ -245,6 +261,33 @@ def test_login_rate_limit_blocks_repeated_failures(monkeypatch, tmp_path):
     assert second.status_code == 401
     assert blocked.status_code == 429
     assert blocked.json()["detail"] == "操作太频繁，请稍后再试"
+
+
+def test_register_ip_rate_limit_ignores_spoofed_forwarded_for_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ATTEMPTS", "2")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/auth/register",
+        json={"email": "spoof-one@example.com", "password": "correct horse battery staple"},
+        headers={**csrf_headers(client), "x-forwarded-for": "203.0.113.10"},
+    )
+    second = client.post(
+        "/api/auth/register",
+        json={"email": "spoof-two@example.com", "password": "correct horse battery staple"},
+        headers={**csrf_headers(client), "x-forwarded-for": "203.0.113.11"},
+    )
+    blocked = client.post(
+        "/api/auth/register",
+        json={"email": "spoof-three@example.com", "password": "correct horse battery staple"},
+        headers={**csrf_headers(client), "x-forwarded-for": "203.0.113.12"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert blocked.status_code == 429
 
 
 def test_successful_login_clears_failed_login_rate_limit(monkeypatch, tmp_path):

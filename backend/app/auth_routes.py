@@ -15,9 +15,11 @@ from app.services.auth_service import (
     create_user,
     get_user_by_session_token,
     reset_password,
+    rotate_session_csrf_token,
     revoke_session,
     verify_session_csrf_token,
 )
+from app.services.client_ip import client_ip_from_request
 from app.services.billing_service import get_membership
 from app.services.csrf import (
     assert_same_origin,
@@ -52,12 +54,7 @@ class PasswordResetConfirm(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or "unknown"
-    if request.client:
-        return request.client.host
-    return "unknown"
+    return client_ip_from_request(request)
 
 
 def _rate_limit_keys(action: str, request: Request, email: str) -> list[str]:
@@ -209,8 +206,10 @@ def logout(request: Request, response: Response, _: User = Depends(current_user)
 
 
 @router.get("/me")
-def me(user: User = Depends(current_user)) -> dict:
-    return _me_payload(user)
+def me(request: Request, user: User = Depends(current_user)) -> dict:
+    config = load_config()
+    csrf_token = rotate_session_csrf_token(request.cookies.get(config.session_cookie_name))
+    return _me_payload(user, csrf_token)
 
 
 @router.post("/auth/password-reset/request")

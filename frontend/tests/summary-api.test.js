@@ -158,6 +158,29 @@ test("session mutation helpers send the latest session CSRF token", async () => 
   );
 });
 
+test("getMe stores recovered session CSRF token for later mutations", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options]);
+    if (url === "/api/me") {
+      return jsonResponse({ user: { email: "user@example.com" }, csrf_token: "recovered-session-csrf" });
+    }
+    if (url === "/api/summaries") {
+      assert.equal(options.headers["x-csrf-token"], "recovered-session-csrf");
+      return jsonResponse({ summary_id: "summary_456" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  await getMe();
+  await createSummaryTask({ url: "https://example.com/video", title: "Demo", language: "zh-CN" });
+
+  assert.deepEqual(
+    calls.map(([url]) => url),
+    ["/api/me", "/api/summaries"]
+  );
+});
+
 
 test("billing API helpers include browser credentials", async () => {
   const calls = [];

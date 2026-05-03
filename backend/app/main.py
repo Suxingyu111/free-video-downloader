@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import secrets
 import shutil
+import socket
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -23,6 +25,7 @@ from app.entitlement_routes import router as entitlement_router
 from app.services.analysis_store import AnalysisSnapshot, analysis_store
 from app.services.asset_store import asset_store
 from app.services.auth_service import User
+from app.services.client_ip import client_ip_from_request
 from app.services.database import initialize_database
 from app.services.env_file import bool_env_enabled, env_value
 from app.services.geo_monitor import append_geo_access_log
@@ -32,7 +35,14 @@ from app.services.plan_catalog import MeterType
 from app.services.runtime_cleanup import cleanup_failed_download
 from app.services.runtime_cleanup import prune_download_directories
 from app.services.task_store import task_store
-from app.services.usage_meter import MeterExceeded, assert_duration_allowed, consume_anonymous_meter, reserve_user_meter
+from app.services.usage_meter import (
+    MeterExceeded,
+    assert_duration_allowed,
+    consume_anonymous_meter,
+    refund_anonymous_meter,
+    refund_reservation,
+    reserve_user_meter,
+)
 from app.services.ytdlp_service import DEFAULT_FORMAT, DEFAULT_HTTP_HEADERS, YtDlpService, friendly_error_message
 from app.summary_routes import refund_interrupted_summary_quotas
 from app.summary_routes import router as summary_router
@@ -48,6 +58,8 @@ FRONTEND_HTML_CACHE_CONTROL = "no-cache"
 FRONTEND_STATIC_CACHE_CONTROL = "public, max-age=31536000, immutable"
 FRONTEND_DISCOVERY_CACHE_CONTROL = "public, max-age=300"
 CANONICAL_REDIRECT_ENV_VALUES = {"1", "true", "yes", "on"}
+PROXY_ASSET_MAX_BYTES = 5 * 1024 * 1024
+PROXY_ASSET_MAX_REDIRECTS = 3
 FRONTEND_MEDIA_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".md": "text/markdown; charset=utf-8",
@@ -109,12 +121,7 @@ def _is_transient_youtube_bot_check(exc: Exception) -> bool:
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or "unknown"
-    if request.client:
-        return request.client.host
-    return "unknown"
+    return client_ip_from_request(request)
 
 
 def _analysis_snapshot_matches(snapshot: AnalysisSnapshot, url: str) -> bool:
@@ -171,6 +178,60 @@ def proxy_media_assets(result: dict) -> dict:
             entry.get("url") or webpage_url,
         )
     return result
+
+
+def _asset_url_not_allowed() -> HTTPException:
+    return HTTPException(status_code=400, detail="Remote asset URL is not allowed")
+
+
+def _is_forbidden_proxy_ip(address: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return True
+    return not ip.is_global
+
+
+def _assert_proxyable_asset_url(url: str) -> None:
+    parts = urlsplit(str(url))
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise _asset_url_not_allowed()
+
+    host = parts.hostname.strip().lower().rstrip(".")
+    if host == "localhost":
+        raise _asset_url_not_allowed()
+
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        try:
+            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise HTTPException(status_code=502, detail="Remote asset host could not be resolved") from exc
+        if not infos:
+            raise HTTPException(status_code=502, detail="Remote asset host could not be resolved")
+        if any(_is_forbidden_proxy_ip(item[4][0]) for item in infos):
+            raise _asset_url_not_allowed()
+        return
+
+    if _is_forbidden_proxy_ip(host):
+        raise _asset_url_not_allowed()
+
+
+def _asset_content_type_allowed(content_type: str | None) -> bool:
+    if not content_type:
+        return True
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type.startswith("image/")
+
+
+def _asset_content_length(headers) -> int | None:
+    try:
+        value = headers.get("content-length")
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _frontend_media_type(path: Path) -> str | None:
@@ -371,7 +432,28 @@ async def analyze(
         raise HTTPException(status_code=400, detail=friendly_error_message(exc)) from exc
 
 
-def _run_download(task_id: str, payload: DownloadRequest) -> None:
+def _refund_download_quota(
+    *,
+    reservation_id: str | None,
+    anonymous_ip: str | None,
+    amount: int,
+) -> None:
+    try:
+        if reservation_id:
+            refund_reservation(reservation_id)
+        elif anonymous_ip and amount > 0:
+            refund_anonymous_meter(anonymous_ip, MeterType.DOWNLOAD, amount=amount)
+    except Exception:
+        pass
+
+
+def _run_download(
+    task_id: str,
+    payload: DownloadRequest,
+    quota_reservation_id: str | None = None,
+    anonymous_quota_ip: str | None = None,
+    quota_amount: int = 0,
+) -> None:
     task_dir = DOWNLOAD_DIR / task_id
 
     def progress_hook(status: dict) -> None:
@@ -423,6 +505,11 @@ def _run_download(task_id: str, payload: DownloadRequest) -> None:
             exclude_task_ids=task_store.active_task_ids(),
         )
     except Exception as exc:
+        _refund_download_quota(
+            reservation_id=quota_reservation_id,
+            anonymous_ip=anonymous_quota_ip,
+            amount=quota_amount,
+        )
         task_store.update_task(
             task_id,
             status="failed",
@@ -453,17 +540,33 @@ def create_download(
     except MeterExceeded as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
     entry_count = len(payload.entry_ids) if payload.entry_ids else max(len(result.get("entries") or []), 1)
+    quota_reservation_id = None
+    anonymous_quota_ip = None
     try:
         if user:
-            reserve_user_meter(user, MeterType.DOWNLOAD, entry_count, reservation_id=f"download_{secrets.token_urlsafe(10)}")
+            quota_reservation_id = f"download_{secrets.token_urlsafe(10)}"
+            reserve_user_meter(user, MeterType.DOWNLOAD, entry_count, reservation_id=quota_reservation_id)
         else:
-            consume_anonymous_meter(_client_ip(request), MeterType.DOWNLOAD, amount=entry_count)
+            anonymous_quota_ip = _client_ip(request)
+            consume_anonymous_meter(anonymous_quota_ip, MeterType.DOWNLOAD, amount=entry_count)
     except MeterExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
 
-    task = task_store.create_task(payload.url)
-    worker = threading.Thread(target=_run_download, args=(task.id, payload), daemon=True)
-    worker.start()
+    try:
+        task = task_store.create_task(payload.url)
+        worker = threading.Thread(
+            target=_run_download,
+            args=(task.id, payload, quota_reservation_id, anonymous_quota_ip, entry_count),
+            daemon=True,
+        )
+        worker.start()
+    except Exception as exc:
+        _refund_download_quota(
+            reservation_id=quota_reservation_id,
+            anonymous_ip=anonymous_quota_ip,
+            amount=entry_count,
+        )
+        raise HTTPException(status_code=500, detail="下载任务创建失败，请稍后重试。") from exc
     return {"task_id": task.id}
 
 
@@ -509,22 +612,51 @@ async def proxy_asset(token: str) -> Response:
         headers["Referer"] = asset.referer
 
     try:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            upstream = await client.get(asset.url, headers=headers)
+        current_url = asset.url
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+            for _ in range(PROXY_ASSET_MAX_REDIRECTS + 1):
+                _assert_proxyable_asset_url(current_url)
+                async with client.stream("GET", current_url, headers=headers) as upstream:
+                    if upstream.status_code in {301, 302, 303, 307, 308}:
+                        location = upstream.headers.get("location")
+                        if not location:
+                            raise HTTPException(status_code=502, detail="Remote asset redirect is missing location")
+                        current_url = urljoin(current_url, location)
+                        continue
+
+                    if upstream.status_code >= 400:
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"Remote asset request failed with status {upstream.status_code}",
+                        )
+
+                    content_type = upstream.headers.get("content-type", "application/octet-stream")
+                    if not _asset_content_type_allowed(content_type):
+                        raise HTTPException(status_code=502, detail="Remote asset content type is not allowed")
+
+                    content_length = _asset_content_length(upstream.headers)
+                    if content_length is not None and content_length > PROXY_ASSET_MAX_BYTES:
+                        raise HTTPException(status_code=502, detail="Remote asset is too large")
+
+                    chunks: list[bytes] = []
+                    received = 0
+                    async for chunk in upstream.aiter_bytes():
+                        if not chunk:
+                            continue
+                        received += len(chunk)
+                        if received > PROXY_ASSET_MAX_BYTES:
+                            raise HTTPException(status_code=502, detail="Remote asset is too large")
+                        chunks.append(chunk)
+
+                    return Response(
+                        content=b"".join(chunks),
+                        media_type=content_type,
+                        headers={"Cache-Control": "private, max-age=3600"},
+                    )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to proxy remote asset: {exc}") from exc
 
-    if upstream.status_code >= 400:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Remote asset request failed with status {upstream.status_code}",
-        )
-
-    return Response(
-        content=upstream.content,
-        media_type=upstream.headers.get("content-type", "application/octet-stream"),
-        headers={"Cache-Control": "private, max-age=3600"},
-    )
+    raise HTTPException(status_code=502, detail="Remote asset redirected too many times")
 
 
 @app.get("/files/{token}")

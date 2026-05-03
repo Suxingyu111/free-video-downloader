@@ -21,6 +21,7 @@ APP_CONFIG_ENV_KEYS = [
     "SAVEANY_SESSION_COOKIE",
     "SAVEANY_SESSION_DAYS",
     "SAVEANY_SESSION_IDLE_DAYS",
+    "SAVEANY_TRUST_PROXY_HEADERS",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "STRIPE_PRO_MONTHLY_PRICE_ID",
@@ -60,6 +61,20 @@ def test_load_config_reads_env_file(monkeypatch, tmp_path):
     assert config.stripe_secret_key == "sk_test_file"
     assert config.stripe_webhook_secret == "whsec_file"
     assert config.stripe_pro_monthly_price_id == "price_file"
+
+
+def test_load_config_trust_proxy_headers_is_opt_in(monkeypatch):
+    clear_app_config_env(monkeypatch)
+
+    default_config = load_config()
+
+    assert default_config.trust_proxy_headers is False
+
+    monkeypatch.setenv("SAVEANY_TRUST_PROXY_HEADERS", "true")
+
+    trusted_config = load_config()
+
+    assert trusted_config.trust_proxy_headers is True
 
 
 def test_load_config_reads_project_env_file(monkeypatch, tmp_path):

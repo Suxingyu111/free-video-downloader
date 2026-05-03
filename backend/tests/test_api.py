@@ -8,6 +8,8 @@ from app.main import DownloadRequest
 from app.main import app
 from app.main import proxy_media_assets
 from app.services import database
+from app.services.auth_service import create_session, create_user
+from app.services.plan_catalog import MeterType
 
 
 def test_health_endpoint_returns_ok():
@@ -214,6 +216,89 @@ def test_anonymous_analyze_limit_blocks_fourth_request(monkeypatch, tmp_path):
 
     assert blocked.status_code == 429
     assert "访客解析次数已用完" in blocked.json()["detail"]
+
+
+def test_anonymous_analyze_limit_ignores_spoofed_forwarded_for_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("SAVEANY_DEMO_MODE", "true")
+    database.initialize_database(tmp_path / "saveany.db")
+    client = TestClient(app)
+
+    for index in range(3):
+        response = client.post(
+            "/api/analyze",
+            data={"url": "https://demo.saveany.local/video"},
+            headers={"x-forwarded-for": f"203.0.113.{index + 10}"},
+        )
+        assert response.status_code == 200
+
+    blocked = client.post(
+        "/api/analyze",
+        data={"url": "https://demo.saveany.local/video"},
+        headers={"x-forwarded-for": "203.0.113.99"},
+    )
+
+    assert blocked.status_code == 429
+    assert "访客解析次数已用完" in blocked.json()["detail"]
+
+
+def test_proxy_asset_rejects_private_network_url():
+    token = main.asset_store.register("http://127.0.0.1:1/private.jpg")
+    client = TestClient(app)
+
+    response = client.get(f"/api/proxy/assets/{token}")
+
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
+
+
+def test_proxy_asset_rejects_oversized_response(monkeypatch):
+    token = main.asset_store.register("https://8.8.8.8/asset.png")
+
+    class LargeAssetResponse:
+        status_code = 200
+        headers = {
+            "content-type": "image/png",
+            "content-length": str(main.PROXY_ASSET_MAX_BYTES + 1),
+        }
+        content = b"small"
+        is_redirect = False
+
+        def raise_for_status(self):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def aiter_bytes(self):
+            yield self.content
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return LargeAssetResponse()
+
+        def stream(self, *args, **kwargs):
+            return LargeAssetResponse()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeAsyncClient)
+    client = TestClient(app)
+
+    response = client.get(f"/api/proxy/assets/{token}")
+
+    assert response.status_code == 502
+    assert "too large" in response.json()["detail"]
 
 
 def test_download_uses_analysis_token_and_anonymous_limit(monkeypatch, tmp_path):
@@ -450,3 +535,127 @@ def test_download_analysis_token_matches_canonical_webpage_url(monkeypatch, tmp_
 
     assert response.status_code == 200
     assert fake_service.analyze_calls == [original_url]
+
+
+def test_failed_user_download_refunds_reserved_download_quota(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    user = create_user("download-refund@example.com", "download-password")
+    url = "https://example.com/failing-download"
+    token = main.analysis_store.create(
+        url,
+        {
+            "kind": "video",
+            "webpage_url": url,
+            "duration": 120,
+            "entries": [],
+        },
+    )
+
+    class FailingDownloadService:
+        def download(self, **kwargs):
+            raise RuntimeError("network failed")
+
+    class ImmediateThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(main, "service", FailingDownloadService())
+    monkeypatch.setattr(main.threading, "Thread", ImmediateThread)
+    client = TestClient(app)
+    session = create_session(user.id)
+    client.cookies.set("saveany_session", session.session_token)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "analysis_token": token,
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute(
+            "select coalesce(sum(download_count), 0) as used from usage_periods where user_id = ?",
+            (user.id,),
+        ).fetchone()
+        reservation = conn.execute(
+            "select status, refunded_at from meter_reservations where user_id = ? and meter_type = ?",
+            (user.id, MeterType.DOWNLOAD.value),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 200
+    assert int(usage["used"]) == 0
+    assert reservation["status"] == "refunded"
+    assert reservation["refunded_at"] is not None
+
+
+def test_failed_anonymous_download_refunds_daily_download_quota(monkeypatch, tmp_path):
+    db_path = tmp_path / "saveany.db"
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(db_path))
+    database.initialize_database(db_path)
+    url = "https://example.com/failing-anonymous-download"
+    token = main.analysis_store.create(
+        url,
+        {
+            "kind": "video",
+            "webpage_url": url,
+            "duration": 120,
+            "entries": [],
+        },
+    )
+
+    class FailingDownloadService:
+        def download(self, **kwargs):
+            raise RuntimeError("network failed")
+
+    class ImmediateThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(main, "service", FailingDownloadService())
+    monkeypatch.setattr(main.threading, "Thread", ImmediateThread)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": url,
+            "analysis_token": token,
+            "format_id": "best",
+            "entry_ids": [],
+            "subtitle_langs": [],
+            "write_auto_subs": False,
+            "prefer_srt": True,
+        },
+    )
+
+    conn = database.connect(db_path)
+    try:
+        usage = conn.execute(
+            "select coalesce(sum(download_count), 0) as used from anonymous_usage"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert response.status_code == 200
+    assert int(usage["used"]) == 0

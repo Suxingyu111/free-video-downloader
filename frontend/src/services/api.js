@@ -59,7 +59,9 @@ export async function getMe() {
     throw new Error(error);
   }
 
-  return response.json();
+  const data = await response.json();
+  if (data.csrf_token) storeSessionCsrfToken(data.csrf_token);
+  return data;
 }
 
 export async function registerAccount(payload) {

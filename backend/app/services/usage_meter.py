@@ -175,6 +175,34 @@ def consume_anonymous_meter(
     return {"limit": limit, "used": next_used, "remaining": max(limit - next_used, 0)}
 
 
+def refund_anonymous_meter(ip: str, meter_type: MeterType, amount: int = 1) -> dict | None:
+    if amount <= 0:
+        raise ValueError("amount must be positive")
+    if meter_type not in {MeterType.ANALYZE, MeterType.DOWNLOAD}:
+        return None
+    column = _column_for_meter(meter_type)
+    usage_date = current_period_key(PeriodType.DAY)
+    ip_hash = _anonymous_ip_hash(ip)
+    now = time()
+    with transaction() as conn:
+        row = conn.execute(
+            f"select {column} from anonymous_usage where ip_hash = ? and usage_date = ?",
+            (ip_hash, usage_date),
+        ).fetchone()
+        if row is None:
+            return None
+        next_used = max(int(row[column]) - amount, 0)
+        conn.execute(
+            f"""
+            update anonymous_usage
+            set {column} = ?, updated_at = ?
+            where ip_hash = ? and usage_date = ?
+            """,
+            (next_used, now, ip_hash, usage_date),
+        )
+    return {"used": next_used, "refunded": True}
+
+
 def anonymous_usage_summary(ip: str) -> dict:
     usage_date = current_period_key(PeriodType.DAY)
     ip_hash = _anonymous_ip_hash(ip)

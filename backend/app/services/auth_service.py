@@ -10,7 +10,6 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
 from app.services.app_config import load_config
-from app.services.csrf import create_session_csrf_token
 from app.services.database import connect, transaction
 
 
@@ -43,6 +42,11 @@ def normalize_email(email: str) -> str:
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _session_csrf_token(session_token: str) -> str:
+    key = f"{load_config().ip_hash_salt}:session-csrf".encode("utf-8")
+    return hmac.new(key, session_token.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _row_to_user(row) -> User:
@@ -100,7 +104,7 @@ def create_session(
     config = load_config()
     now = time()
     token = secrets.token_urlsafe(32)
-    csrf_token = create_session_csrf_token()
+    csrf_token = _session_csrf_token(token)
     with transaction() as conn:
         conn.execute(
             """
@@ -195,6 +199,35 @@ def verify_session_csrf_token(session_token: str | None, csrf_token: str | None)
     if row is None or not row["csrf_token_hash"]:
         return False
     return hmac.compare_digest(row["csrf_token_hash"], _hash_token(csrf_token))
+
+
+def rotate_session_csrf_token(session_token: str | None) -> str | None:
+    if not session_token:
+        return None
+    now = time()
+    csrf_token = _session_csrf_token(session_token)
+    with transaction() as conn:
+        row = conn.execute(
+            """
+            select id from sessions
+            where session_token_hash = ?
+              and expires_at > ?
+              and coalesce(absolute_expires_at, expires_at) > ?
+              and revoked_at is null
+            """,
+            (_hash_token(session_token), now, now),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            """
+            update sessions
+            set csrf_token_hash = ?, last_seen_at = ?
+            where id = ?
+            """,
+            (_hash_token(csrf_token), now, row["id"]),
+        )
+    return csrf_token
 
 
 def get_user_by_id(user_id: str) -> User | None:

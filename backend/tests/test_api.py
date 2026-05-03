@@ -1,10 +1,12 @@
 import inspect
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
 from app.main import DownloadRequest
+from app.main import _assert_proxyable_asset_url
 from app.main import app
 from app.main import proxy_media_assets
 from app.services import database
@@ -24,11 +26,11 @@ def test_health_endpoint_returns_ok():
 def test_proxy_media_assets_rewrites_video_and_playlist_thumbnails():
     result = {
         "webpage_url": "https://www.bilibili.com/video/BV1root",
-        "thumbnail": "https://i0.hdslb.com/root.jpg",
+        "thumbnail": "http://i0.hdslb.com/root.jpg",
         "entries": [
             {
                 "url": "https://www.bilibili.com/video/BV1child",
-                "thumbnail": "https://i0.hdslb.com/child.jpg",
+                "thumbnail": "http://i0.hdslb.com/child.jpg",
             }
         ],
     }
@@ -36,7 +38,50 @@ def test_proxy_media_assets_rewrites_video_and_playlist_thumbnails():
     rewritten = proxy_media_assets(result)
 
     assert rewritten["thumbnail"].startswith("/api/proxy/assets/")
+    assert rewritten["thumbnail_fallback_url"] == "https://i0.hdslb.com/root.jpg"
     assert rewritten["entries"][0]["thumbnail"].startswith("/api/proxy/assets/")
+    assert rewritten["entries"][0]["thumbnail_fallback_url"] == "https://i0.hdslb.com/child.jpg"
+
+
+def test_proxy_allows_known_bilibili_image_cdn_with_private_dns_resolution(monkeypatch):
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [(None, None, None, "", ("10.8.0.35", 443))]
+
+    monkeypatch.setattr(main.socket, "getaddrinfo", fake_getaddrinfo)
+
+    _assert_proxyable_asset_url("https://i1.hdslb.com/bfs/archive/demo.jpg")
+
+
+def test_proxy_allows_known_youtube_image_cdn_with_private_dns_resolution(monkeypatch):
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [(None, None, None, "", ("172.20.0.33", 443))]
+
+    monkeypatch.setattr(main.socket, "getaddrinfo", fake_getaddrinfo)
+
+    _assert_proxyable_asset_url("https://i.ytimg.com/vi/5RxQ9D2eMc0/hqdefault.jpg")
+    _assert_proxyable_asset_url("https://img.youtube.com/vi/5RxQ9D2eMc0/hqdefault.jpg")
+
+
+def test_proxy_allows_known_douyin_image_cdn_with_private_dns_resolution(monkeypatch):
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [(None, None, None, "", ("192.168.50.37", 443))]
+
+    monkeypatch.setattr(main.socket, "getaddrinfo", fake_getaddrinfo)
+
+    _assert_proxyable_asset_url("https://p3-sign.douyinpic.com/tos-cn-i-dy/demo.webp")
+    _assert_proxyable_asset_url("https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/demo.webp")
+
+
+def test_proxy_still_rejects_unknown_hosts_resolving_to_private_ip(monkeypatch):
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [(None, None, None, "", ("10.8.0.35", 443))]
+
+    monkeypatch.setattr(main.socket, "getaddrinfo", fake_getaddrinfo)
+
+    with pytest.raises(Exception) as exc_info:
+        _assert_proxyable_asset_url("https://media.example.test/thumb.jpg")
+
+    assert getattr(exc_info.value, "detail", "") == "Remote asset URL is not allowed"
 
 
 def test_api_contract_has_no_manual_cookie_fields():

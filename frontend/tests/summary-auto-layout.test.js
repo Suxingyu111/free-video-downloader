@@ -27,6 +27,24 @@ test("analyzed results appear below the unchanged hero search area", () => {
   assert.doesNotMatch(mainCss, /\.hero-workbench\b/);
 });
 
+test("analyzed result card exposes parsed video basics and description", () => {
+  assert.match(appSource, /const videoDescription = computed/);
+  assert.match(appSource, /const videoDetails = computed/);
+  assert.match(appSource, /const videoThumbnailSrc = computed/);
+  assert.match(appSource, /function handleThumbnailError/);
+  assert.match(appSource, /thumbnail_fallback_url/);
+  assert.match(appSource, /@error="handleThumbnailError"/);
+  assert.match(appSource, /class="result-detail-grid"/);
+  assert.match(appSource, /class="result-description"/);
+  assert.match(appSource, /label:\s*"UP 主"/);
+  assert.match(appSource, /label:\s*"播放"/);
+  assert.match(appSource, /label:\s*"发布"/);
+  assert.match(appSource, /formatCompactCount/);
+  assert.match(appSource, /formatPublishDate/);
+  assert.match(mainCss, /\.result-detail-grid\s*\{/);
+  assert.match(mainCss, /\.result-description\s*\{/);
+});
+
 test("hero search area keeps the search box compact while adding vertical breathing room", () => {
   assert.match(mainCss, /\.topbar\s*\{[\s\S]*min-height:\s*76px/);
   assert.match(mainCss, /\.hero\s*\{[\s\S]*min-height:\s*auto/);

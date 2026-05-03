@@ -76,13 +76,27 @@ def fetch_bilibili_public_metadata(
             player_data = {}
 
     subtitles = _normalize_player_subtitles(player_data)
+    owner = view_data.get("owner") if isinstance(view_data.get("owner"), dict) else {}
+    stat = view_data.get("stat") if isinstance(view_data.get("stat"), dict) else {}
+    tname = view_data.get("tname")
     return {
         "kind": "video",
         "id": view_data.get("bvid") or bvid,
         "title": view_data.get("title") or "Untitled",
+        "description": view_data.get("desc") or "",
         "webpage_url": referer,
         "thumbnail": view_data.get("pic"),
         "duration": view_data.get("duration"),
+        "uploader": owner.get("name"),
+        "uploader_id": owner.get("mid"),
+        "timestamp": view_data.get("pubdate"),
+        "categories": [tname] if tname else [],
+        "view_count": stat.get("view"),
+        "like_count": stat.get("like"),
+        "favorite_count": stat.get("favorite"),
+        "comment_count": stat.get("reply"),
+        "danmaku_count": stat.get("danmaku"),
+        "share_count": stat.get("share"),
         "extractor": "bilibili-public",
         "formats": [],
         "subtitles": subtitles,

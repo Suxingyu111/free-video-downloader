@@ -60,6 +60,25 @@ FRONTEND_DISCOVERY_CACHE_CONTROL = "public, max-age=300"
 CANONICAL_REDIRECT_ENV_VALUES = {"1", "true", "yes", "on"}
 PROXY_ASSET_MAX_BYTES = 5 * 1024 * 1024
 PROXY_ASSET_MAX_REDIRECTS = 3
+TRUSTED_PUBLIC_ASSET_HOST_SUFFIXES = (
+    "hdslb.com",
+    "ytimg.com",
+    "img.youtube.com",
+    "ggpht.com",
+    "googleusercontent.com",
+    "douyinpic.com",
+    "douyinstatic.com",
+    "byteimg.com",
+    "pstatp.com",
+    "tiktokcdn.com",
+    "tiktokcdn-us.com",
+    "byteoversea.com",
+    "ibytedtos.com",
+    "muscdn.com",
+    "ttwstatic.com",
+    "cdninstagram.com",
+    "fbcdn.net",
+)
 FRONTEND_MEDIA_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".md": "text/markdown; charset=utf-8",
@@ -159,22 +178,45 @@ class DownloadRequest(BaseModel):
     prefer_srt: bool = True
 
 
-def _asset_proxy_url(url: str | None, referer: str | None) -> str | None:
+def _is_remote_asset_url(url: str | None) -> bool:
     if not url:
-        return None
+        return False
     parts = urlsplit(url)
-    if parts.scheme not in {"http", "https"} or not parts.netloc:
+    return parts.scheme in {"http", "https"} and bool(parts.netloc)
+
+
+def _normalize_remote_asset_url(url: str | None) -> str | None:
+    if not _is_remote_asset_url(url):
         return url
-    token = asset_store.register(url, referer=referer)
+    parts = urlsplit(str(url))
+    host = (parts.hostname or "").strip().lower().rstrip(".")
+    if parts.scheme == "http" and _is_trusted_public_asset_host(host):
+        return urlunsplit(("https", parts.netloc, parts.path, parts.query, parts.fragment))
+    return str(url)
+
+
+def _asset_proxy_url(url: str | None, referer: str | None) -> str | None:
+    normalized_url = _normalize_remote_asset_url(url)
+    if not normalized_url:
+        return None
+    if not _is_remote_asset_url(normalized_url):
+        return normalized_url
+    token = asset_store.register(normalized_url, referer=referer)
     return f"/api/proxy/assets/{token}"
 
 
 def proxy_media_assets(result: dict) -> dict:
     webpage_url = result.get("webpage_url")
-    result["thumbnail"] = _asset_proxy_url(result.get("thumbnail"), webpage_url)
+    thumbnail = _normalize_remote_asset_url(result.get("thumbnail"))
+    if _is_remote_asset_url(thumbnail):
+        result["thumbnail_fallback_url"] = thumbnail
+    result["thumbnail"] = _asset_proxy_url(thumbnail, webpage_url)
     for entry in result.get("entries") or []:
+        entry_thumbnail = _normalize_remote_asset_url(entry.get("thumbnail"))
+        if _is_remote_asset_url(entry_thumbnail):
+            entry["thumbnail_fallback_url"] = entry_thumbnail
         entry["thumbnail"] = _asset_proxy_url(
-            entry.get("thumbnail"),
+            entry_thumbnail,
             entry.get("url") or webpage_url,
         )
     return result
@@ -190,6 +232,14 @@ def _is_forbidden_proxy_ip(address: str) -> bool:
     except ValueError:
         return True
     return not ip.is_global
+
+
+def _is_trusted_public_asset_host(host: str) -> bool:
+    return any(host == suffix or host.endswith(f".{suffix}") for suffix in TRUSTED_PUBLIC_ASSET_HOST_SUFFIXES)
+
+
+def _is_proxyable_resolved_address(host: str, address: str) -> bool:
+    return _is_trusted_public_asset_host(host) or not _is_forbidden_proxy_ip(address)
 
 
 def _assert_proxyable_asset_url(url: str) -> None:
@@ -211,11 +261,11 @@ def _assert_proxyable_asset_url(url: str) -> None:
             raise HTTPException(status_code=502, detail="Remote asset host could not be resolved") from exc
         if not infos:
             raise HTTPException(status_code=502, detail="Remote asset host could not be resolved")
-        if any(_is_forbidden_proxy_ip(item[4][0]) for item in infos):
+        if any(not _is_proxyable_resolved_address(host, item[4][0]) for item in infos):
             raise _asset_url_not_allowed()
         return
 
-    if _is_forbidden_proxy_ip(host):
+    if not _is_proxyable_resolved_address(host, host):
         raise _asset_url_not_allowed()
 
 

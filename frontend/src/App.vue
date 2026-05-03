@@ -264,6 +264,8 @@ const state = reactive({
   summaryQaHistory: [],
   askingSummaryQuestion: false,
   result: null,
+  thumbnailFallbackTried: false,
+  thumbnailUnavailable: false,
   currentTaskId: null,
   currentSummaryId: null,
   summaryTask: null,
@@ -382,6 +384,26 @@ const formatOptions = computed(() => {
     ...sourceFormats
   ];
 });
+const videoDescription = computed(() => {
+  const description = typeof state.result?.description === "string" ? state.result.description.trim() : "";
+  if (!description || description === state.result?.title) return "";
+  return description;
+});
+const videoDetails = computed(() => {
+  const result = state.result || {};
+  const details = [];
+  if (result.uploader) details.push({ label: "UP 主", value: result.uploader });
+  const viewCount = formatCompactCount(result.view_count);
+  if (viewCount) details.push({ label: "播放", value: viewCount });
+  const likeCount = formatCompactCount(result.like_count);
+  if (likeCount) details.push({ label: "点赞", value: likeCount });
+  const commentCount = formatCompactCount(result.comment_count);
+  if (commentCount) details.push({ label: "评论", value: commentCount });
+  const publishDate = formatPublishDate(result.timestamp || result.upload_date);
+  if (publishDate) details.push({ label: "发布", value: publishDate });
+  return details;
+});
+const videoThumbnailSrc = computed(() => (state.thumbnailUnavailable ? "" : state.result?.thumbnail || ""));
 const currentTask = computed(() => state.tasks.find((task) => task.id === state.currentTaskId) || null);
 const isTaskRunning = computed(() => ["queued", "processing", "downloading"].includes(currentTask.value?.status));
 const isBusy = computed(() => state.analyzing || state.downloading || isTaskRunning.value);
@@ -858,6 +880,7 @@ async function handleAnalyze() {
   if (showWorkspaceRestore.value) dismissWorkspaceRestore();
   state.error = "";
   state.result = null;
+  resetThumbnailFallback();
   state.analyzedUrl = "";
   state.currentTaskId = null;
   clearCurrentSummary();
@@ -874,6 +897,21 @@ async function handleAnalyze() {
   } finally {
     state.analyzing = false;
   }
+}
+
+function resetThumbnailFallback() {
+  state.thumbnailFallbackTried = false;
+  state.thumbnailUnavailable = false;
+}
+
+function handleThumbnailError() {
+  const fallbackUrl = state.result?.thumbnail_fallback_url;
+  if (!state.thumbnailFallbackTried && fallbackUrl && fallbackUrl !== state.result?.thumbnail) {
+    state.thumbnailFallbackTried = true;
+    state.result.thumbnail = fallbackUrl;
+    return;
+  }
+  state.thumbnailUnavailable = true;
 }
 
 async function startSummaryForResult(result, { mode = "manual" } = {}) {
@@ -1294,6 +1332,34 @@ function formatFileSize(bytes) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function formatCompactCount(value) {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count < 0) return "";
+  if (count >= 100000000) return `${trimFixed(count / 100000000)}亿`;
+  if (count >= 10000) return `${trimFixed(count / 10000)}万`;
+  return Math.floor(count).toLocaleString("zh-CN");
+}
+
+function trimFixed(value) {
+  return value.toFixed(value >= 10 ? 1 : 2).replace(/\.?0+$/, "");
+}
+
+function formatPublishDate(value) {
+  if (!value) return "";
+  if (typeof value === "string") {
+    const compactDate = value.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (compactDate) return `${compactDate[1]}-${compactDate[2]}-${compactDate[3]}`;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
+  const milliseconds = numeric > 100000000000 ? numeric : numeric * 1000;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(milliseconds));
+}
+
 function formatDuration(seconds) {
   if (!seconds) return "时长未知";
   const minutes = Math.floor(seconds / 60);
@@ -1481,7 +1547,7 @@ onBeforeUnmount(() => {
         <section v-if="hasResult" class="analysis-workbench" aria-label="视频信息和 AI 总结">
           <aside class="video-column" aria-label="视频信息与下载">
             <section class="result-card" aria-label="视频信息">
-              <img v-if="state.result.thumbnail" class="cover" :src="state.result.thumbnail" :alt="state.result.title" />
+              <img v-if="videoThumbnailSrc" class="cover" :src="videoThumbnailSrc" :alt="state.result.title" @error="handleThumbnailError" />
               <div v-else class="cover empty-cover" aria-hidden="true"><Play :size="34" /></div>
               <div class="result-main">
                 <p class="result-meta">
@@ -1490,6 +1556,13 @@ onBeforeUnmount(() => {
                   <span v-if="playlistEntries.length">{{ playlistEntries.length }} 个视频</span>
                 </p>
                 <h2>{{ state.result.title }}</h2>
+                <div v-if="videoDetails.length" class="result-detail-grid" aria-label="视频基础信息">
+                  <span v-for="detail in videoDetails" :key="detail.label">
+                    <strong>{{ detail.label }}</strong>
+                    {{ detail.value }}
+                  </span>
+                </div>
+                <p v-if="videoDescription" class="result-description">{{ videoDescription }}</p>
                 <div class="download-row">
                   <label class="sr-only" for="format-select">选择清晰度</label>
                   <select id="format-select" v-model="state.selectedFormatId">

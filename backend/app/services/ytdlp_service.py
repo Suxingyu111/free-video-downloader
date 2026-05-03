@@ -54,6 +54,28 @@ TRACKING_QUERY_KEYS = {
     "seid",
     "share_source",
 }
+INFO_METADATA_FIELDS = (
+    "description",
+    "uploader",
+    "uploader_id",
+    "channel",
+    "channel_id",
+    "timestamp",
+    "upload_date",
+    "view_count",
+    "like_count",
+    "favorite_count",
+    "comment_count",
+    "danmaku_count",
+    "share_count",
+    "tags",
+    "categories",
+)
+BILIBILI_PUBLIC_ENRICH_FIELDS = (
+    *INFO_METADATA_FIELDS,
+    "subtitle_login_required",
+    "bilibili",
+)
 
 
 def prepare_url(url: str) -> str:
@@ -188,6 +210,10 @@ def _normalize_entries(entries: list[dict[str, Any] | None] | None) -> list[dict
     return normalized
 
 
+def _metadata_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def normalize_info(info: dict[str, Any]) -> dict[str, Any]:
     kind = "playlist" if info.get("_type") == "playlist" else "video"
     return {
@@ -197,6 +223,19 @@ def normalize_info(info: dict[str, Any]) -> dict[str, Any]:
         "webpage_url": info.get("webpage_url"),
         "thumbnail": info.get("thumbnail"),
         "duration": info.get("duration"),
+        "description": info.get("description") or "",
+        "uploader": info.get("uploader") or info.get("channel"),
+        "uploader_id": info.get("uploader_id") or info.get("channel_id"),
+        "channel": info.get("channel"),
+        "channel_id": info.get("channel_id"),
+        "timestamp": info.get("timestamp"),
+        "upload_date": info.get("upload_date"),
+        "view_count": info.get("view_count"),
+        "like_count": info.get("like_count"),
+        "favorite_count": info.get("favorite_count"),
+        "comment_count": info.get("comment_count"),
+        "tags": _metadata_list(info.get("tags")),
+        "categories": _metadata_list(info.get("categories")),
         "extractor": info.get("extractor"),
         "formats": _normalize_formats(info.get("formats")),
         "subtitles": [
@@ -205,6 +244,25 @@ def normalize_info(info: dict[str, Any]) -> dict[str, Any]:
         ],
         "entries": _normalize_entries(info.get("entries")),
     }
+
+
+def _metadata_missing(value: Any) -> bool:
+    return value is None or value == "" or value == []
+
+
+def _with_bilibili_public_metadata(info: dict[str, Any], url: str) -> dict[str, Any]:
+    try:
+        public_info = fetch_bilibili_public_metadata(url)
+    except Exception:
+        return info
+
+    enriched = dict(info)
+    for field in BILIBILI_PUBLIC_ENRICH_FIELDS:
+        if field not in public_info or _metadata_missing(public_info.get(field)):
+            continue
+        if _metadata_missing(enriched.get(field)):
+            enriched[field] = public_info[field]
+    return enriched
 
 
 def build_download_options(
@@ -395,7 +453,10 @@ class YtDlpService:
         try:
             with YoutubeDL(options) as ydl:
                 info = ydl.extract_info(prepared_url, download=False)
-                return normalize_info(ydl.sanitize_info(info))
+                normalized = normalize_info(ydl.sanitize_info(info))
+                if is_bilibili_url(prepared_url):
+                    return _with_bilibili_public_metadata(normalized, prepared_url)
+                return normalized
         except Exception as exc:
             if not is_bilibili_url(prepared_url):
                 raise

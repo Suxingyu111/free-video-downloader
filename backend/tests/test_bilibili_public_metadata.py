@@ -24,8 +24,20 @@ class FakeBilibiliClient:
                         "aid": 116140797991021,
                         "cid": 36319134306,
                         "title": "做了个新项目，我要出海了！",
+                        "desc": "从产品、技术和出海节奏聊一个新项目。",
                         "pic": "https://i0.hdslb.com/bfs/archive/demo.jpg",
                         "duration": 211,
+                        "pubdate": 1714560000,
+                        "tname": "计算机技术",
+                        "owner": {"mid": 123456, "name": "SaveAny 出海笔记"},
+                        "stat": {
+                            "view": 34567,
+                            "like": 890,
+                            "favorite": 123,
+                            "reply": 45,
+                            "danmaku": 67,
+                            "share": 12,
+                        },
                     },
                 },
                 request=httpx.Request("GET", url),
@@ -59,6 +71,17 @@ def test_fetch_bilibili_public_metadata_normalizes_view_payload():
     assert result["kind"] == "video"
     assert result["id"] == "BV1mAAmzqEfP"
     assert result["title"] == "做了个新项目，我要出海了！"
+    assert result["description"] == "从产品、技术和出海节奏聊一个新项目。"
+    assert result["uploader"] == "SaveAny 出海笔记"
+    assert result["uploader_id"] == 123456
+    assert result["timestamp"] == 1714560000
+    assert result["categories"] == ["计算机技术"]
+    assert result["view_count"] == 34567
+    assert result["like_count"] == 890
+    assert result["favorite_count"] == 123
+    assert result["comment_count"] == 45
+    assert result["danmaku_count"] == 67
+    assert result["share_count"] == 12
     assert result["webpage_url"] == "https://www.bilibili.com/video/BV1mAAmzqEfP/"
     assert result["thumbnail"] == "https://i0.hdslb.com/bfs/archive/demo.jpg"
     assert result["duration"] == 211

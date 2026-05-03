@@ -23,6 +23,15 @@ def test_normalize_info_returns_video_formats_and_subtitles():
         "thumbnail": "https://example.com/thumb.jpg",
         "duration": 125,
         "extractor": "generic",
+        "description": "A short demo video.",
+        "uploader": "Demo Channel",
+        "uploader_id": "channel-1",
+        "timestamp": 1714560000,
+        "view_count": 1234,
+        "like_count": 56,
+        "comment_count": 7,
+        "tags": ["demo", "video"],
+        "categories": ["Education"],
         "formats": [
             {
                 "format_id": "18",
@@ -55,6 +64,15 @@ def test_normalize_info_returns_video_formats_and_subtitles():
     assert result["kind"] == "video"
     assert result["id"] == "abc"
     assert result["title"] == "Demo Video"
+    assert result["description"] == "A short demo video."
+    assert result["uploader"] == "Demo Channel"
+    assert result["uploader_id"] == "channel-1"
+    assert result["timestamp"] == 1714560000
+    assert result["view_count"] == 1234
+    assert result["like_count"] == 56
+    assert result["comment_count"] == 7
+    assert result["tags"] == ["demo", "video"]
+    assert result["categories"] == ["Education"]
     assert result["formats"][0]["format_id"] == "18"
     assert result["formats"][0]["label"] == "360p mp4"
     assert result["subtitles"] == [
@@ -272,6 +290,66 @@ def test_analyze_falls_back_to_bilibili_public_metadata_when_yt_dlp_is_forbidden
 
     assert result["title"] == "做了个新项目，我要出海了！"
     assert fallback_calls == ["https://bilibili.com/video/BV1mAAmzqEfP"]
+
+
+def test_analyze_enriches_successful_bilibili_ytdlp_result_with_public_metadata(monkeypatch):
+    class SuccessfulYdl:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def extract_info(self, url, download=False):
+            return {
+                "_type": "video",
+                "id": "BV1mAAmzqEfP",
+                "title": "yt-dlp title",
+                "webpage_url": "https://www.bilibili.com/video/BV1mAAmzqEfP/",
+                "thumbnail": "http://i1.hdslb.com/bfs/archive/demo.jpg",
+                "duration": 211,
+                "extractor": "BiliBili",
+                "formats": [],
+            }
+
+        def sanitize_info(self, info):
+            return info
+
+    def fake_fetch_public_metadata(url):
+        return {
+            "kind": "video",
+            "id": "BV1mAAmzqEfP",
+            "title": "public title",
+            "webpage_url": "https://www.bilibili.com/video/BV1mAAmzqEfP/",
+            "thumbnail": "https://i0.hdslb.com/bfs/archive/public.jpg",
+            "duration": 211,
+            "extractor": "bilibili-public",
+            "formats": [],
+            "subtitles": [],
+            "entries": [],
+            "description": "公开视频简介",
+            "uploader": "公开视频 UP 主",
+            "view_count": 34567,
+            "like_count": 890,
+            "comment_count": 45,
+            "timestamp": 1714560000,
+        }
+
+    monkeypatch.setattr("app.services.ytdlp_service.YoutubeDL", SuccessfulYdl)
+    monkeypatch.setattr("app.services.ytdlp_service.fetch_bilibili_public_metadata", fake_fetch_public_metadata)
+
+    result = YtDlpService().analyze("https://www.bilibili.com/video/BV1mAAmzqEfP/?spm_id_from=abc")
+
+    assert result["title"] == "yt-dlp title"
+    assert result["description"] == "公开视频简介"
+    assert result["uploader"] == "公开视频 UP 主"
+    assert result["view_count"] == 34567
+    assert result["like_count"] == 890
+    assert result["comment_count"] == 45
+    assert result["timestamp"] == 1714560000
 
 
 def test_resolve_format_selector_maps_default_to_tiktok_h264_formats():

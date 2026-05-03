@@ -182,14 +182,17 @@ def _normalize_subtitle_group(
     normalized = []
     for lang, tracks in (subtitles or {}).items():
         for track in tracks:
-            normalized.append(
-                {
-                    "lang": lang,
-                    "ext": track.get("ext"),
-                    "name": track.get("name") or lang,
-                    "automatic": automatic,
-                }
-            )
+            item = {
+                "lang": lang,
+                "ext": track.get("ext"),
+                "name": track.get("name") or lang,
+                "automatic": automatic,
+            }
+            if isinstance(track.get("url"), str) and track.get("url"):
+                item["url"] = track["url"]
+            if isinstance(track.get("data"), str) and track.get("data"):
+                item["data"] = track["data"]
+            normalized.append(item)
     return normalized
 
 

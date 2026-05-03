@@ -29,7 +29,7 @@ class FakeSummaryService:
             progress_hook(
                 "summary",
                 72,
-                "Streaming structured summary",
+                "Streaming readable summary",
                 streamed_text="一句话概览：测试概览\n- 测试要点",
             )
         markdown_path = output_dir / "summary.md"
@@ -1543,7 +1543,7 @@ def test_supported_subtitle_summary_does_not_preflight_transcription_minutes(
     )
     seed_analysis_snapshot_with_subtitles(
         "https://example.com/supported-subtitle-no-preflight",
-        [{"lang": "en", "ext": "vtt", "automatic": False}],
+        [{"lang": "en", "ext": "vtt", "automatic": False, "url": "https://example.com/caption.vtt"}],
         duration=120,
     )
 
@@ -1558,6 +1558,7 @@ def test_supported_subtitle_summary_does_not_preflight_transcription_minutes(
 
     assert response.status_code == 200
     assert fake.calls[0][0] == "https://example.com/supported-subtitle-no-preflight"
+    assert fake.seed_results[0]["subtitles"][0]["url"] == "https://example.com/caption.vtt"
     assert status["meters"]["transcription_minutes"]["used"] == 29
     assert status["meters"]["transcription_minutes"]["remaining"] == 1
 

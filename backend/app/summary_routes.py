@@ -339,12 +339,13 @@ def create_summary(payload: SummaryRequest, request: Request, user: User = Depen
             quota_user_id=quota_user_id,
             task_id=summary_id,
         )
+        summary_seed_result = seed_result or analysis_result
         worker = threading.Thread(
             target=_run_summary,
             args=(
                 task.id,
                 payload,
-                seed_result,
+                summary_seed_result,
                 user.id,
                 transcription_reservation_id,
                 transcription_reserved_minutes,

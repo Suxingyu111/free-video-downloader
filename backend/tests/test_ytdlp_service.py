@@ -52,10 +52,10 @@ def test_normalize_info_returns_video_formats_and_subtitles():
             },
         ],
         "subtitles": {
-            "en": [{"ext": "vtt", "name": "English"}],
+            "en": [{"ext": "vtt", "name": "English", "url": "https://example.com/en.vtt"}],
         },
         "automatic_captions": {
-            "zh-Hans": [{"ext": "vtt", "name": "Chinese"}],
+            "zh-Hans": [{"ext": "vtt", "name": "Chinese", "url": "https://example.com/zh.vtt"}],
         },
     }
 
@@ -76,8 +76,8 @@ def test_normalize_info_returns_video_formats_and_subtitles():
     assert result["formats"][0]["format_id"] == "18"
     assert result["formats"][0]["label"] == "360p mp4"
     assert result["subtitles"] == [
-        {"lang": "en", "ext": "vtt", "name": "English", "automatic": False},
-        {"lang": "zh-Hans", "ext": "vtt", "name": "Chinese", "automatic": True},
+        {"lang": "en", "ext": "vtt", "name": "English", "automatic": False, "url": "https://example.com/en.vtt"},
+        {"lang": "zh-Hans", "ext": "vtt", "name": "Chinese", "automatic": True, "url": "https://example.com/zh.vtt"},
     ]
 
 

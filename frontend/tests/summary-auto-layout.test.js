@@ -405,7 +405,14 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryPanelSource, /revealedStreamLines/);
   assert.match(summaryPanelSource, /summary-stream-preview/);
   assert.match(summaryPanelSource, /summary-loading-bars/);
-  assert.match(summaryOverviewSource, /<h5>概括<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>快速导读<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>结构化增强<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>一句话结论<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>完整理解<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>主线脉络<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>例子和证据<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>行动清单<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>边界和限制<\/h5>/);
   assert.match(summaryCss, /\.summary-module-grid\s*\{[\s\S]*gap:\s*10px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*gap:\s*14px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*padding:\s*18px/);

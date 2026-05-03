@@ -36,10 +36,12 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
     "立即下载",
     "先下载视频",
     "AI 总结",
-    "快速版",
-    "完整总结正在完善中",
+    "AI 正在逐行生成总结",
+    "AI 正在连接模型并准备逐行生成总结",
     "视频学习笔记",
     "总结内容",
+    "快速导读",
+    "结构化增强",
     "字幕文本",
     "思维导图",
     "AI 问答",
@@ -61,6 +63,7 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
   assert.doesNotMatch(appSource, /视频知识工作台/);
   assert.doesNotMatch(appSource, /Study Pack/);
   assert.doesNotMatch(appSource, /68 分钟公开视频课/);
+  assert.doesNotMatch(appSource, /正在生成结构化总结/);
   assert.doesNotMatch(appSource, /下载队列|批量队列|download queue/i);
 });
 

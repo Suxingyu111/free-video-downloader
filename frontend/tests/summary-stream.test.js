@@ -9,6 +9,19 @@ test("normalizeSummaryStreamLines trims empty lines and keeps the latest bounded
   assert.deepEqual(lines, ["- 第一行", "- 第二行"]);
 });
 
+test("normalizeSummaryStreamLines splits long readable lines for steady reveal", () => {
+  const text = "一句话概览：这是一段很长的 AI 总结预览内容，需要拆成多行逐步显示，让用户在等待完整总结时持续看到可读内容。";
+  const lines = normalizeSummaryStreamLines(
+    text,
+    { maxLines: 10, maxLineLength: 24 }
+  );
+
+  assert.equal(lines.length, 3);
+  assert.equal(lines.join(""), text);
+  assert.equal(lines.every((line) => line.length <= 24), true);
+  assert.match(lines[0], /AI 总结预览内容，$/);
+});
+
 test("diffSummaryStreamLines returns only the newly appended stream lines", () => {
   assert.deepEqual(diffSummaryStreamLines(["一句话概览：A", "章节大纲："], ["一句话概览：A", "章节大纲：", "- B"]), ["- B"]);
 });

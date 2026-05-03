@@ -10,12 +10,17 @@ import httpx
 
 from app.services.ai_config import AIProviderConfig, load_ai_provider_config
 
-SUMMARY_TRANSCRIPT_CHAR_BUDGET = 12_000
-SUMMARY_RESPONSE_MAX_TOKENS = 8_192
+SUMMARY_TRANSCRIPT_CHAR_BUDGET = 60_000
+SUMMARY_RESPONSE_MAX_TOKENS = 12_000
+READABLE_SUMMARY_RESPONSE_MAX_TOKENS = 8_000
 SUMMARY_REQUEST_TIMEOUT_SECONDS = 45.0
 QUESTION_TRANSCRIPT_CHAR_BUDGET = 8_000
 QUESTION_RESPONSE_MAX_TOKENS = 1_000
-SUMMARY_STREAM_PREVIEW_MAX_LINES = 18
+SUMMARY_STREAM_PREVIEW_MAX_LINES = 48
+SUMMARY_REQUIRED_FIELDS = (
+    "overview, topic, audience, main_thread, examples, action_items, limitations, "
+    "outline, key_points, highlights, terms, questions, mind_map, qa_pairs"
+)
 
 TRANSCRIPT_LINE_PATTERN = re.compile(r"^\[(?P<time>[^\]]+)\]\s*(?P<text>.+)$")
 LATIN_TERM_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9.+#/-]*(?:\s+[A-Za-z][A-Za-z0-9.+#/-]*){0,2}\b")
@@ -114,7 +119,7 @@ class OpenAICompatibleProvider:
                     "role": "system",
                     "content": (
                         "你是专业的视频学习笔记助手。只输出紧凑 JSON，不要输出 Markdown。"
-                        "字段必须包含 overview, outline, key_points, highlights, terms, questions, mind_map, qa_pairs。"
+                        f"字段必须包含 {SUMMARY_REQUIRED_FIELDS}。"
                         "所有字符串必须是合法 JSON 字符串，换行必须转义为 \\n。"
                     ),
                 },
@@ -124,24 +129,50 @@ class OpenAICompatibleProvider:
                 },
             ],
         }
+        readable_summary = ""
         try:
             if stream_hook and hasattr(self.client, "stream"):
-                content = self._stream_summary_completion(
-                    request_payload,
-                    title=title,
-                    transcript=transcript,
+                readable_payload = {
+                    "model": self.config.text_model,
+                    "temperature": 0.1,
+                    "max_tokens": READABLE_SUMMARY_RESPONSE_MAX_TOKENS,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "你是专业的视频学习笔记助手。直接输出给用户阅读的最终视频总结。"
+                                "禁止输出 JSON、代码块、调试说明或“正在生成”之类的过程描述。"
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": build_readable_summary_prompt(
+                                title=title,
+                                transcript=transcript,
+                                language=language,
+                            ),
+                        },
+                    ],
+                }
+                readable_summary = self._stream_readable_summary_completion(
+                    readable_payload,
                     stream_hook=stream_hook,
                 )
-            else:
-                response = self.client.post(
-                    f"{self.config.base_url}/chat/completions",
-                    headers={**self._headers(), "Content-Type": "application/json"},
-                    timeout=timeout_seconds,
-                    json=request_payload,
+                request_payload["messages"][1]["content"] = build_summary_prompt(
+                    title=title,
+                    transcript=transcript,
+                    language=language,
+                    readable_summary=readable_summary,
                 )
-                response.raise_for_status()
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
+            response = self.client.post(
+                f"{self.config.base_url}/chat/completions",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                timeout=timeout_seconds,
+                json=request_payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
         except httpx.TimeoutException:
             return normalize_summary_payload(
                 build_fallback_summary_payload(
@@ -152,11 +183,47 @@ class OpenAICompatibleProvider:
                 title=title,
                 transcript=transcript,
             )
-        return normalize_summary_payload(
+        result = normalize_summary_payload(
             parse_summary_content(content, title=title, transcript=transcript),
             title=title,
             transcript=transcript,
         )
+        if readable_summary:
+            result["readable_summary"] = readable_summary
+        return result
+
+    def _stream_readable_summary_completion(
+        self,
+        request_payload: dict,
+        *,
+        stream_hook: Callable[[str], None],
+    ) -> str:
+        content_parts: list[str] = []
+        last_preview = ""
+        started_at = monotonic()
+        total_timeout = _summary_timeout_seconds(self.config)
+        with self.client.stream(
+            "POST",
+            f"{self.config.base_url}/chat/completions",
+            headers={**self._headers(), "Content-Type": "application/json"},
+            timeout=_summary_timeout_seconds(self.config),
+            json={**request_payload, "stream": True},
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                _raise_if_stream_timed_out(started_at, total_timeout)
+                delta = _openai_stream_delta(line)
+                if not delta:
+                    continue
+                content_parts.append(delta)
+                preview = clean_readable_summary_text("".join(content_parts))
+                if preview and preview != last_preview:
+                    stream_hook(preview)
+                    last_preview = preview
+        content = clean_readable_summary_text("".join(content_parts))
+        if not content:
+            raise RuntimeError("AI 总结服务未返回文本。")
+        return content
 
     def _stream_summary_completion(
         self,
@@ -265,7 +332,7 @@ class AnthropicCompatibleProvider:
             "temperature": 0.1,
             "system": (
                 "你是专业的视频学习笔记助手。只输出紧凑 JSON，不要输出 Markdown。"
-                "字段必须包含 overview, outline, key_points, highlights, terms, questions, mind_map, qa_pairs。"
+                f"字段必须包含 {SUMMARY_REQUIRED_FIELDS}。"
                 "所有字符串必须是合法 JSON 字符串，换行必须转义为 \\n。"
             ),
             "messages": [
@@ -280,7 +347,43 @@ class AnthropicCompatibleProvider:
                 }
             ],
         }
+        readable_summary = ""
         try:
+            if stream_hook and hasattr(self.client, "stream"):
+                readable_payload = {
+                    "model": self.config.text_model,
+                    "max_tokens": READABLE_SUMMARY_RESPONSE_MAX_TOKENS,
+                    "temperature": 0.1,
+                    "system": (
+                        "你是专业的视频学习笔记助手。直接输出给用户阅读的最终视频总结。"
+                        "禁止输出 JSON、代码块、调试说明或“正在生成”之类的过程描述。"
+                    ),
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": build_readable_summary_prompt(
+                                        title=title,
+                                        transcript=transcript,
+                                        language=language,
+                                    ),
+                                }
+                            ],
+                        }
+                    ],
+                }
+                readable_summary = self._stream_readable_summary_completion(
+                    readable_payload,
+                    stream_hook=stream_hook,
+                )
+                request_payload["messages"][0]["content"][0]["text"] = build_summary_prompt(
+                    title=title,
+                    transcript=transcript,
+                    language=language,
+                    readable_summary=readable_summary,
+                )
             response = self.client.post(
                 f"{self.config.base_url}/v1/messages",
                 headers=self._headers(),
@@ -307,11 +410,47 @@ class AnthropicCompatibleProvider:
             )
         if not text:
             raise RuntimeError("AI 总结服务未返回文本。")
-        return normalize_summary_payload(
+        result = normalize_summary_payload(
             parse_summary_content(text, title=title, transcript=transcript),
             title=title,
             transcript=transcript,
         )
+        if readable_summary:
+            result["readable_summary"] = readable_summary
+        return result
+
+    def _stream_readable_summary_completion(
+        self,
+        request_payload: dict,
+        *,
+        stream_hook: Callable[[str], None],
+    ) -> str:
+        content_parts: list[str] = []
+        last_preview = ""
+        started_at = monotonic()
+        total_timeout = _summary_timeout_seconds(self.config)
+        with self.client.stream(
+            "POST",
+            f"{self.config.base_url}/v1/messages",
+            headers=self._headers(),
+            timeout=_summary_timeout_seconds(self.config),
+            json={**request_payload, "stream": True},
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                _raise_if_stream_timed_out(started_at, total_timeout)
+                delta = _anthropic_stream_delta(line)
+                if not delta:
+                    continue
+                content_parts.append(delta)
+                preview = clean_readable_summary_text("".join(content_parts))
+                if preview and preview != last_preview:
+                    stream_hook(preview)
+                    last_preview = preview
+        content = clean_readable_summary_text("".join(content_parts))
+        if not content:
+            raise RuntimeError("AI 总结服务未返回文本。")
+        return content
 
     def _stream_summary_completion(
         self,
@@ -394,11 +533,81 @@ class AnthropicCompatibleProvider:
         return text
 
 
-def build_summary_prompt(*, title: str, transcript: str, language: str) -> str:
+def build_readable_summary_prompt(*, title: str, transcript: str, language: str) -> str:
     prepared_transcript = compact_transcript_for_prompt(transcript)
-    return f"""请用 {language} 总结下面的视频转写稿。
+    return f"""请用 {language} 直接输出视频的最终可读总结。目标是让用户读完不需要看视频也能知道讲了什么，并且能复述视频的主题、背景、推理过程、关键细节、例子证据、行动建议和适用边界。
 
 视频标题：{title or "未命名视频"}
+
+输出要求：
+1. 第一行必须以“一句话结论：”开头，直接说明视频讲什么、核心结论是什么。
+2. 后续按顺序输出：这条视频到底讲什么、背景/问题、主线脉络、关键内容详解、关键结论、例子和证据、行动建议、适合谁看、边界和限制、推荐追问。
+3. 先不考虑返回 token 限制，优先保证内容完整、具体、可独立阅读；不要为了短而省略重要步骤、条件、原因或结论。
+4. 使用短段落和列表，一行只表达一个要点，方便前端逐行显示。
+5. 每个要点都要写具体对象、动作、原因、证据或限制，禁止“核心内容”“干货很多”“值得学习”这类空话。
+6. 禁止把字幕逐句改写或流水账搬运；要先理解每段字幕在论证链路里的作用，再归纳成用户能直接读懂的笔记。
+7. 禁止输出 JSON、Markdown 代码块、解释性前言、调试信息或“我正在生成”。
+8. 只能基于字幕总结；字幕没有依据时必须明确写“字幕没有依据”。
+
+建议格式：
+一句话结论：...
+这条视频到底讲什么：
+- ...
+背景/问题：
+- ...
+主线脉络：
+- ...
+关键内容详解：
+- 主题/步骤/机制：它是什么，视频如何解释，为什么重要，和前后内容如何衔接
+关键结论：
+- ...
+例子和证据：
+- [00:00] 例子或证据：支持了什么结论
+行动建议：
+- ...
+适合谁看：
+- ...
+边界和限制：
+- ...
+推荐追问：
+- ...
+
+转写稿：
+{prepared_transcript}
+"""
+
+
+def clean_readable_summary_text(text: str) -> str:
+    value = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    value = re.sub(r"```(?:markdown|md|text|json)?", "", value, flags=re.IGNORECASE)
+    value = value.replace("```", "")
+    lines = [line.rstrip() for line in value.splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def build_summary_prompt(
+    *,
+    title: str,
+    transcript: str,
+    language: str,
+    readable_summary: str | None = None,
+) -> str:
+    prepared_transcript = compact_transcript_for_prompt(transcript)
+    readable_block = ""
+    cleaned_readable = clean_readable_summary_text(readable_summary or "")
+    if cleaned_readable:
+        readable_block = f"""
+已有可读总结（第一层已流式展示给用户，请据此补齐后台结构化字段，避免产生冲突）：
+{cleaned_readable}
+"""
+    return f"""请用 {language} 生成一份详细、具体、可独立阅读的视频学习总结。
+
+视频标题：{title or "未命名视频"}
+{readable_block}
 
 保真要求：
 1. 只能基于视频标题和转写稿总结，所有结论、步骤、风险、术语和问答都必须能从字幕中找到依据。
@@ -406,10 +615,21 @@ def build_summary_prompt(*, title: str, transcript: str, language: str) -> str:
 3. 不要输出“核心内容”“要点总结”“主要讲了很多内容”等泛化占位句，必须写出字幕里的具体对象、动作、原因、证据和限制。
 4. 必须覆盖开头、中段和结尾，不能只总结前几行字幕。
 5. 先逐段提取字幕事实，再做归纳；不要只根据标题猜测视频内容。
+6. 看完后应该能向没看过视频的人复述：视频主题是什么、给谁看、按什么主线推进、用了哪些例子或证据、看完能做什么、哪些地方没有讲清楚。
+7. 先不考虑返回 token 限制，优先保证总结足够详细；像一篇可以独立阅读的深度学习笔记，而不是短摘要。
+8. 禁止把字幕逐句改写或流水账搬运；要把相邻字幕合并成主题、论点、步骤、原因、证据、结论和边界。
+9. 每个字段都要尽量信息增量明显，避免同义重复；能写时间点、对象、条件、动作、结果时就写清楚。
 
 输出必须是紧凑 JSON，禁止 Markdown、解释文字和代码块。字段必须完整，不得省略；字段和类型如下：
+必须按字段顺序输出，overview 必须最先输出，以便前端能立即流式显示最终总结内容。
 {{
-  "overview": "120-220 字，完整说明视频主题、核心过程、关键结论和限制",
+  "overview": "320-520 字，完整说明视频主题、背景问题、主线过程、关键内容、关键结论、例子证据、行动建议和限制",
+  "topic": "视频真正讨论的主题，必须具体到对象或场景",
+  "audience": "适合观看或最能受益的人群",
+  "main_thread": ["视频主线推进，每项说明一个阶段如何接到下一个阶段"],
+  "examples": [{{"time":"00:00","text":"字幕中的例子、数据、类比、案例或证据，以及它支持的结论"}}],
+  "action_items": ["看完后可以执行的动作、检查项或复盘步骤"],
+  "limitations": ["视频没有讲清楚的内容、适用边界、风险或字幕没有依据的点"],
   "outline": [{{"time":"00:00","title":"章节标题","summary":"章节摘要"}}],
   "key_points": ["核心知识点"],
   "highlights": [{{"time":"00:00","text":"重要片段"}}],
@@ -429,15 +649,20 @@ def build_summary_prompt(*, title: str, transcript: str, language: str) -> str:
 }}
 
 长度要求：
-1. overview 120-220 字，必须紧扣标题和字幕，不要写空泛套话。
-2. outline 4-8 项，按字幕时间顺序覆盖主要章节，每项 summary 40-90 字。
-3. key_points 6-10 项，每项必须包含字幕里的具体对象、动作、结论或条件。
-4. highlights 4-8 项，必须带原字幕时间点，并解释该片段为什么重要。
-5. terms 3-6 项，优先解释字幕中出现的专有名词、工具、指标、方法或缩写；不足时不要编造。
-6. questions 4-6 项，必须是基于字幕内容可以继续追问的问题。
-7. qa_pairs 3-5 项，answer 必须基于字幕回答，不确定时写“字幕没有依据”。
-8. outline、key_points、highlights、terms、questions、qa_pairs 都应尽量信息互补，避免重复同一句话。
-9. 所有字符串必须是合法 JSON 字符串；如需换行，必须写成 \\n。
+1. overview 320-520 字，必须紧扣标题和字幕，交代背景、问题、推进、细节、结论、证据和限制，不要写空泛套话。
+2. topic 8-28 字，audience 12-40 字，必须具体。
+3. main_thread 6-10 项，每项 28-90 字，串起视频从问题到结论的推进关系，写出转折、递进或因果。
+4. examples 5-8 项，必须带时间点，优先提取字幕里的案例、数据、类比、演示、反例或证据，并说明它支持什么结论。
+5. action_items 4-8 项，写成学习者或用户能照着做的动作，包含前置条件、检查点或注意事项。
+6. limitations 3-6 项，写出视频没有覆盖、条件不足、风险或只适用于哪些场景；如果字幕没有依据，也要明确说明。
+7. outline 8-14 项，按字幕时间顺序覆盖主要章节，每项 summary 40-110 字，说明该章节讲了什么、为什么讲、得出什么。
+8. key_points 10-16 项，每项 28-90 字，必须包含字幕里的具体对象、动作、结论、条件或原因。
+9. highlights 6-10 项，必须带原字幕时间点，并解释该片段为什么重要、对应哪个观点。
+10. terms 0-8 项，优先解释字幕中出现的专有名词、工具、指标、方法或缩写；不足时返回空数组，不要编造。
+11. questions 5-8 项，必须是基于字幕内容可以继续追问的问题。
+12. qa_pairs 5-8 项，answer 必须基于字幕回答，尽量给出具体依据；不确定时写“字幕没有依据”。
+13. topic、audience、main_thread、examples、action_items、limitations、outline、key_points、highlights、terms、questions、qa_pairs 都应尽量信息互补，避免重复同一句话。
+14. 所有字符串必须是合法 JSON 字符串；如需换行，必须写成 \\n。
 
 思维导图要求：
 1. mind_map 必须包含 4-6 个一级分支，每个一级分支至少 2 个子节点。
@@ -501,27 +726,27 @@ def build_stream_preview_from_payload(
     outline = _list_of_dicts(payload.get("outline"))
     if outline:
         lines.append("章节大纲：")
-        lines.extend(f"- {_format_stream_outline_item(item)}" for item in outline[:5])
+        lines.extend(f"- {_format_stream_outline_item(item)}" for item in outline[:8])
 
     key_points = _list_of_strings(payload.get("key_points"))
     if key_points:
         lines.append("核心知识点：")
-        lines.extend(f"- {point}" for point in key_points[:6])
+        lines.extend(f"- {point}" for point in key_points[:10])
 
     highlights = _list_of_dicts(payload.get("highlights"))
     if highlights:
         lines.append("时间轴要点：")
-        lines.extend(f"- {_format_stream_timed_item(item)}" for item in highlights[:4])
+        lines.extend(f"- {_format_stream_timed_item(item)}" for item in highlights[:8])
 
     terms = _list_of_dicts(payload.get("terms"))
     if terms:
         lines.append("术语解释：")
-        lines.extend(f"- {_format_stream_term_item(item)}" for item in terms[:4])
+        lines.extend(f"- {_format_stream_term_item(item)}" for item in terms[:6])
 
     questions = _list_of_strings(payload.get("questions"))
     if questions:
         lines.append("可以继续追问：")
-        lines.extend(f"- {question}" for question in questions[:4])
+        lines.extend(f"- {question}" for question in questions[:6])
 
     if not lines and transcript:
         fallback = build_fallback_summary_payload(title=title or "", transcript=transcript)
@@ -589,9 +814,13 @@ def _json_section_fragment(text: str, key: str) -> str:
     if not match:
         return ""
     start = match.end()
+    keys = (
+        "overview|topic|audience|main_thread|examples|action_items|limitations|"
+        "outline|key_points|highlights|terms|questions|mind_map|qa_pairs"
+    )
     next_positions = [
         next_match.start()
-        for next_match in re.finditer(r'"(?:overview|outline|key_points|highlights|terms|questions|mind_map|qa_pairs)"\s*:', text)
+        for next_match in re.finditer(rf'"(?:{keys})"\s*:', text)
         if next_match.start() > match.start()
     ]
     end = min(next_positions) if next_positions else len(text)
@@ -923,6 +1152,12 @@ def build_fallback_summary_payload(*, title: str, transcript: str, reason: str |
         overview = reason or "暂时无法生成结构化总结，但可以继续下载视频。"
         return {
             "overview": overview,
+            "topic": title or "",
+            "audience": "",
+            "main_thread": [],
+            "examples": [],
+            "action_items": [],
+            "limitations": [reason] if reason else [],
             "outline": [],
             "key_points": [],
             "highlights": [],
@@ -932,22 +1167,35 @@ def build_fallback_summary_payload(*, title: str, transcript: str, reason: str |
             "qa_pairs": [],
         }
 
-    outline_segments = _sample_transcript_points(segments, 8)
-    key_points = [_clip_text(item["text"], 110) for item in _sample_transcript_points(segments, 8)]
+    outline_segments = _sample_transcript_points(segments, 12)
+    key_points = [_clip_text(item["text"], 150) for item in _sample_transcript_points(segments, 12)]
     highlights = [
-        {"time": item["time"], "text": _clip_text(item["text"], 110)}
-        for item in _sample_transcript_points(segments, 8)
+        {"time": item["time"], "text": _clip_text(item["text"], 140)}
+        for item in _sample_transcript_points(segments, 10)
     ]
     terms = _extract_terms_from_segments(segments)
     questions = _build_grounded_questions(title=title, segments=segments)
     overview = _build_grounded_overview(title=title, segments=segments, reason=reason)
+    main_thread = _build_grounded_main_thread(outline_segments)
+    examples = [
+        {"time": item["time"], "text": _clip_text(item["text"], 150)}
+        for item in _sample_transcript_points(segments, 8)
+    ]
+    action_items = _build_grounded_action_items(segments)
+    limitations = _build_grounded_limitations(segments, reason=reason)
     return {
         "overview": overview,
+        "topic": title or _derive_outline_title(segments[0]["text"], 0),
+        "audience": "想快速理解、复盘并继续追问这条视频内容的学习者",
+        "main_thread": main_thread,
+        "examples": examples,
+        "action_items": action_items,
+        "limitations": limitations,
         "outline": [
             {
                 "time": item["time"],
                 "title": _derive_outline_title(item["text"], index),
-                "summary": _clip_text(item["text"], 90),
+                "summary": _clip_text(item["text"], 120),
             }
             for index, item in enumerate(outline_segments)
         ],
@@ -960,10 +1208,42 @@ def build_fallback_summary_payload(*, title: str, transcript: str, reason: str |
     }
 
 
+def _build_grounded_main_thread(segments: list[dict[str, str]]) -> list[str]:
+    return [
+        f"[{item['time']}] {_clip_text(item['text'], 110)}"
+        for item in segments[:10]
+        if item.get("text")
+    ]
+
+
+def _build_grounded_action_items(segments: list[dict[str, str]]) -> list[str]:
+    markers = ("建议", "动作", "执行", "检查", "复盘", "创建", "使用", "配置", "记录", "导出", "同步", "验证")
+    items = [
+        _clip_text(item["text"], 120)
+        for item in segments
+        if any(marker in item["text"] for marker in markers)
+    ]
+    if not items and segments:
+        items = [_clip_text(segments[-1]["text"], 120)]
+    return _dedupe_strings(items)[:8]
+
+
+def _build_grounded_limitations(segments: list[dict[str, str]], *, reason: str | None = None) -> list[str]:
+    items = []
+    if reason:
+        items.append(reason)
+    items.extend(
+        _clip_text(item["text"], 120)
+        for item in segments
+        if _contains_risk_marker(item["text"])
+    )
+    return _dedupe_strings(items)[:6]
+
+
 def _build_grounded_overview(*, title: str, segments: list[dict[str, str]], reason: str | None = None) -> str:
     topic = f"《{title}》" if title else "该视频"
-    sampled = _sample_transcript_points(segments, min(4, len(segments)))
-    content = "；".join(_clip_text(item["text"], 48) for item in sampled if item.get("text"))
+    sampled = _sample_transcript_points(segments, min(6, len(segments)))
+    content = "；".join(_clip_text(item["text"], 70) for item in sampled if item.get("text"))
     lead = reason or "已基于转写文本生成快速摘要。"
     if content:
         return f"{lead}{topic}围绕这些字幕内容展开：{content}。"
@@ -997,7 +1277,7 @@ def _extract_terms_from_segments(segments: list[dict[str, str]]) -> list[dict[st
                     "explanation": f"字幕在 {item['time']} 提到：{_clip_text(text, 80)}",
                 }
             )
-            if len(terms) >= 6:
+            if len(terms) >= 8:
                 return terms
     for item in segments:
         for term in _extract_chinese_term_candidates(item["text"]):
@@ -1011,7 +1291,7 @@ def _extract_terms_from_segments(segments: list[dict[str, str]]) -> list[dict[st
                     "explanation": f"字幕在 {item['time']} 提到：{_clip_text(item['text'], 80)}",
                 }
             )
-            if len(terms) >= 6:
+            if len(terms) >= 8:
                 return terms
     return terms
 
@@ -1052,7 +1332,7 @@ def _build_grounded_questions(*, title: str, segments: list[dict[str, str]]) -> 
         questions.append(f"字幕提到的风险或限制是什么：{_clip_text(risk_text, 30)}？")
     if action_text:
         questions.append(f"看完后应优先执行哪些动作：{_clip_text(action_text, 30)}？")
-    return _dedupe_strings(questions)[:6]
+    return _dedupe_strings(questions)[:8]
 
 
 def _build_grounded_qa_pairs(
@@ -1071,7 +1351,7 @@ def _build_grounded_qa_pairs(
         _clip_text(risk_segment["text"], 120) if risk_segment else "；".join(key_points[-2:] or key_points[:2]),
         _clip_text(segments[-1]["text"], 120) if segments else "",
     ]
-    for index, question in enumerate(questions[:5]):
+    for index, question in enumerate(questions[:8]):
         source = answer_sources[min(index, len(answer_sources) - 1)].strip()
         answer = f"字幕显示：{source}" if source else "字幕没有依据。"
         qa_pairs.append({"question": question, "answer": answer})
@@ -1131,13 +1411,57 @@ def _raise_if_stream_timed_out(started_at: float, timeout_seconds: float) -> Non
 
 def normalize_summary_payload(payload: dict, *, title: str | None = None, transcript: str | None = None) -> dict:
     fallback = _build_transcript_enrichment_payload(title=title or "", transcript=transcript or "")
+    topic = str(payload.get("topic") or "").strip()
+    if fallback and (not topic or _looks_generic_text(topic)):
+        topic = str(fallback.get("topic") or topic).strip()
+
+    audience = str(payload.get("audience") or "").strip()
+    if fallback and (not audience or _looks_generic_text(audience)):
+        audience = str(fallback.get("audience") or audience).strip()
+
+    main_thread = _list_of_strings(payload.get("main_thread"))
+    if fallback:
+        main_thread = _merge_string_section(
+            main_thread,
+            _list_of_strings(fallback.get("main_thread")),
+            min_count=5,
+            limit=10,
+        )
+
+    examples = _list_of_dicts(payload.get("examples"))
+    if fallback:
+        examples = _merge_dict_section(
+            examples,
+            _list_of_dicts(fallback.get("examples")),
+            min_count=5,
+            limit=8,
+        )
+
+    action_items = _list_of_strings(payload.get("action_items"))
+    if fallback:
+        action_items = _merge_string_section(
+            action_items,
+            _list_of_strings(fallback.get("action_items")),
+            min_count=4,
+            limit=8,
+        )
+
+    limitations = _list_of_strings(payload.get("limitations"))
+    if fallback:
+        limitations = _merge_string_section(
+            limitations,
+            _list_of_strings(fallback.get("limitations")),
+            min_count=2,
+            limit=6,
+        )
+
     outline = _list_of_dicts(payload.get("outline"))
     if fallback:
         outline = _merge_dict_section(
             outline,
             _list_of_dicts(fallback.get("outline")),
-            min_count=4,
-            limit=8,
+            min_count=8,
+            limit=14,
         )
 
     key_points = _list_of_strings(payload.get("key_points"))
@@ -1145,8 +1469,8 @@ def normalize_summary_payload(payload: dict, *, title: str | None = None, transc
         key_points = _merge_string_section(
             key_points,
             _list_of_strings(fallback.get("key_points")),
-            min_count=4,
-            limit=10,
+            min_count=8,
+            limit=16,
         )
 
     highlights = _list_of_dicts(payload.get("highlights"))
@@ -1154,8 +1478,8 @@ def normalize_summary_payload(payload: dict, *, title: str | None = None, transc
         highlights = _merge_dict_section(
             highlights,
             _list_of_dicts(fallback.get("highlights")),
-            min_count=4,
-            limit=8,
+            min_count=6,
+            limit=10,
         )
 
     terms = _list_of_dicts(payload.get("terms"))
@@ -1164,7 +1488,7 @@ def normalize_summary_payload(payload: dict, *, title: str | None = None, transc
             terms,
             _list_of_dicts(fallback.get("terms")),
             min_count=2,
-            limit=6,
+            limit=8,
         )
 
     questions = _list_of_strings(payload.get("questions"))
@@ -1172,8 +1496,8 @@ def normalize_summary_payload(payload: dict, *, title: str | None = None, transc
         questions = _merge_string_section(
             questions,
             _list_of_strings(fallback.get("questions")),
-            min_count=3,
-            limit=6,
+            min_count=4,
+            limit=8,
         )
 
     overview = str(payload.get("overview") or "暂无概览").strip()
@@ -1183,6 +1507,12 @@ def normalize_summary_payload(payload: dict, *, title: str | None = None, transc
     fallback_qa_pairs = _list_of_dicts(fallback.get("qa_pairs")) if fallback else []
     return {
         "overview": overview,
+        "topic": topic,
+        "audience": audience,
+        "main_thread": main_thread,
+        "examples": examples,
+        "action_items": action_items,
+        "limitations": limitations,
         "outline": outline,
         "key_points": key_points,
         "highlights": highlights,
@@ -1247,7 +1577,18 @@ def _looks_generic_text(text: str) -> bool:
 def _dict_text(item: dict) -> str:
     return " ".join(
         str(item.get(key) or "")
-        for key in ("time", "title", "summary", "text", "term", "explanation", "question", "answer")
+        for key in (
+            "time",
+            "title",
+            "summary",
+            "text",
+            "term",
+            "explanation",
+            "question",
+            "answer",
+            "topic",
+            "audience",
+        )
     ).strip()
 
 
@@ -1455,7 +1796,7 @@ def _normalize_qa_pairs(value, *, questions: list[str], fallback_pairs: list[dic
     if clean_pairs and len(clean_pairs) == len(pairs):
         return clean_pairs
     if fallback_pairs:
-        return _dedupe_dicts([*clean_pairs, *fallback_pairs])[:5]
+        return _dedupe_dicts([*clean_pairs, *fallback_pairs])[:8]
     if pairs:
         return pairs
     return [{"question": question, "answer": "可以在 AI 问答中继续追问这个问题。"} for question in questions]
@@ -1476,6 +1817,27 @@ class MockAIProvider:
         title = title or "演示视频"
         payload = {
             "overview": f"《{title}》主要帮助用户快速理解长视频的知识结构和关键结论。",
+            "topic": f"{title}的 AI 视频学习总结",
+            "audience": "想快速理解长视频并继续复盘的学习者",
+            "main_thread": [
+                "先说明为什么要把长视频转换成可阅读的学习笔记。",
+                "再介绍如何优先利用已有字幕降低处理成本。",
+                "随后把内容拆成章节、知识点、术语和问答。",
+                "最后提醒无字幕和平台限制这类边界需要明确展示。",
+            ],
+            "examples": [
+                {"time": "00:00", "text": "用开场主题帮助用户先建立整体认知。"},
+                {"time": "01:10", "text": "把字幕拆成大纲、要点和问题清单，作为结构化学习材料。"},
+            ],
+            "action_items": [
+                "先阅读一句话结论确认视频是否值得深入。",
+                "按章节时间轴回看关键片段。",
+                "把推荐追问交给 AI 问答继续展开。",
+            ],
+            "limitations": [
+                "演示内容不代表真实视频的全部细节。",
+                "无字幕视频仍需要语音转写，耗时会更长。",
+            ],
             "outline": [
                 {"time": "00:00", "title": "内容背景", "summary": "说明视频主题和学习目标。"},
                 {"time": "01:10", "title": "核心知识", "summary": "提炼关键概念、方法和应用场景。"},

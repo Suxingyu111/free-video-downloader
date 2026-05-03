@@ -10,7 +10,14 @@ import {
 
 const completedSummary = {
   title: "测试视频 / 入门:AI?",
+  readable_summary: "一句话结论：这是先流式输出的最终总结。\n核心要点：\n- 用户先看到可读内容。",
   overview: "这是总览。",
+  topic: "AI 入门视频",
+  audience: "想快速理解 AI 基础的用户",
+  main_thread: ["先解释背景", "再说明实践路径"],
+  examples: [{ time: "01:20", text: "用提示词优化作为案例" }],
+  action_items: ["复盘自己的使用场景", "按步骤尝试一次"],
+  limitations: ["没有展开模型训练细节"],
   outline: ["第一章：背景", "第二章：实践"],
   key_points: ["重点 A", "重点 B"],
   highlights: [
@@ -42,12 +49,20 @@ test("buildSummaryMarkdown includes summary learning sections", () => {
   const markdown = buildSummaryMarkdown(completedSummary);
 
   assert.match(markdown, /^# 测试视频 \/ 入门:AI\?/);
-  assert.match(markdown, /## 总览\n\n这是总览。/);
-  assert.match(markdown, /## 大纲\n\n- 第一章：背景\n- 第二章：实践/);
-  assert.match(markdown, /## 关键要点\n\n- 重点 A\n- 重点 B/);
-  assert.match(markdown, /## 高光片段\n\n- \[00:12\] 重要片段\n- 没有时间戳的亮点/);
-  assert.match(markdown, /## 术语表\n\n- \*\*Token\*\*：模型处理的文本单位\n- 上下文窗口/);
-  assert.match(markdown, /## 延伸问题\n\n- \*\*适合谁？\*\* 适合初学者。\n- 下一步学什么？/);
+  assert.match(markdown, /\| 项目 \| 内容 \|/);
+  assert.match(markdown, /### 流式可读总结\n\n一句话结论：这是先流式输出的最终总结。/);
+  assert.match(markdown, /### 一句话概览\n\n这是总览。/);
+  assert.match(markdown, /## 完整理解\n\n\| 主题 \| AI 入门视频 \|/);
+  assert.match(markdown, /### 主线脉络\n\n- 先解释背景\n- 再说明实践路径/);
+  assert.match(markdown, /### 例子和证据\n\n\| 时间 \| 内容 \|\n\| --- \| --- \|\n\| 01:20 \| 用提示词优化作为案例 \|/);
+  assert.match(markdown, /### 行动清单\n\n- 复盘自己的使用场景\n- 按步骤尝试一次/);
+  assert.match(markdown, /### 边界和限制\n\n- 没有展开模型训练细节/);
+  assert.match(markdown, /## 章节大纲\n\n1\. 第一章：背景\n2\. 第二章：实践/);
+  assert.match(markdown, /## 核心知识点\n\n- 重点 A\n- 重点 B/);
+  assert.match(markdown, /## 时间轴要点\n\n\| 时间 \| 内容 \|\n\| --- \| --- \|\n\| 00:12 \| 重要片段 \|/);
+  assert.match(markdown, /## 术语解释\n\n\| 术语 \| 解释 \|\n\| --- \| --- \|\n\| Token \| 模型处理的文本单位 \|/);
+  assert.match(markdown, /## 后续追问\n\n- 适合谁？\n- 下一步学什么？/);
+  assert.match(markdown, /<details>\n<summary>字幕原文<\/summary>/);
 });
 
 test("buildTranscriptText prefers transcript segments over full transcript text", () => {

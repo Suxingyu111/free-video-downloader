@@ -1,18 +1,20 @@
 {
   "name": "万能视频下载总结器",
   "brand": "SaveAny",
-  "description": "万能视频下载总结器 SaveAny 面向公开视频学习、复盘和资料整理，支持视频解析、高清保存、字幕提取、AI 摘要、思维导图和问答。",
+  "description": "万能视频下载总结器 SaveAny 支持 1800+ 网站的视频解析下载，先保存 MP4、音频和字幕，再按需使用 AI 总结、思维导图和问答增强。",
   "url": "https://your-domain.example/",
   "language": "zh-CN",
   "application_category": "MultimediaApplication",
   "capabilities": [
+    "1800+ 网站公开视频解析",
     "公开视频链接解析",
     "高清 MP4 保存",
+    "音频提取",
+    "清晰度选择",
     "播放列表任务",
     "字幕提取",
     "AI 视频总结",
-    "思维导图与问答",
-    "Markdown 学习笔记导出"
+    "思维导图与问答"
   ],
   "supported_public_sources": [
     "YouTube",

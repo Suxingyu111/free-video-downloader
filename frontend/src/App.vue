@@ -2,19 +2,20 @@
 import {
   BrainCircuit,
   CheckCircle2,
+  Clock3,
   CreditCard,
   Download,
+  FileText,
   FileVideo2,
-  Globe2,
   KeyRound,
   Link2,
   Loader2,
   LogOut,
+  MessageSquareText,
   MonitorSmartphone,
   Play,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Star,
   UserRound,
@@ -55,7 +56,7 @@ import {
 } from "./services/authSession";
 import { BEST_QUALITY_FORMAT, RELIABLE_MP4_FORMAT, resolveDownloadFormat } from "./services/formats";
 import { applyWorkspaceSnapshot, loadWorkspaceSnapshot, pickWorkspaceSnapshot, saveWorkspaceSnapshot } from "./services/workspacePersistence";
-import { seoCompliancePoints, seoFaqs } from "./seo/pages";
+import { seoFaqs } from "./seo/pages";
 
 const SummaryPanel = defineAsyncComponent(() => import("./components/summary/SummaryPanel.vue"));
 
@@ -63,47 +64,135 @@ const HOME_PAGE_ID = "download";
 const PRICING_PAGE_ID = "pricing";
 const HOME_DOWNLOAD_ANCHOR_ID = "download-console";
 const FREE_QUOTA_EXHAUSTED_MESSAGE = "今日免费 AI 总结额度已用完，请开通 Pro 个人版或购买按量包继续使用。";
-const homeHighlights = [
+const homeDownloadFeatures = [
   {
-    title: "公开视频平台",
-    description: "支持 YouTube、Bilibili、TikTok、Instagram 等主流平台，也覆盖抖音、小红书等视频来源；抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。",
-    icon: Globe2,
-    metric: "1800+",
-    tone: "sky"
-  },
-  {
-    title: "清晰度可选",
-    description: "自动识别标题、封面、时长和可用格式，按需选择稳定 MP4 或原始最高画质。",
-    icon: SlidersHorizontal,
-    metric: "MP4",
-    tone: "green"
-  },
-  {
-    title: "解析后自动总结",
-    description: "解析完成后自动生成摘要、字幕、思维导图和 AI 问答，把视频变成可复习的学习笔记。",
-    icon: BrainCircuit,
-    metric: "AI",
-    tone: "orange",
+    label: "Coverage",
+    title: "1800+ 网站覆盖",
+    description: "围绕 yt-dlp 风格的公开视频解析能力设计，优先解决用户真正来这里的事：能不能识别这个链接、能不能下载。",
+    points: ["主流视频站", "短视频平台", "社交公开视频"],
+    icon: FileVideo2,
+    tone: "teal",
     featured: true
   },
   {
-    title: "手机浏览器可用",
-    description: "无需安装 App，手机浏览器打开即可粘贴链接、解析视频、查看总结和下载内容。",
+    label: "Format",
+    title: "格式与清晰度",
+    description: "解析后直接看可用格式，按需要选择稳定 MP4、最高画质、音频或字幕，不把用户塞进复杂参数里。",
+    points: ["1080p MP4", "原始最高画质", "音频提取"],
+    icon: Download,
+    tone: "green"
+  },
+  {
+    label: "Subtitle",
+    title: "字幕和音频",
+    description: "当公开视频提供字幕或音轨时，下载不只拿到视频文件，还能保留 SRT 字幕、音频和后续 AI 处理入口。",
+    points: ["SRT 字幕", "音频文件", "字幕转写"],
+    icon: FileText,
+    tone: "sky"
+  },
+  {
+    label: "Mobile",
+    title: "手机也能下载",
+    description: "不需要安装 App，手机浏览器打开 SaveAny 就能粘贴链接、解析视频、选择格式并保存文件。",
+    points: ["移动端网页", "手机保存", "无需安装 App"],
     icon: MonitorSmartphone,
-    metric: "Web",
     tone: "rose"
   }
 ];
 
 const pageLinks = [
   { id: HOME_DOWNLOAD_ANCHOR_ID, label: "回到下载", type: "anchor" },
-  { id: "home-highlights", label: "核心能力", type: "anchor" },
-  { id: "home-faq", label: "常见问题", type: "anchor" },
+  { id: "home-platforms", label: "支持平台", type: "anchor" },
+  { id: "home-download-capabilities", label: "下载能力", type: "anchor" },
+  { id: "home-ai-addon", label: "AI 增强", type: "anchor" },
+  { id: "home-use-cases", label: "适用场景", type: "anchor" },
+  { id: "home-pricing", label: "Pro 价值", type: "anchor" },
+  { id: "home-faq", label: "边界 FAQ", type: "anchor" },
   { id: PRICING_PAGE_ID, label: "套餐方案", type: "page", accent: true }
 ];
 const pageIds = [HOME_PAGE_ID, PRICING_PAGE_ID];
 const homeAnchorIds = pageLinks.filter((link) => link.type === "anchor").map((link) => link.id);
-const quickLinks = ["YouTube", "Bilibili", "抖音"];
+const quickLinks = ["YouTube", "Bilibili", "抖音", "TikTok", "Instagram"];
+const downloadPreviewStats = [
+  { metric: "1800+", label: "网站覆盖" },
+  { metric: "MP4", label: "稳定视频下载" },
+  { metric: "SRT", label: "字幕保存" },
+  { metric: "AI", label: "下载后可选增强" }
+];
+const homePlatformGroups = [
+  {
+    title: "主流视频",
+    platforms: ["YouTube", "Bilibili", "Vimeo", "Facebook"]
+  },
+  {
+    title: "短视频",
+    platforms: ["抖音", "TikTok", "快手", "小红书"]
+  },
+  {
+    title: "社交内容",
+    platforms: ["Instagram", "X / Twitter", "Reddit", "Threads"]
+  },
+  {
+    title: "更多来源",
+    platforms: ["Twitch", "SoundCloud", "Niconico", "TED"]
+  }
+];
+const homeAiAddons = [
+  {
+    title: "AI 总结",
+    description: "下载后可选生成章节摘要和关键内容，适合想快速看懂长视频的人。",
+    icon: Sparkles
+  },
+  {
+    title: "字幕整理",
+    description: "把可用字幕或转写内容整理成可复制文本、SRT 和 Markdown。",
+    icon: FileText
+  },
+  {
+    title: "思维导图",
+    description: "对长视频、教程、访谈和播客提炼结构，方便之后继续查看。",
+    icon: BrainCircuit
+  },
+  {
+    title: "AI 问答",
+    description: "围绕已解析的视频内容继续追问，减少反复拖进度条的成本。",
+    icon: MessageSquareText
+  }
+];
+const homeUseCases = [
+  {
+    label: "离线观看",
+    title: "通勤、旅行、网络差的时候也能看",
+    pain: "很多视频只在网页里临时收藏，离开网络或平台入口就很难继续看。",
+    result: "保存 MP4、音频或字幕，把公开视频放进自己的设备。",
+    upgrade: "高频保存长视频时，Pro 的下载额度和时长上限更稳。"
+  },
+  {
+    label: "素材保存",
+    title: "把公开视频素材、案例和灵感统一收好",
+    pain: "灵感分散在多个平台，临时找封面、片段、字幕或音频很耗时间。",
+    result: "解析封面、标题、格式和字幕，按清晰度保存需要的版本。",
+    upgrade: "高频整理素材时，Pro 的下载额度、AI 摘要和问答次数更够用。"
+  },
+  {
+    label: "家庭共享",
+    title: "老人、小孩和家人都能直接打开本地文件",
+    pain: "有些公开视频适合给家人看，但平台 App、广告和网络环境经常打断体验。",
+    result: "下载成更容易播放的 MP4，必要时保留字幕和音频。",
+    upgrade: "需要保存更长视频或更多任务时，Pro 可以减少额度中断。"
+  }
+];
+const homeUpgradeBenefits = [
+  "更多视频解析与下载次数，适合日常高频保存公开视频",
+  "更长单视频下载上限，减少长视频中途被额度卡住的情况",
+  "手机浏览器也能解析和下载，通勤、旅行和临时保存时不用安装 App",
+  "字幕、转写、AI 总结和问答作为下载后的增强能力按需使用"
+];
+const homeTrustBoundaries = [
+  "支持 1800+ 网站的视频解析下载，但实际结果会受平台策略、地区、登录要求和公开视频状态影响。",
+  "抖音公开视频免登录下载；受平台风控影响，少数链接可能失败。",
+  "只处理用户有权访问的公开视频，不处理私密、付费、DRM 或需要登录的视频。"
+];
 const pricingPlans = [
   {
     id: "free",
@@ -111,7 +200,7 @@ const pricingPlans = [
     name: "免费版",
     price: "¥0",
     cycle: "登录后额度更多",
-    description: "适合偶尔保存公开视频、试用 AI 总结，把几个视频整理成可复习笔记。",
+    description: "适合先验证公开视频能否解析、下载，并少量试用字幕和 AI 增强。",
     features: ["每天 30 次视频解析", "每天 10 次视频下载", "每天 3 次 AI 总结", "每月 30 分钟语音转写试用", "每月 10 次 AI 问答", "单视频总结 30 分钟以内"],
     cta: "开始免费使用",
     target: "download"
@@ -122,8 +211,8 @@ const pricingPlans = [
     name: "Pro 个人版",
     price: "¥19",
     cycle: "/月",
-    description: "适合高频学习、课程整理、播客复习和创作者素材笔记。",
-    features: ["每月 120 次 AI 总结", "每月 600 分钟语音转写", "每月 200 次 AI 问答", "单视频总结 120 分钟以内", "单视频下载 180 分钟以内"],
+    description: "适合经常下载公开视频、整理长视频和批量处理素材的个人用户。",
+    features: ["更高视频解析与下载额度", "每月 120 次 AI 总结", "每月 600 分钟语音转写", "每月 200 次 AI 问答", "单视频总结 120 分钟以内", "单视频下载 180 分钟以内"],
     cta: "开通 Pro",
     target: "download",
     featured: true
@@ -136,8 +225,7 @@ const creditPacks = [
   { id: "transcription_large", group: "语音转写分钟包", name: "转写大包", price: "¥29", amount: "600 分钟语音转写", validity: "180 天有效" }
 ];
 const pricingGuarantees = ["只处理用户有权访问的公开视频", "不托管登录态或付费绕过能力", "会员状态以服务端和 Stripe webhook 为准"];
-const compactFaqs = seoFaqs.slice(0, 3);
-const compactCompliancePoints = seoCompliancePoints.slice(0, 3);
+const compactFaqs = seoFaqs.slice(0, 2);
 const initialWorkspaceSnapshot = loadWorkspaceSnapshot();
 
 function hashTarget(hash = "") {
@@ -1239,10 +1327,10 @@ onBeforeUnmount(() => {
 <template>
   <main class="page">
     <header class="topbar">
-      <a class="brand" href="#download" aria-label="万能视频下载器首页" :aria-current="currentPage === HOME_PAGE_ID && !state.activeAnchor ? 'page' : undefined" @click.prevent="navigateToPage(HOME_PAGE_ID)">
+      <a class="brand" href="#download" aria-label="SaveAny 1800+ 视频下载器首页" :aria-current="currentPage === HOME_PAGE_ID && !state.activeAnchor ? 'page' : undefined" @click.prevent="navigateToPage(HOME_PAGE_ID)">
         <span class="brand-mark" aria-hidden="true"><FileVideo2 :size="21" /></span>
         <span class="brand-name">SaveAny</span>
-        <span class="brand-pill">万能视频下载总结</span>
+        <span class="brand-pill">1800+ 视频下载器</span>
       </a>
       <nav class="nav-links" aria-label="主导航">
         <a
@@ -1321,11 +1409,11 @@ onBeforeUnmount(() => {
 
     <section id="download" class="hero" v-show="currentPage === 'download'" aria-labelledby="page-title">
       <div class="hero-copy-block">
-        <p class="kicker"><span aria-hidden="true"></span>支持 1800+ 平台，解析后自动总结</p>
-        <h1 id="page-title" aria-label="复制链接，一键保存高清视频并生成视频学习笔记">
-          <span class="title-main">万能视频下载总结器，</span><span>一键保存并总结</span>
+        <p class="kicker"><span aria-hidden="true"></span>1800+ public video downloader · AI add-ons optional</p>
+        <h1 id="page-title" aria-label="支持 1800+ 网站的视频解析下载">
+          <span class="title-main">支持 1800+ 网站的</span><span>视频解析下载</span>
         </h1>
-        <p class="hero-copy">粘贴视频链接，自动解析标题、封面、清晰度和音频。YouTube、Bilibili、抖音、TikTok... 下载、字幕、AI 总结和思维导图一次完成。</p>
+        <p class="hero-copy">复制链接，SaveAny 会优先解析平台、标题、封面、时长、格式和清晰度。支持 YouTube、Bilibili、抖音、TikTok、Instagram 等主流平台，先下载 MP4、音频或字幕，AI 总结可选。</p>
       </div>
 
       <section id="download-console" class="console" aria-label="视频下载控制台">
@@ -1333,7 +1421,7 @@ onBeforeUnmount(() => {
           <label class="sr-only" for="video-url">视频链接</label>
           <div class="url-field">
             <Link2 :size="20" aria-hidden="true" />
-            <input id="video-url" v-model="state.url" type="url" inputmode="url" autocomplete="url" placeholder="粘贴 YouTube、Bilibili、TikTok 等公开视频链接" required />
+            <input id="video-url" v-model="state.url" type="url" inputmode="url" autocomplete="url" placeholder="粘贴 YouTube、Bilibili、抖音、TikTok、Instagram 等公开视频链接" required />
             <button class="primary-button inline-button" type="submit" :disabled="state.analyzing || !state.url.trim()">
               <Loader2 v-if="state.analyzing" :size="21" class="animate-spin" aria-hidden="true" />
               <Search v-else :size="21" aria-hidden="true" />
@@ -1343,6 +1431,20 @@ onBeforeUnmount(() => {
           <div class="quick-row" aria-label="平台示例">
             <span>试试:</span>
             <span v-for="link in quickLinks" :key="link" class="quick-chip">{{ link }}</span>
+          </div>
+          <div v-if="!hasResult" class="hero-helper-strip" aria-label="下载能力提示">
+            <span>
+              <FileVideo2 :size="16" aria-hidden="true" />
+              1800+ 网站覆盖，先看能否解析下载
+            </span>
+            <span>
+              <Download :size="16" aria-hidden="true" />
+              MP4 下载、音频提取、字幕保存，手机浏览器也能下载
+            </span>
+            <span>
+              <Star :size="16" aria-hidden="true" />
+              AI 总结可选，Pro 解锁更多下载额度、长视频和移动端体验
+            </span>
           </div>
         </form>
 
@@ -1501,71 +1603,210 @@ onBeforeUnmount(() => {
               <div>
                 <p class="summary-fallback-eyebrow">AI 总结工作区</p>
                 <h3>解析后会自动总结</h3>
-                <p>视频信息保留在左侧，学习摘要、字幕、思维导图和问答会集中显示在这里。</p>
+                <p>视频信息保留在左侧，摘要、字幕、思维导图和问答会集中显示在这里。</p>
               </div>
             </section>
           </section>
         </section>
 
-        <ol v-if="!hasResult" class="workflow" aria-label="下载流程">
-          <li><span>1</span>粘贴链接</li>
-          <li><span>2</span>解析并自动总结</li>
-          <li><span>3</span>选择清晰度下载</li>
-        </ol>
       </section>
 
-      <div class="trust-strip" aria-label="产品亮点">
-        <span><ShieldCheck :size="18" />无广告跳转</span>
-        <span><BrainCircuit :size="18" />AI 自动总结</span>
-        <span><Sparkles :size="18" />高清画质</span>
-      </div>
-
-      <section id="home-highlights" class="home-highlights" aria-label="核心能力">
-        <div class="home-section-header">
-          <p class="section-eyebrow">核心能力</p>
-        </div>
-        <div class="highlights-grid">
-          <article
-            v-for="highlight in homeHighlights"
-            :key="highlight.title"
-            class="highlight-card"
-            :class="{ featured: highlight.featured }"
-            :data-tone="highlight.tone"
-          >
-            <div class="highlight-card-top">
-              <span class="highlight-icon" aria-hidden="true">
-                <component :is="highlight.icon" :size="24" stroke-width="2.2" />
-              </span>
-              <span class="highlight-metric">{{ highlight.metric }}</span>
+      <section v-if="!hasResult" class="hero-product-preview" aria-label="Universal Download Console 预览">
+        <div class="preview-window">
+          <div class="preview-window-head">
+            <div>
+              <strong>Universal Download Console</strong>
+              <span>示例解析：公开视频链接</span>
             </div>
-            <h3>{{ highlight.title }}</h3>
-            <p>{{ highlight.description }}</p>
-          </article>
+            <small>1800+ sites -> formats -> mobile download</small>
+          </div>
+          <div class="download-console-preview">
+            <article class="preview-link-panel" aria-label="示例输入链接">
+              <div class="preview-video-frame">
+                <FileVideo2 :size="28" aria-hidden="true" />
+                <span>PUBLIC VIDEO</span>
+              </div>
+              <div class="preview-source-copy">
+                <span class="panel-label">平台识别</span>
+                <h2>YouTube / Bilibili / TikTok</h2>
+                <p><Clock3 :size="15" aria-hidden="true" /> 标题、封面、时长、来源和公开视频状态</p>
+              </div>
+            </article>
+
+            <article class="preview-format-panel" aria-label="解析后选择格式和清晰度">
+              <span class="panel-label">解析后选择格式和清晰度</span>
+              <h2>MP4 下载、音频提取、字幕保存</h2>
+              <ul class="preview-format-list">
+                <li><strong>1080p MP4</strong><span>稳定视频文件</span><em>推荐</em></li>
+                <li><strong>Best Quality</strong><span>原始最高画质</span><em>可选</em></li>
+                <li><strong>SRT 字幕</strong><span>字幕和时间轴</span><em>可用时</em></li>
+              </ul>
+            </article>
+
+            <aside class="preview-mobile-panel" aria-label="手机也能下载">
+              <span class="panel-label">手机也能下载</span>
+              <h2>手机浏览器直接保存</h2>
+              <ul>
+                <li><CheckCircle2 :size="16" aria-hidden="true" /> 移动端网页，无需安装 App</li>
+                <li><CheckCircle2 :size="16" aria-hidden="true" /> 解析后选择 MP4、音频或字幕</li>
+                <li><Sparkles :size="16" aria-hidden="true" /> AI 总结可选开启</li>
+              </ul>
+              <p>手机上也能完成公开视频解析和下载，适合临时保存、通勤和旅行场景。</p>
+            </aside>
+          </div>
+          <div class="download-preview-strip" aria-label="下载能力指标">
+            <span v-for="point in downloadPreviewStats" :key="point.metric">
+              <strong>{{ point.metric }}</strong>
+              {{ point.label }}
+            </span>
+          </div>
         </div>
       </section>
 
-      <section id="home-faq" class="home-faq-summary" aria-label="常见问题与边界">
-        <div class="home-section-header">
-          <p class="section-eyebrow">常见问题与边界</p>
-        </div>
-        <div class="home-faq-grid">
-          <div class="compact-faq-list">
-            <article v-for="faq in compactFaqs" :key="faq.question" class="compact-faq-card">
-              <h3>{{ faq.question }}</h3>
-              <p>{{ faq.answer }}</p>
+      <div v-if="!hasResult" class="home-landing" aria-label="SaveAny 首页介绍">
+        <section id="home-platforms" class="platform-coverage" aria-labelledby="home-platforms-title">
+          <div class="home-section-header centered">
+            <p class="section-eyebrow">支持平台墙</p>
+            <h2 id="home-platforms-title">热门平台覆盖</h2>
+            <p>SaveAny 的第一价值不是把用户限定到某个场景，而是尽可能覆盖更多公开视频来源，让任何人粘贴链接后先得到可用的解析结果。</p>
+          </div>
+          <div class="platform-chip-grid" aria-label="热门平台分组">
+            <article v-for="group in homePlatformGroups" :key="group.title" class="platform-group-card">
+              <h3>{{ group.title }}</h3>
+              <div>
+                <span v-for="platform in group.platforms" :key="platform">{{ platform }}</span>
+              </div>
             </article>
           </div>
-          <aside class="compliance-summary" aria-labelledby="compliance-summary-title">
-            <ShieldCheck :size="24" aria-hidden="true" />
-            <div>
-              <h3 id="compliance-summary-title">公开视频和版权边界</h3>
+        </section>
+
+        <section id="home-download-capabilities" class="download-capability-section" aria-labelledby="home-download-capabilities-title">
+          <div class="home-section-header centered">
+            <p class="section-eyebrow">下载能力</p>
+            <h2 id="home-download-capabilities-title">解析后选择格式和清晰度</h2>
+            <p>用户进入首页最关心的是链接能不能解析、文件能不能保存、清晰度和字幕能不能选择。AI 总结放在下载成功后的下一步，不抢主卖点。</p>
+          </div>
+          <div class="download-capability-grid">
+            <article
+              v-for="card in homeDownloadFeatures"
+              :key="card.title"
+              class="outcome-card"
+              :class="{ featured: card.featured }"
+              :data-tone="card.tone"
+            >
+              <div class="outcome-card-top">
+                <span class="outcome-icon" aria-hidden="true">
+                  <component :is="card.icon" :size="23" stroke-width="2.2" />
+                </span>
+                <span class="outcome-label">{{ card.label }}</span>
+              </div>
+              <h3>{{ card.title }}</h3>
+              <p>{{ card.description }}</p>
               <ul>
-                <li v-for="point in compactCompliancePoints" :key="point">{{ point }}</li>
+                <li v-for="point in card.points" :key="point">{{ point }}</li>
               </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="home-ai-addon" class="ai-addon-panel" aria-labelledby="home-ai-addon-title">
+          <div class="ai-addon-copy">
+            <p class="section-eyebrow">AI 增强</p>
+            <h2 id="home-ai-addon-title">AI 总结是下载后的增强能力</h2>
+            <p>下载是所有用户的共同需求；AI 总结、字幕整理、思维导图和问答是用户保存视频后继续提高效率的附加价值。</p>
+          </div>
+          <div class="ai-addon-grid">
+            <article v-for="item in homeAiAddons" :key="item.title">
+              <span class="outcome-icon" aria-hidden="true">
+                <component :is="item.icon" :size="22" stroke-width="2.2" />
+              </span>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.description }}</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="home-use-cases" class="use-case-section" aria-labelledby="home-use-cases-title">
+          <div class="home-section-header">
+            <p class="section-eyebrow">适用场景</p>
+            <h2 id="home-use-cases-title">不限定人群，先满足“我想下载这个视频”</h2>
+            <p>成年人、小孩、创作者、普通用户、家庭成员都可能只是想把公开视频保存下来。页面内容优先服务广泛下载需求，再承接更深的整理能力。</p>
+          </div>
+          <div class="use-case-grid">
+            <article v-for="item in homeUseCases" :key="item.label" class="use-case-card">
+              <span>{{ item.label }}</span>
+              <h3>{{ item.title }}</h3>
+              <dl>
+                <div>
+                  <dt>痛点</dt>
+                  <dd>{{ item.pain }}</dd>
+                </div>
+                <div>
+                  <dt>结果</dt>
+                  <dd>{{ item.result }}</dd>
+                </div>
+                <div>
+                  <dt>升级</dt>
+                  <dd>{{ item.upgrade }}</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+        </section>
+
+        <section id="home-pricing" class="home-pricing-preview" aria-labelledby="home-pricing-title">
+          <div class="upgrade-panel">
+            <div class="upgrade-copy">
+              <p class="section-eyebrow">Pro 价值</p>
+              <h2 id="home-pricing-title">免费版先验证下载能力，Pro 解锁更高下载额度和增强能力</h2>
+              <p>免费版先让用户确认 SaveAny 能不能解析公开视频、选择格式并下载文件；Pro 面向更长视频、更高频下载、移动端体验和下载后的 AI 增强。</p>
+              <ul class="upgrade-list">
+                <li v-for="benefit in homeUpgradeBenefits" :key="benefit">
+                  <CheckCircle2 :size="18" aria-hidden="true" />
+                  <span>{{ benefit }}</span>
+                </li>
+              </ul>
+              <button class="primary-button" type="button" @click="navigateToPage(PRICING_PAGE_ID)">
+                <Star :size="18" aria-hidden="true" />
+                <span>查看套餐方案</span>
+              </button>
             </div>
-          </aside>
-        </div>
-      </section>
+            <div class="upgrade-mini-plans" aria-label="首页套餐摘要">
+              <article v-for="plan in pricingPlans" :key="plan.id" :class="{ featured: plan.featured }">
+                <span>{{ plan.badge }}</span>
+                <h3>{{ plan.name }}</h3>
+                <strong>{{ plan.price }} <small>{{ plan.cycle }}</small></strong>
+                <p>{{ plan.description }}</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="home-faq" class="home-faq-summary" aria-label="常见问题与边界">
+          <div class="home-section-header">
+            <p class="section-eyebrow">边界 FAQ</p>
+            <h2>购买前必须知道的边界</h2>
+            <p>支持 1800+ 网站不等于绕过所有限制。把合规、平台风控和失败预期提前说清楚，用户才更敢把它当成长期工具。</p>
+          </div>
+          <div class="home-faq-grid">
+            <div class="compact-faq-list">
+              <article v-for="faq in compactFaqs" :key="faq.question" class="compact-faq-card">
+                <h3>{{ faq.question }}</h3>
+                <p>{{ faq.answer }}</p>
+              </article>
+            </div>
+            <aside class="compliance-summary" aria-labelledby="compliance-summary-title">
+              <ShieldCheck :size="24" aria-hidden="true" />
+              <div>
+                <h3 id="compliance-summary-title">公开视频和版权边界</h3>
+                <ul class="trust-boundary-list">
+                  <li v-for="point in homeTrustBoundaries" :key="point">{{ point }}</li>
+                </ul>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </div>
     </section>
 
     <section id="pricing" class="section pricing-section page-view" v-if="currentPage === 'pricing'">

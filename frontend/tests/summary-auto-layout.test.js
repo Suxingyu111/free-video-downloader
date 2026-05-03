@@ -21,27 +21,46 @@ test("analyzing a video automatically starts the AI summary task", () => {
 
 test("analyzed results appear below the unchanged hero search area", () => {
   assert.doesNotMatch(appSource, /:class="\{\s*'hero-workbench':\s*hasResult\s*\}"/);
-  assert.match(appSource, /<p class="hero-copy">粘贴视频链接/);
+  assert.match(appSource, /<p class="hero-copy">复制链接/);
   assert.doesNotMatch(appSource, /<p v-if="!hasResult" class="hero-copy"/);
   assert.match(appSource, /<form class="search-panel"[\s\S]*<section v-if="hasResult" class="analysis-workbench"/);
   assert.doesNotMatch(mainCss, /\.hero-workbench\b/);
 });
 
-test("hero search area uses compact vertical spacing so results enter the first viewport sooner", () => {
+test("hero search area keeps the search box compact while adding vertical breathing room", () => {
   assert.match(mainCss, /\.topbar\s*\{[\s\S]*min-height:\s*76px/);
   assert.match(mainCss, /\.hero\s*\{[\s\S]*min-height:\s*auto/);
-  assert.match(mainCss, /\.hero\s*\{[\s\S]*padding:\s*clamp\(24px,\s*4vw,\s*48px\)\s+20px\s+38px/);
+  assert.match(mainCss, /\.hero\s*\{[\s\S]*padding:\s*clamp\(30px,\s*4\.4vw,\s*60px\)\s+20px\s+46px/);
+  assert.match(mainCss, /\.hero-copy-block\s*\{[\s\S]*width:\s*min\(100%,\s*980px\)/);
   assert.match(mainCss, /\.kicker\s*\{[\s\S]*min-height:\s*34px/);
-  assert.match(mainCss, /\.hero h1\s*\{[\s\S]*margin:\s*16px\s+auto\s+0/);
-  assert.match(mainCss, /\.hero-copy,\s*\n\.section-copy\s*\{[\s\S]*margin:\s*10px\s+auto\s+0/);
+  assert.match(mainCss, /\.hero h1\s*\{[\s\S]*margin:\s*22px\s+auto\s+0/);
+  assert.match(mainCss, /\.hero h1\s*\{[\s\S]*width:\s*min\(100%,\s*1040px\)/);
+  assert.match(mainCss, /\.hero h1\s*\{[\s\S]*max-width:\s*1040px/);
+  assert.match(mainCss, /\.hero-copy,\s*\n\.section-copy\s*\{[\s\S]*max-width:\s*760px/);
+  assert.match(mainCss, /\.hero-copy,\s*\n\.section-copy\s*\{[\s\S]*margin:\s*16px\s+auto\s+0/);
   assert.match(mainCss, /\.console\s*\{[\s\S]*width:\s*min\(100%,\s*1180px\)/);
-  assert.match(mainCss, /\.console\s*\{[\s\S]*margin-top:\s*22px/);
+  assert.match(mainCss, /\.console\s*\{[\s\S]*margin-top:\s*34px/);
   assert.match(mainCss, /\.search-panel\s*\{[\s\S]*width:\s*min\(100%,\s*920px\)/);
   assert.match(mainCss, /\.search-panel\s*\{[\s\S]*margin:\s*0\s+auto/);
-  assert.match(mainCss, /\.search-panel\s*\{[\s\S]*gap:\s*8px/);
+  assert.match(mainCss, /\.search-panel\s*\{[\s\S]*gap:\s*14px/);
   assert.match(mainCss, /\.url-field\s*\{[\s\S]*min-height:\s*60px/);
+  assert.match(mainCss, /\.url-field\s*\{[\s\S]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+180px/);
   assert.match(mainCss, /\.quick-row\s*\{[\s\S]*min-height:\s*28px/);
+  assert.match(mainCss, /\.hero-helper-strip\s*\{[\s\S]*width:\s*min\(100%,\s*860px\)/);
+  assert.match(mainCss, /\.hero-helper-strip\s*\{[\s\S]*gap:\s*12px\s+8px/);
+  assert.doesNotMatch(mainCss, /\.search-panel\s*\{[\s\S]*width:\s*min\(100%,\s*1240px\)/);
+  assert.doesNotMatch(mainCss, /\.url-field\s*\{[\s\S]*min-height:\s*68px/);
   assert.match(mainCss, /\.analysis-workbench\s*\{[\s\S]*margin-top:\s*10px/);
+});
+
+test("homepage visual system feels premium instead of beige utility-site", () => {
+  assert.match(appSource, /class="hero-product-preview"/);
+  assert.match(mainCss, /\.hero-product-preview\s*\{/);
+  assert.match(mainCss, /\.preview-window\s*\{[\s\S]*background:[\s\S]*linear-gradient\(180deg,\s*#ffffff,\s*#f8fafc\)/);
+  assert.doesNotMatch(mainCss, /\.preview-window\s*\{[\s\S]*linear-gradient\(180deg,\s*#08111f,\s*#101827\)/);
+  assert.doesNotMatch(mainCss, /\.preview-link-panel,\s*\n\.preview-format-panel,\s*\n\.preview-mobile-panel\s*\{[\s\S]*background:\s*rgba\(15,\s*23,\s*42/);
+  assert.doesNotMatch(mainCss, /#f3efe6|#fffdf7|#faf6ed|#f7f1e6|#fbf8ef|#ebe6dc|#f6efe2/i);
+  assert.doesNotMatch(mainCss, /rgba\(245,\s*158,\s*11/);
 });
 
 test("top navigation scrolls to homepage sections while pricing remains a separate page", () => {
@@ -51,7 +70,12 @@ test("top navigation scrolls to homepage sections while pricing remains a separa
   assert.match(appSource, /const HOME_DOWNLOAD_ANCHOR_ID = "download-console"/);
   assert.match(appSource, /const homeAnchorIds = pageLinks\.filter/);
   assert.match(appSource, /label:\s*"回到下载"/);
-  assert.match(appSource, /label:\s*"核心能力"/);
+  assert.match(appSource, /label:\s*"支持平台"/);
+  assert.match(appSource, /label:\s*"下载能力"/);
+  assert.match(appSource, /label:\s*"AI 增强"/);
+  assert.match(appSource, /label:\s*"适用场景"/);
+  assert.match(appSource, /label:\s*"Pro 价值"/);
+  assert.match(appSource, /label:\s*"边界 FAQ"/);
   assert.match(appSource, /label:\s*"套餐方案"/);
   assert.match(appSource, /currentPage:\s*"download"/);
   assert.match(appSource, /activeAnchor:\s*""/);
@@ -64,12 +88,13 @@ test("top navigation scrolls to homepage sections while pricing remains a separa
   assert.match(appSource, /@click\.prevent="navigateToNavLink\(link\)"/);
   assert.match(appSource, /<section[^>]*id="download"[^>]*v-show="currentPage === 'download'"/);
   assert.match(appSource, /id="download-console"/);
-  assert.match(appSource, /id="home-highlights"/);
+  assert.match(appSource, /id="home-platforms"/);
+  assert.match(appSource, /id="home-download-capabilities"/);
+  assert.match(appSource, /id="home-ai-addon"/);
+  assert.match(appSource, /id="home-use-cases"/);
+  assert.match(appSource, /id="home-pricing"/);
   assert.match(appSource, /id="home-faq"/);
-  assert.doesNotMatch(appSource, /home-highlights-title/);
-  assert.doesNotMatch(appSource, /home-faq-title/);
   assert.doesNotMatch(appSource, /id="home-pricing-preview"/);
-  assert.doesNotMatch(appSource, /id="home-use-cases"/);
   assert.doesNotMatch(appSource, /id="home-ai-answers"/);
   assert.doesNotMatch(appSource, /id="home-compliance"/);
   assert.match(appSource, /<section[^>]*id="pricing"[^>]*v-if="currentPage === 'pricing'"/);
@@ -119,23 +144,50 @@ test("global styles use the Industrial Media Console token system", () => {
   assert.doesNotMatch(`${mainCss}\n${summaryCss}`, /#2f7df4|#1f6eea|#f7fbff/);
 });
 
-test("homepage capability cards are compact and not navigation targets", () => {
-  for (const title of ["公开视频平台", "清晰度可选", "解析后自动总结", "手机浏览器可用"]) {
+test("homepage content strategy leads with 1800+ download coverage before AI add-ons", () => {
+  for (const title of ["1800+ 网站覆盖", "格式与清晰度", "字幕和音频", "手机也能下载"]) {
     assert.match(appSource, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 
-  assert.match(appSource, /v-for="highlight in homeHighlights"/);
-  assert.match(appSource, /class="highlight-card"/);
-  assert.match(appSource, /解析并自动总结/);
-  assert.match(appSource, /选择清晰度下载/);
-  assert.match(appSource, /AI 自动总结/);
+  assert.match(appSource, /const homeDownloadFeatures = \[/);
+  assert.match(appSource, /const homePlatformGroups = \[/);
+  assert.match(appSource, /const homeAiAddons = \[/);
+  assert.match(appSource, /const homeUseCases = \[/);
+  assert.match(appSource, /const downloadPreviewStats = \[/);
+  assert.doesNotMatch(appSource, /const homeOutcomeCards = \[/);
+  assert.doesNotMatch(appSource, /const homeProofPoints = \[/);
+  assert.match(appSource, /class="download-console-preview"/);
+  assert.match(appSource, /class="download-preview-strip"/);
+  assert.match(appSource, /Universal Download Console/);
+  assert.match(appSource, /1080p MP4/);
+  assert.match(appSource, /SRT 字幕/);
+  assert.match(appSource, /移动端网页/);
+  assert.match(appSource, /手机保存/);
+  assert.match(appSource, /无需安装 App/);
+  assert.match(appSource, /class="platform-coverage"/);
+  assert.match(appSource, /class="download-capability-grid"/);
+  assert.match(appSource, /class="ai-addon-panel"/);
+  assert.match(appSource, /class="use-case-grid"/);
+  assert.match(appSource, /class="upgrade-panel"/);
+  assert.match(appSource, /离线观看/);
+  assert.match(appSource, /素材保存/);
+  assert.match(appSource, /家庭共享/);
+  assert.match(appSource, /Pro 解锁更多下载额度、长视频和移动端体验/);
+  assert.doesNotMatch(appSource, /下载队列|批量队列|download queue/i);
+  assert.doesNotMatch(appSource, /用户愿意付费/);
+  assert.doesNotMatch(appSource, /class="workflow"/);
+  assert.doesNotMatch(appSource, /class="trust-strip"/);
+  assert.doesNotMatch(appSource, /class="home-comparison-table"/);
+  assert.doesNotMatch(appSource, /视频知识工作台/);
+  assert.doesNotMatch(appSource, /Study Pack/);
+  assert.doesNotMatch(appSource, /68 分钟公开视频课/);
+  assert.doesNotMatch(appSource, /SaveAny 与普通视频下载器对比/);
+  assert.doesNotMatch(appSource, /三步完成视频下载和 AI 总结/);
   assert.doesNotMatch(appSource, /先完成下载，再把视频整理成笔记/);
-  assert.doesNotMatch(appSource, /下载并自动总结/);
-  assert.doesNotMatch(appSource, /解析并选择清晰度/);
-  assert.doesNotMatch(appSource, /播放列表任务/);
   assert.doesNotMatch(appSource, /长视频与播放列表工作流/);
-  assert.doesNotMatch(appSource, /:href="`#\$\{highlight\.id\}`"/);
-  assert.doesNotMatch(appSource, /@click\.prevent="navigateToPage\(highlight\.id\)"/);
+  assert.doesNotMatch(mainCss, /\.workflow\s*\{/);
+  assert.doesNotMatch(mainCss, /\.home-comparison-table\s*\{/);
+  assert.match(mainCss, /\.platform-chip-grid\s*\{/);
 });
 
 test("pricing page shows personal free and pro plans plus credit packs", () => {
@@ -153,10 +205,11 @@ test("pricing page shows personal free and pro plans plus credit packs", () => {
   assert.match(appSource, /class="pricing-grid"/);
   assert.match(appSource, /class="plan-feature-list"/);
   assert.match(mainCss, /\.pricing-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.doesNotMatch(appSource, /class="home-pricing-preview"/);
+  assert.match(appSource, /class="home-pricing-preview"/);
+  assert.match(appSource, /免费版先验证下载能力，Pro 解锁更高下载额度和增强能力/);
   assert.doesNotMatch(appSource, /class="home-plan-card"/);
-  assert.doesNotMatch(appSource, /查看完整套餐方案/);
-  assert.doesNotMatch(mainCss, /\.home-pricing-grid\s*\{/);
+  assert.match(appSource, /查看套餐方案/);
+  assert.match(mainCss, /\.upgrade-panel\s*\{/);
   assert.doesNotMatch(appSource, /每日\s*\d+\s*次解析任务/);
   assert.doesNotMatch(appSource, /任务结果保留\s*\d+\s*天/);
   assert.match(appSource, /每月 10 次 AI 问答/);
@@ -164,10 +217,11 @@ test("pricing page shows personal free and pro plans plus credit packs", () => {
 });
 
 test("homepage keeps SEO content compact while static pages own long-form discovery", () => {
-  assert.match(appSource, /compactFaqs = seoFaqs\.slice\(0,\s*3\)/);
-  assert.match(appSource, /compactCompliancePoints = seoCompliancePoints\.slice\(0,\s*3\)/);
+  assert.match(appSource, /compactFaqs = seoFaqs\.slice\(0,\s*2\)/);
+  assert.match(appSource, /const homeTrustBoundaries = \[/);
   assert.match(mainCss, /\.home-faq-summary\s*\{/);
   assert.match(mainCss, /\.home-faq-summary\s*\{[\s\S]*width:\s*min\(100%,\s*1180px\)/);
+  assert.match(mainCss, /\.trust-boundary-list\s*\{/);
   assert.doesNotMatch(appSource, /首页只保留和真实工作流直接相关的信息/);
   assert.doesNotMatch(appSource, /更完整的搜索落地页、AI 可读说明和专题内容继续由静态页面承接/);
   assert.doesNotMatch(appSource, /只留下开始前必须知道的事/);

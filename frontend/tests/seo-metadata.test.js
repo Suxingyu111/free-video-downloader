@@ -322,8 +322,38 @@ test("index structured data describes the app, site, FAQ, and organization", () 
   assert.ok(types.includes("WebPage"));
   assert.ok(types.includes("ItemList"));
   assert.ok(types.includes("FAQPage"));
+  assert.ok(types.includes("HowTo"));
   assert.equal(seoSite.name, "万能视频下载总结器");
   assert.equal(seoSite.brandName, "SaveAny");
+  assert.match(seoSite.description, /1800\+ 网站/);
+  assert.doesNotMatch(seoSite.description, /学习、复盘和资料整理/);
+});
+
+test("homepage exposes tool landing SEO sections in Vue and no script fallback", () => {
+  const requiredVisibleSections = [
+    "支持 1800+ 网站的视频解析下载",
+    "热门平台覆盖",
+    "解析后选择格式和清晰度",
+    "AI 总结是下载后的增强能力",
+    "免费版先验证下载能力，Pro 解锁更高下载额度和增强能力",
+    "购买前必须知道的边界"
+  ];
+
+  for (const phrase of requiredVisibleSections) {
+    assert.match(appSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(indexHtmlSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  assert.match(appSource, /platform-coverage/);
+  assert.match(appSource, /download-capability-grid/);
+  assert.match(appSource, /ai-addon-panel/);
+  assert.match(appSource, /use-case-grid/);
+  assert.match(indexHtmlSource, /Universal Download Console/);
+  assert.match(indexHtmlSource, /手机也能下载/);
+  assert.doesNotMatch(indexHtmlSource, /下载队列|批量队列|download queue/i);
+  assert.match(indexHtmlSource, /<ol>/);
+  assert.doesNotMatch(indexHtmlSource, /Study Pack/);
+  assert.doesNotMatch(indexHtmlSource, /视频知识工作台/);
 });
 
 test("FAQ landing page includes FAQPage structured data", () => {

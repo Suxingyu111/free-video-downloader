@@ -18,12 +18,23 @@ const membershipSource = `${appSource}\n${authSessionSource}`;
 
 test("home page copy is Chinese-first and explains the universal downloader", () => {
   const requiredPhrases = [
-    "万能视频下载器",
-    "复制链接，一键保存高清视频",
-    "支持 YouTube、Bilibili、TikTok、Instagram 等主流平台",
-    "粘贴视频链接，自动解析标题、封面、清晰度和音频",
+    "1800+ 视频下载器",
+    "支持 1800+ 网站的视频解析下载",
+    "Universal Download Console",
+    "支持平台墙",
+    "解析后选择格式和清晰度",
+    "MP4 下载",
+    "音频提取",
+    "字幕保存",
+    "手机也能下载",
+    "无需安装 App",
+    "AI 总结可选",
+    "Pro 解锁更多下载额度、长视频和移动端体验",
+    "支持 YouTube、Bilibili、抖音、TikTok、Instagram 等主流平台",
+    "复制链接，SaveAny 会优先解析平台、标题、封面、时长、格式和清晰度",
     "解析视频",
     "立即下载",
+    "先下载视频",
     "AI 总结",
     "快速版",
     "完整总结正在完善中",
@@ -47,6 +58,10 @@ test("home page copy is Chinese-first and explains the universal downloader", ()
   }
 
   assert.doesNotMatch(appSource, /Free Video Downloader|Paste link|Video download platform/);
+  assert.doesNotMatch(appSource, /视频知识工作台/);
+  assert.doesNotMatch(appSource, /Study Pack/);
+  assert.doesNotMatch(appSource, /68 分钟公开视频课/);
+  assert.doesNotMatch(appSource, /下载队列|批量队列|download queue/i);
 });
 
 test("download console does not expose manual cookie input", () => {

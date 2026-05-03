@@ -22,4 +22,4 @@ Disallow: /api/
 Disallow: /files/
 Disallow: /runtime/
 
-Sitemap: https://saveany.local/sitemap.xml
+Sitemap: https://your-domain.example/sitemap.xml

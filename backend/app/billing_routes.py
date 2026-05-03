@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import secrets
 from urllib.parse import urlsplit, urlunsplit
 
 import stripe
@@ -12,16 +11,11 @@ from app.auth_routes import current_user
 from app.services.app_config import load_config
 from app.services.auth_service import User
 from app.services.billing_service import (
-    activate_mock_subscription,
     begin_stripe_event_processing,
-    cancel_mock_subscription,
     complete_stripe_checkout_attempt,
     confirm_stripe_checkout_session,
-    create_mock_checkout,
     credit_pack_from_price_id,
     ensure_stripe_customer_id,
-    expire_mock_subscription,
-    fail_mock_payment,
     fail_stripe_checkout_attempt,
     grant_credit_pack,
     get_open_stripe_checkout_attempt,
@@ -83,10 +77,6 @@ def _get_credit_pack_or_400(pack_id: str):
         return get_credit_pack(pack_id)
     except KeyError as exc:
         raise HTTPException(status_code=400, detail="未知按量包类型") from exc
-
-
-def _mock_credit_pack_reference(pack_id: str) -> str:
-    return f"mock_{pack_id}_{secrets.token_urlsafe(10)}"
 
 
 def _stripe_dict(value) -> dict | None:
@@ -174,14 +164,6 @@ def billing_checkout(
         if not payload or not payload.pack_id:
             raise HTTPException(status_code=400, detail="缺少按量包类型")
         pack = _get_credit_pack_or_400(payload.pack_id)
-        if config.billing_mode == "mock":
-            credit_pack = grant_credit_pack(
-                user.id,
-                pack.id,
-                source="mock",
-                payment_reference=_mock_credit_pack_reference(pack.id),
-            )
-            return {"mode": "mock", "credit_pack": credit_pack, "url": "/#pricing"}
         price_id = getattr(config, pack.stripe_config_field)
         if not config.stripe_secret_key or not price_id:
             raise HTTPException(status_code=503, detail="Stripe 按量包支付尚未配置")
@@ -239,8 +221,6 @@ def billing_checkout(
     membership = get_membership(user.id)
     if membership.active:
         raise HTTPException(status_code=409, detail="你已经是专业版会员，请前往会员管理。")
-    if config.billing_mode == "mock":
-        return create_mock_checkout(user)
     if config.billing_mode == "stripe":
         if not config.stripe_secret_key or not config.stripe_pro_monthly_price_id:
             raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
@@ -328,8 +308,6 @@ def billing_checkout_confirm(
 def billing_portal(request: Request, user: User = Depends(current_user)) -> dict:
     assert_session_csrf(request)
     config = load_config()
-    if config.billing_mode == "mock":
-        return {"mode": "mock", "url": "/#pricing"}
     if not config.stripe_secret_key:
         raise HTTPException(status_code=503, detail="Stripe 支付尚未配置")
     membership = get_membership(user.id)
@@ -362,7 +340,13 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
     try:
-        event = stripe.Webhook.construct_event(payload, signature, config.stripe_webhook_secret)
+        event = _stripe_dict(
+            stripe.Webhook.construct_event(
+                payload,
+                signature,
+                config.stripe_webhook_secret,
+            )
+        ) or {}
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Stripe webhook 签名验证失败") from exc
 
@@ -414,50 +398,3 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
         mark_stripe_event_pending(event_id)
         raise
     return {"ok": True}
-
-
-@router.post("/mock/activate")
-def mock_activate(request: Request, user: User = Depends(current_user)) -> dict:
-    assert_session_csrf(request)
-    if load_config().billing_mode != "mock":
-        raise HTTPException(status_code=404, detail="Mock billing is disabled")
-    return {"membership": activate_mock_subscription(user).as_dict()}
-
-
-@router.post("/mock/credit-pack/{pack_id}")
-def mock_credit_pack(pack_id: str, user: User = Depends(current_user)) -> dict:
-    if load_config().billing_mode != "mock":
-        raise HTTPException(status_code=404, detail="Mock billing is disabled")
-    pack = _get_credit_pack_or_400(pack_id)
-    return {
-        "credit_pack": grant_credit_pack(
-            user.id,
-            pack.id,
-            source="mock",
-            payment_reference=_mock_credit_pack_reference(pack.id),
-        )
-    }
-
-
-@router.post("/mock/cancel")
-def mock_cancel(request: Request, user: User = Depends(current_user)) -> dict:
-    assert_session_csrf(request)
-    if load_config().billing_mode != "mock":
-        raise HTTPException(status_code=404, detail="Mock billing is disabled")
-    return {"membership": cancel_mock_subscription(user).as_dict()}
-
-
-@router.post("/mock/expire")
-def mock_expire(request: Request, user: User = Depends(current_user)) -> dict:
-    assert_session_csrf(request)
-    if load_config().billing_mode != "mock":
-        raise HTTPException(status_code=404, detail="Mock billing is disabled")
-    return {"membership": expire_mock_subscription(user).as_dict()}
-
-
-@router.post("/mock/payment-failed")
-def mock_payment_failed(request: Request, user: User = Depends(current_user)) -> dict:
-    assert_session_csrf(request)
-    if load_config().billing_mode != "mock":
-        raise HTTPException(status_code=404, detail="Mock billing is disabled")
-    return {"membership": fail_mock_payment(user).as_dict()}

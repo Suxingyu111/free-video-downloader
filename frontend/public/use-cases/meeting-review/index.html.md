@@ -2,7 +2,7 @@
 
 会议复盘场景页服务公开录播整理，不处理私密会议、无授权内容或需要登录权限的视频。
 
-Canonical URL: https://saveany.local/use-cases/meeting-review/
+Canonical URL: https://your-domain.example/use-cases/meeting-review/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [视频转文字](https://saveany.local/video-to-text/): 视频转文字 页面介绍 SaveAny 如何把公开视频整理成字幕文本、摘要、章节、问答和 Markdown 笔记，适合课程学习、会议复盘和资料检索。
-- [AI视频笔记](https://saveany.local/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
-- [AI视频总结功能](https://saveany.local/features/ai-video-summary/): AI视频总结功能说明 SaveAny 如何把公开视频字幕或转写内容生成摘要、章节、知识点、思维导图、问答和 Markdown 笔记，适合长视频学习复盘。
-- [SaveAny使用场景](https://saveany.local/use-cases/): SaveAny使用场景包括课程学习、会议复盘、公开视频素材归档、字幕整理、AI 视频笔记和自托管知识库沉淀，帮助个人和团队形成可复习资料库。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [视频转文字](https://your-domain.example/video-to-text/): 视频转文字 页面介绍 SaveAny 如何把公开视频整理成字幕文本、摘要、章节、问答和 Markdown 笔记，适合课程学习、会议复盘和资料检索。
+- [AI视频笔记](https://your-domain.example/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
+- [AI视频总结功能](https://your-domain.example/features/ai-video-summary/): AI视频总结功能说明 SaveAny 如何把公开视频字幕或转写内容生成摘要、章节、知识点、思维导图、问答和 Markdown 笔记，适合长视频学习复盘。
+- [SaveAny使用场景](https://your-domain.example/use-cases/): SaveAny使用场景包括课程学习、会议复盘、公开视频素材归档、字幕整理、AI 视频笔记和自托管知识库沉淀，帮助个人和团队形成可复习资料库。

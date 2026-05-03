@@ -102,7 +102,7 @@
 - 任务存储、文件 token、运行时清理策略。
 - 账号注册/登录/退出、`/api/me` 会员摘要、`/api/entitlements/status` 个人额度和按量包余量。
 - 匿名访客解析/下载限额、登录免费额度、Pro 月度 AI 总结与语音转写额度、单视频时长限制。
-- Mock billing、Stripe Checkout、Customer Portal、webhook 验签、事件幂等和乱序处理，包括 Pro 订阅和按量包购买。
+- Stripe Checkout、Customer Portal、webhook 验签、事件幂等和乱序处理，包括 Pro 订阅和按量包购买；本地 mock billing 状态修改接口已移除。
 - AI 总结登录校验、个人额度扣减、按量包消耗、失败退款和重启后中断任务退款。
 - 前端格式常量、中文 UI 文案、个人套餐页、按量包卡片、账号菜单和账单区 quota meter。
 

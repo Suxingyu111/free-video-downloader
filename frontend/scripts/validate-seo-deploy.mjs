@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { SEO_PAGES, seoSite } from "../src/seo/pages.js";
+import { loadProjectEnv } from "./env-file.mjs";
 import { normalizeSiteUrl } from "./generate-seo-assets.mjs";
 
 const frontendRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -107,6 +108,7 @@ export async function checkRemoteGeoUrls({ siteUrl = normalizeSiteUrl(), fetchIm
 }
 
 async function main() {
+  loadProjectEnv();
   const args = process.argv.slice(2);
   const siteUrl = normalizeSiteUrl();
   const allowReserved = args.includes("--allow-reserved");

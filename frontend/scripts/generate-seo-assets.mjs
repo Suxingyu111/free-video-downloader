@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { loadProjectEnv } from "./env-file.mjs";
 import { getWebmasterMetaTags, getWebmasterVerificationFiles } from "./webmaster-verification.mjs";
 import {
   SEO_PAGES,
@@ -648,6 +649,7 @@ export async function writeSeoAssets({ publicDir = defaultPublicDir, siteUrl = n
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  loadProjectEnv();
   const siteUrl = normalizeSiteUrl();
   await writeSeoAssets({ siteUrl });
   if (siteUrl === seoSite.defaultUrl) {

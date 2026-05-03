@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import secrets
 import shutil
 import threading
@@ -25,6 +24,7 @@ from app.services.analysis_store import AnalysisSnapshot, analysis_store
 from app.services.asset_store import asset_store
 from app.services.auth_service import User
 from app.services.database import initialize_database
+from app.services.env_file import bool_env_enabled, env_value
 from app.services.geo_monitor import append_geo_access_log
 from app.services.geo_monitor import build_geo_access_record
 from app.services.geo_monitor import should_log_geo_access
@@ -189,7 +189,7 @@ def _frontend_cache_control(path: Path) -> str:
 
 
 def _canonical_site_origin() -> str | None:
-    site_url = (os.getenv("PUBLIC_SITE_URL") or os.getenv("VITE_PUBLIC_SITE_URL") or "").strip().rstrip("/")
+    site_url = (env_value("PUBLIC_SITE_URL") or env_value("VITE_PUBLIC_SITE_URL") or "").strip().rstrip("/")
     if not site_url:
         return None
     parsed = urlsplit(site_url)
@@ -199,7 +199,7 @@ def _canonical_site_origin() -> str | None:
 
 
 def _frontend_canonical_redirect_url(request: Request) -> str | None:
-    if os.getenv("SEO_CANONICAL_REDIRECTS", "").strip().lower() not in CANONICAL_REDIRECT_ENV_VALUES:
+    if env_value("SEO_CANONICAL_REDIRECTS").strip().lower() not in CANONICAL_REDIRECT_ENV_VALUES:
         return None
     if request.method not in {"GET", "HEAD"}:
         return None
@@ -295,8 +295,7 @@ def _frontend_not_found_response() -> FileResponse | None:
 
 
 def demo_analyze_result(url: str) -> dict | None:
-    demo_enabled = os.getenv("SAVEANY_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
-    if demo_enabled and url.startswith("https://demo.saveany.local/"):
+    if bool_env_enabled("SAVEANY_DEMO_MODE") and url.startswith("https://demo.saveany.local/"):
         return {
             "kind": "video",
             "id": "demo-ai-summary",
@@ -313,8 +312,7 @@ def demo_analyze_result(url: str) -> dict | None:
 
 
 def demo_download_file(url: str, output_dir: Path) -> Path | None:
-    demo_enabled = os.getenv("SAVEANY_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
-    if not demo_enabled or not url.startswith("https://demo.saveany.local/"):
+    if not bool_env_enabled("SAVEANY_DEMO_MODE") or not url.startswith("https://demo.saveany.local/"):
         return None
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "saveany-demo-video.mp4"

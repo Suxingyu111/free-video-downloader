@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 from pathlib import Path
 from typing import Any, Protocol
@@ -13,6 +12,7 @@ from app.services.douyin_browser_service import DOUYIN_DEFAULT_USER_AGENT
 from app.services.douyin_browser_service import DouyinBrowserService
 from app.services.douyin_browser_service import extract_douyin_aweme_id
 from app.services.douyin_browser_service import select_douyin_format
+from app.services.env_file import bool_env_enabled, env_value
 
 
 DOUYIN_PUBLIC_FAILURE_MESSAGE = (
@@ -236,7 +236,7 @@ def _stream_download(media_url: str, output_file: Path, *, referer: str, progres
 
 class F2DouyinService:
     def __init__(self, *, timeout: int | None = None) -> None:
-        self.timeout = timeout or int(os.getenv("DOUYIN_F2_TIMEOUT_SECONDS", "15"))
+        self.timeout = timeout or int(env_value("DOUYIN_F2_TIMEOUT_SECONDS", "15"))
 
     def analyze(self, url: str) -> dict[str, Any]:
         data = self.fetch_detail(url)
@@ -290,8 +290,8 @@ class F2DouyinService:
 
 class DouyinVdResolver:
     def __init__(self, *, base_url: str | None = None, timeout: float | None = None) -> None:
-        self.base_url = (base_url or os.getenv("DOUYINVD_BASE_URL") or "").rstrip("/")
-        self.timeout = timeout or float(os.getenv("DOUYINVD_TIMEOUT_SECONDS", "20"))
+        self.base_url = (base_url or env_value("DOUYINVD_BASE_URL") or "").rstrip("/")
+        self.timeout = timeout or float(env_value("DOUYINVD_TIMEOUT_SECONDS", "20"))
 
     def analyze(self, url: str) -> dict[str, Any]:
         data = self.fetch_detail(url)
@@ -385,7 +385,7 @@ class DouyinPublicResolver:
 
 
 def build_default_resolver_chain() -> list[DouyinResolver]:
-    chain = [item.strip().lower() for item in os.getenv("DOUYIN_RESOLVER_CHAIN", "f2,douyinvd,browser").split(",")]
+    chain = [item.strip().lower() for item in env_value("DOUYIN_RESOLVER_CHAIN", "f2,douyinvd,browser").split(",")]
     resolvers: list[DouyinResolver] = []
     for item in chain:
         if item == "f2":
@@ -398,4 +398,4 @@ def build_default_resolver_chain() -> list[DouyinResolver]:
 
 
 def is_douyin_public_only_enabled() -> bool:
-    return os.getenv("DOUYIN_PUBLIC_ONLY", "true").strip().lower() not in {"0", "false", "no", "off"}
+    return bool_env_enabled("DOUYIN_PUBLIC_ONLY", True)

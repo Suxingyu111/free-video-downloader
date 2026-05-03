@@ -125,7 +125,7 @@ def allowance_for_user(user: User, meter_type: MeterType) -> MeterAllowance:
             meter_type,
             PeriodType.MONTH,
             current_period_key(PeriodType.MONTH),
-            limits.questions_per_summary or 0,
+            limits.question_monthly_limit or 0,
             "question_count",
             plan_id,
         )
@@ -338,54 +338,6 @@ def reserve_user_meter_by_id(user_id: str, meter_type: MeterType, amount: int, *
     return reserve_user_meter(user, meter_type, amount, reservation_id=reservation_id)
 
 
-def reserve_summary_question(user: User, summary_id: str) -> dict:
-    limits = get_plan_limits(active_plan_id(user))
-    limit = limits.questions_per_summary or 0
-    now = time()
-    with transaction() as conn:
-        row = conn.execute(
-            "select question_count from summary_questions where summary_id = ? and user_id = ?",
-            (summary_id, user.id),
-        ).fetchone()
-        used = int(row["question_count"]) if row else 0
-        if used >= limit:
-            raise MeterExceeded("这个总结的追问次数已用完，请升级 Pro 后继续。")
-        next_used = used + 1
-        conn.execute(
-            """
-            insert into summary_questions (summary_id, user_id, question_count, created_at, updated_at)
-            values (?, ?, ?, ?, ?)
-            on conflict(summary_id, user_id)
-            do update set question_count = excluded.question_count, updated_at = excluded.updated_at
-            """,
-            (summary_id, user.id, next_used, now, now),
-        )
-    return {"limit": limit, "used": next_used, "remaining": max(limit - next_used, 0)}
-
-
-def refund_summary_question(user: User, summary_id: str) -> dict:
-    limits = get_plan_limits(active_plan_id(user))
-    limit = limits.questions_per_summary or 0
-    now = time()
-    with transaction() as conn:
-        row = conn.execute(
-            "select question_count from summary_questions where summary_id = ? and user_id = ?",
-            (summary_id, user.id),
-        ).fetchone()
-        used = int(row["question_count"]) if row else 0
-        next_used = max(used - 1, 0)
-        if row is not None:
-            conn.execute(
-                """
-                update summary_questions
-                set question_count = ?, updated_at = ?
-                where summary_id = ? and user_id = ?
-                """,
-                (next_used, now, summary_id, user.id),
-            )
-    return {"limit": limit, "used": next_used, "remaining": max(limit - next_used, 0)}
-
-
 def _consume_credit_packs(
     conn, user_id: str, meter_type: MeterType, amount: int, now: float
 ) -> list[tuple[str, int]]:
@@ -414,7 +366,12 @@ def _consume_credit_packs(
         pack_uses.append((row["id"], take))
         remaining -= take
     if remaining > 0:
-        label = "AI 总结次数" if meter_type == MeterType.SUMMARY else "语音转写分钟"
+        label_by_meter = {
+            MeterType.SUMMARY: "AI 总结次数",
+            MeterType.TRANSCRIPTION_MINUTES: "语音转写分钟",
+            MeterType.QUESTION: "AI 问答次数",
+        }
+        label = label_by_meter.get(meter_type, "额度")
         raise MeterExceeded(f"{label}不足，请购买对应按量包后继续。")
     return pack_uses
 
@@ -606,6 +563,7 @@ def entitlement_status(user: User) -> dict:
         MeterType.TRANSCRIPTION_MINUTES.value: _meter_status(
             user, MeterType.TRANSCRIPTION_MINUTES
         ),
+        MeterType.QUESTION.value: _meter_status(user, MeterType.QUESTION),
     }
     return {
         "plan": plan_id,

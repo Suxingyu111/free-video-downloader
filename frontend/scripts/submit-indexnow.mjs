@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { SEO_PAGES, seoSite } from "../src/seo/pages.js";
+import { loadProjectEnv } from "./env-file.mjs";
 import { normalizeSiteUrl } from "./generate-seo-assets.mjs";
 
 const defaultEndpoint = "https://api.indexnow.org/indexnow";
@@ -156,6 +157,7 @@ export async function submitIndexNow({ endpoint = process.env.INDEXNOW_ENDPOINT 
 }
 
 async function main() {
+  loadProjectEnv();
   const args = process.argv.slice(2);
   const key = process.env.INDEXNOW_KEY;
   const keyFileName = process.env.INDEXNOW_KEY_FILE;

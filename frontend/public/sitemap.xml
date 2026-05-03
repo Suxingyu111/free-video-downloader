@@ -1,284 +1,284 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://saveany.local/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://saveany.local/video-summary/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/video-summary/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/youtube-video-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/youtube-video-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/bilibili-video-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/bilibili-video-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/douyin-video-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/douyin-video-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/tiktok-video-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/tiktok-video-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/subtitle-extractor/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/subtitle-extractor/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/facts/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/facts/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/how-to-video-summary/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/how-to-video-summary/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/how-to-extract-bilibili-subtitles/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/how-to-extract-bilibili-subtitles/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/public-video-to-mind-map/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/public-video-to-mind-map/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/public-video-archive-workflow/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/public-video-archive-workflow/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/saveany-vs-online-video-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/saveany-vs-online-video-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/ai-video-summary-tool-comparison/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/ai-video-summary-tool-comparison/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/youtube-video-summary-tool/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/youtube-video-summary-tool/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/bilibili-course-summary-tool/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/bilibili-course-summary-tool/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/youtube-to-mp4/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/youtube-to-mp4/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/youtube-subtitle-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/youtube-subtitle-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/bilibili-course-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/bilibili-course-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/douyin-public-video-download/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/douyin-public-video-download/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/video-to-text/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/video-to-text/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/video-to-mindmap/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/video-to-mindmap/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/ai-video-notes/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/ai-video-notes/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/online-video-downloader/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/online-video-downloader/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/features/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/features/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/features/video-download/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/features/video-download/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/features/ai-video-summary/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/features/ai-video-summary/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/features/subtitle-extraction/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/features/subtitle-extraction/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/features/mind-map/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/features/mind-map/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/platforms/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/platforms/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/platforms/youtube/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/platforms/youtube/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/platforms/bilibili/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/platforms/bilibili/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/platforms/douyin/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/platforms/douyin/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/platforms/tiktok/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/platforms/tiktok/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/use-cases/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/use-cases/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/use-cases/course-learning/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/use-cases/course-learning/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/use-cases/content-archive/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/use-cases/content-archive/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/use-cases/meeting-review/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/use-cases/meeting-review/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/compare/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/compare/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/pricing/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/pricing/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/articles/public-video-downloader-drm-boundary/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/articles/public-video-downloader-drm-boundary/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/articles/ai-video-summary-subtitles-markdown/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/articles/ai-video-summary-subtitles-markdown/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/articles/self-hosted-video-summary-privacy/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/articles/self-hosted-video-summary-privacy/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/articles/yt-dlp-ai-summary-legal-use-cases/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/articles/yt-dlp-ai-summary-legal-use-cases/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/faq/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/faq/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/privacy/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/privacy/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://saveany.local/terms/</loc>
-    <lastmod>2026-05-02</lastmod>
+    <loc>https://your-domain.example/terms/</loc>
+    <lastmod>2026-05-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>

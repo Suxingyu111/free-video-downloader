@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -8,6 +7,8 @@ from urllib.parse import urlsplit
 
 import httpx
 from yt_dlp.utils import sanitize_filename
+
+from app.services.env_file import env_value
 
 
 DOUYIN_DEFAULT_USER_AGENT = (
@@ -153,8 +154,8 @@ def normalize_douyin_detail(detail: dict[str, Any], webpage_url: str) -> dict[st
 
 class DouyinBrowserService:
     def __init__(self, *, timeout_ms: int | None = None, browser_channel: str | None = None) -> None:
-        self.timeout_ms = timeout_ms or int(os.getenv("DOUYIN_BROWSER_TIMEOUT_MS", "30000"))
-        self.browser_channel = browser_channel or os.getenv("DOUYIN_BROWSER_CHANNEL", "chrome")
+        self.timeout_ms = timeout_ms or int(env_value("DOUYIN_BROWSER_TIMEOUT_MS", "30000"))
+        self.browser_channel = browser_channel or env_value("DOUYIN_BROWSER_CHANNEL", "chrome")
 
     def analyze(self, url: str) -> dict[str, Any]:
         detail, webpage_url = self.fetch_detail(url)

@@ -31,7 +31,7 @@ class PlanLimits:
     summary_monthly_limit: int | None = None
     summary_max_duration_seconds: int | None = None
     transcription_monthly_minutes: int | None = None
-    questions_per_summary: int | None = None
+    question_monthly_limit: int | None = None
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ PLAN_CATALOG: dict[str, PlanLimits] = {
         summary_daily_limit=3,
         summary_max_duration_seconds=30 * 60,
         transcription_monthly_minutes=30,
-        questions_per_summary=3,
+        question_monthly_limit=10,
     ),
     "pro": PlanLimits(
         id="pro",
@@ -73,7 +73,7 @@ PLAN_CATALOG: dict[str, PlanLimits] = {
         summary_monthly_limit=120,
         summary_max_duration_seconds=120 * 60,
         transcription_monthly_minutes=600,
-        questions_per_summary=20,
+        question_monthly_limit=200,
     ),
 }
 

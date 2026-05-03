@@ -39,11 +39,11 @@ import {
   getTask,
   loginAccount,
   logoutAccount,
-  mockBillingAction,
   registerAccount,
   requestPasswordReset
 } from "./services/api";
 import {
+  applyUsageState,
   authInitialState,
   clearAuthState,
   membershipLabel,
@@ -112,7 +112,7 @@ const pricingPlans = [
     price: "¥0",
     cycle: "登录后额度更多",
     description: "适合偶尔保存公开视频、试用 AI 总结，把几个视频整理成可复习笔记。",
-    features: ["每天 30 次视频解析", "每天 10 次视频下载", "每天 3 次 AI 总结", "每月 30 分钟语音转写试用", "单视频总结 30 分钟以内"],
+    features: ["每天 30 次视频解析", "每天 10 次视频下载", "每天 3 次 AI 总结", "每月 30 分钟语音转写试用", "每月 10 次 AI 问答", "单视频总结 30 分钟以内"],
     cta: "开始免费使用",
     target: "download"
   },
@@ -123,7 +123,7 @@ const pricingPlans = [
     price: "¥19",
     cycle: "/月",
     description: "适合高频学习、课程整理、播客复习和创作者素材笔记。",
-    features: ["每月 120 次 AI 总结", "每月 600 分钟语音转写", "单视频总结 120 分钟以内", "单视频下载 180 分钟以内", "每个总结 20 次 AI 追问"],
+    features: ["每月 120 次 AI 总结", "每月 600 分钟语音转写", "每月 200 次 AI 问答", "单视频总结 120 分钟以内", "单视频下载 180 分钟以内"],
     cta: "开通 Pro",
     target: "download",
     featured: true
@@ -230,14 +230,21 @@ const authMembershipLabel = computed(() => membershipLabel(auth).replace("专业
 const authUsageText = computed(() => remainingSummaryText(auth).replace("专业版", "Pro 个人版"));
 const summaryQuotaText = computed(() => quotaMeterText(auth, "summary") || authUsageText.value);
 const transcriptionQuotaText = computed(() => quotaMeterText(auth, "transcription_minutes"));
+const questionQuotaText = computed(() => quotaMeterText(auth, "question"));
 const summaryQuotaRatio = computed(() => quotaMeterRatio(auth, "summary"));
 const transcriptionQuotaRatio = computed(() => quotaMeterRatio(auth, "transcription_minutes"));
+const questionQuotaRatio = computed(() => quotaMeterRatio(auth, "question"));
+const questionQuotaRemaining = computed(() => {
+  const meter = auth.usage?.meters?.question;
+  if (!meter) return null;
+  return Math.max(Number(meter.remaining ?? 0), 0);
+});
+const questionQuotaExhausted = computed(() => questionQuotaRemaining.value === 0);
 const billingStateText = computed(() => membershipStatusText(auth).replace("专业版", "Pro 个人版"));
 const accountAvatarLabel = computed(() => {
   const emailPrefix = (auth.user?.email || "用户").split("@")[0].trim();
   return (emailPrefix || "用户").slice(0, 2).toUpperCase();
 });
-const showMockBilling = computed(() => Boolean(auth.user && auth.billingMode === "mock"));
 const authTitle = computed(() => {
   if (authForm.mode === "register") return "注册账号";
   if (authForm.mode === "reset-request") return "重置密码";
@@ -331,7 +338,7 @@ const workspaceRestoredMeta = computed(() => {
   return "已保留视频链接和解析结果";
 });
 const showWorkspaceRestore = computed(() => state.workspaceRestoreVisible && hasPersistedWorkspace(state.pendingWorkspaceSnapshot));
-const billingPanelVisible = computed(() => Boolean(auth.user || checkoutNotice.value || state.billingMessage || showMockBilling.value));
+const billingPanelVisible = computed(() => Boolean(auth.user || checkoutNotice.value || state.billingMessage));
 
 function scrollPageToTop(behavior = "auto") {
   if (typeof window === "undefined") return;
@@ -510,11 +517,10 @@ async function refreshMe({ silent = false } = {}) {
     }
     try {
       const entitlements = await getEntitlementStatus();
-      auth.usage = {
-        ...(auth.usage || {}),
+      applyUsageState(auth, {
         meters: entitlements.meters || {},
         credit_packs: entitlements.credit_packs || {}
-      };
+      });
     } catch {
       // Keep legacy /api/me usage when entitlement status is unavailable.
     }
@@ -578,6 +584,8 @@ async function logout() {
   state.accountMenuOpen = false;
   try {
     await logoutAccount();
+  } catch (error) {
+    console.warn("Logout request failed", error);
   } finally {
     state.billingMessage = "";
     state.checkoutStatus = "";
@@ -758,25 +766,6 @@ async function handleCreditPackCheckoutReturn({ force = false } = {}) {
   state.billingMessage = "按量包支付已返回，额度会自动同步。";
 }
 
-async function runMockBilling(action) {
-  if (!auth.user) {
-    openAuth("login");
-    return;
-  }
-  state.billingBusy = true;
-  state.billingMessage = "";
-  try {
-    const result = await mockBillingAction(action);
-    if (result.membership) auth.membership = result.membership;
-    await refreshMe({ silent: true });
-    state.billingMessage = "会员状态已更新。";
-  } catch (error) {
-    state.billingMessage = localizeStatus(error.message);
-  } finally {
-    state.billingBusy = false;
-  }
-}
-
 async function handleAnalyze() {
   if (showWorkspaceRestore.value) dismissWorkspaceRestore();
   state.error = "";
@@ -817,9 +806,10 @@ async function startSummaryForResult(result, { mode = "manual" } = {}) {
       url: result.webpage_url || state.url.trim(),
       title: result.title,
       language: "zh-CN",
-      force: true
+      force: true,
+      analysis_token: result.analysis_token
     });
-    if (summary.usage) auth.usage = summary.usage;
+    if (summary.usage) applyUsageState(auth, summary.usage);
     refreshMe({ silent: true });
     const { summary_id: summaryId, cache_hit: cacheHit } = summary;
     registerSummary(summaryId, {
@@ -1066,12 +1056,14 @@ function stopTaskTracking(taskId) {
 }
 
 function applySummarySnapshot(snapshot) {
+  const { usage, ...taskSnapshot } = snapshot || {};
   state.summaryTask = {
     ...(state.summaryTask || {}),
-    ...snapshot,
-    message: localizeSummaryStatus(snapshot.message || state.summaryTask?.message || "")
+    ...taskSnapshot,
+    message: localizeSummaryStatus(taskSnapshot.message || state.summaryTask?.message || "")
   };
-  if (snapshot.status === "failed" && snapshot.error) state.summaryError = localizeSummaryStatus(snapshot.error);
+  if (usage) applyUsageState(auth, usage);
+  if (taskSnapshot.status === "failed" && taskSnapshot.error) state.summaryError = localizeSummaryStatus(taskSnapshot.error);
 }
 
 function applyTaskSnapshot(taskId, snapshot) {
@@ -1177,10 +1169,11 @@ async function submitSummaryQuestion() {
   state.summaryQuestionError = "";
   state.askingSummaryQuestion = true;
   try {
-    const { answer } = await askSummaryQuestion(state.currentSummaryId, {
+    const { answer, usage } = await askSummaryQuestion(state.currentSummaryId, {
       question,
       language: "zh-CN"
     });
+    if (usage) applyUsageState(auth, usage);
     state.summaryQaHistory.unshift({ question, answer });
     state.summaryQuestion = "";
   } catch (error) {
@@ -1305,6 +1298,10 @@ onBeforeUnmount(() => {
               <div v-if="transcriptionQuotaText" class="account-quota-row">
                 <span>{{ transcriptionQuotaText }}</span>
                 <div class="account-quota-track"><span :style="{ width: `${transcriptionQuotaRatio}%` }"></span></div>
+              </div>
+              <div v-if="questionQuotaText" class="account-quota-row">
+                <span>{{ questionQuotaText }}</span>
+                <div class="account-quota-track"><span :style="{ width: `${questionQuotaRatio}%` }"></span></div>
               </div>
             </div>
             <button class="account-menu-row" role="menuitem" type="button" @click="openAccountCenter">
@@ -1490,6 +1487,8 @@ onBeforeUnmount(() => {
               :summary-question="state.summaryQuestion"
               :summary-question-error="state.summaryQuestionError"
               :asking-summary-question="state.askingSummaryQuestion"
+              :question-quota-text="questionQuotaText"
+              :question-quota-exhausted="questionQuotaExhausted"
               :summary-view="state.summaryView"
               @update:view="state.summaryView = $event"
               @update:question="state.summaryQuestion = $event"
@@ -1571,8 +1570,6 @@ onBeforeUnmount(() => {
 
     <section id="pricing" class="section pricing-section page-view" v-if="currentPage === 'pricing'">
       <p class="kicker"><span aria-hidden="true"></span>轻量开始，需要时再升级</p>
-      <h2>按使用频率选择套餐，下载、字幕和 AI 总结一起规划</h2>
-      <p class="section-copy">套餐方案围绕公开视频处理量、AI 总结额度和语音转写分钟数设计。个人可以从免费版开始，高频学习和内容整理再升级。</p>
 
       <div class="pricing-grid" aria-label="套餐方案">
         <article v-for="plan in pricingPlans" :key="plan.id" class="pricing-card" :class="{ featured: plan.featured }" :data-plan="plan.id">
@@ -1647,6 +1644,7 @@ onBeforeUnmount(() => {
             <span>
               {{ authMembershipLabel }} · {{ summaryQuotaText }}
               <template v-if="transcriptionQuotaText"> · {{ transcriptionQuotaText }}</template>
+              <template v-if="questionQuotaText"> · {{ questionQuotaText }}</template>
             </span>
           </div>
         </div>
@@ -1659,12 +1657,10 @@ onBeforeUnmount(() => {
             <span>{{ transcriptionQuotaText }}</span>
             <div class="account-quota-track"><span :style="{ width: `${transcriptionQuotaRatio}%` }"></span></div>
           </div>
-        </div>
-        <div v-if="showMockBilling" class="mock-billing-panel" aria-label="本地模拟支付">
-          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('activate')">模拟开通</button>
-          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('cancel')">模拟取消</button>
-          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('expire')">模拟过期</button>
-          <button class="secondary-button" type="button" :disabled="state.billingBusy" @click="runMockBilling('payment-failed')">模拟付款失败</button>
+          <div v-if="questionQuotaText" class="account-quota-row">
+            <span>{{ questionQuotaText }}</span>
+            <div class="account-quota-track"><span :style="{ width: `${questionQuotaRatio}%` }"></span></div>
+          </div>
         </div>
       </section>
     </section>

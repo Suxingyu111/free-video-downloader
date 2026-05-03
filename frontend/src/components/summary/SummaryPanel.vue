@@ -48,6 +48,14 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  questionQuotaText: {
+    type: String,
+    default: ""
+  },
+  questionQuotaExhausted: {
+    type: Boolean,
+    default: false
+  },
   summaryView: {
     type: String,
     default: "summary"
@@ -271,6 +279,8 @@ onBeforeUnmount(() => {
         :summary-question="summaryQuestion"
         :summary-question-error="summaryQuestionError"
         :asking-summary-question="askingSummaryQuestion"
+        :question-quota-text="questionQuotaText"
+        :question-quota-exhausted="questionQuotaExhausted"
         @update:question="emit('update:question', $event)"
         @submit-question="emit('submit-question')"
       />

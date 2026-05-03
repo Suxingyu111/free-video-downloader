@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -10,10 +9,24 @@ from yt_dlp import YoutubeDL
 
 from app.services.douyin_browser_service import is_douyin_url
 from app.services.douyin_public_resolver import is_douyin_public_only_enabled
+from app.services.env_file import env_value
 from app.services.ytdlp_service import build_extractor_args, build_http_headers, prepare_url
 
 
 TranscriptSource = Literal["subtitle", "auto_subtitle", "speech_to_text"]
+DEFAULT_SUBTITLE_LANGUAGES = [
+    "zh-CN",
+    "zh-Hans",
+    "zh-Hant",
+    "zh",
+    "zho",
+    "cmn",
+    "en",
+    "en-US",
+    "eng",
+    "ja",
+    "ko",
+]
 
 
 @dataclass(frozen=True)
@@ -114,9 +127,9 @@ class TranscriptService:
         cookie_file: str | Path | None = None,
         cookies_from_browser: str | tuple[str, str | None, str | None, str | None] | None = None,
     ) -> None:
-        self.subtitle_languages = subtitle_languages or ["zh-CN", "zh-Hans", "zh-Hant", "zh", "zho", "cmn", "en", "en-US", "eng", "ja", "ko"]
-        env_cookie_file = os.getenv("BILIBILI_COOKIE_FILE")
-        env_cookies_from_browser = os.getenv("BILIBILI_COOKIES_FROM_BROWSER")
+        self.subtitle_languages = subtitle_languages or DEFAULT_SUBTITLE_LANGUAGES
+        env_cookie_file = env_value("BILIBILI_COOKIE_FILE")
+        env_cookies_from_browser = env_value("BILIBILI_COOKIES_FROM_BROWSER")
         self.cookie_file = Path(cookie_file or env_cookie_file) if (cookie_file or env_cookie_file) else None
         self.cookies_from_browser = parse_cookies_from_browser(cookies_from_browser or env_cookies_from_browser)
 

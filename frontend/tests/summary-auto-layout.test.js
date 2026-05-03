@@ -5,6 +5,7 @@ import { test } from "node:test";
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
 const mainCss = readFileSync(new URL("../src/assets/main.css", import.meta.url), "utf8");
 const summaryPanelSource = readFileSync(new URL("../src/components/summary/SummaryPanel.vue", import.meta.url), "utf8");
+const summaryQaSource = readFileSync(new URL("../src/components/summary/SummaryQa.vue", import.meta.url), "utf8");
 const summaryOverviewSource = readFileSync(new URL("../src/components/summary/SummaryOverview.vue", import.meta.url), "utf8");
 const summaryMindMapSource = readFileSync(new URL("../src/components/summary/SummaryMindMap.vue", import.meta.url), "utf8");
 const summaryCss = readFileSync(new URL("../src/assets/summary.css", import.meta.url), "utf8");
@@ -13,6 +14,7 @@ test("analyzing a video automatically starts the AI summary task", () => {
   assert.match(appSource, /startSummaryForResult\(result,\s*\{\s*mode:\s*"auto"\s*\}\)/);
   assert.match(appSource, /async function startSummaryForResult/);
   assert.match(appSource, /force:\s*true/);
+  assert.match(appSource, /analysis_token:\s*result\.analysis_token/);
   assert.doesNotMatch(appSource, /force:\s*mode\s*!==\s*"auto"/);
   assert.doesNotMatch(appSource, /@click="handleSummary"/);
 });
@@ -157,6 +159,8 @@ test("pricing page shows personal free and pro plans plus credit packs", () => {
   assert.doesNotMatch(mainCss, /\.home-pricing-grid\s*\{/);
   assert.doesNotMatch(appSource, /每日\s*\d+\s*次解析任务/);
   assert.doesNotMatch(appSource, /任务结果保留\s*\d+\s*天/);
+  assert.match(appSource, /每月 10 次 AI 问答/);
+  assert.match(appSource, /每月 200 次 AI 问答/);
 });
 
 test("homepage keeps SEO content compact while static pages own long-form discovery", () => {
@@ -252,7 +256,11 @@ test("quota and billing feedback are unified into status panels", () => {
   assert.match(appSource, /checkoutConfirming:\s*false/);
   assert.match(appSource, /state\.checkoutStatus === "success"[\s\S]*await confirmCheckoutReturn\(\{ force: true \}\)/);
   assert.match(appSource, /async function logout\(\)[\s\S]*state\.billingMessage = ""[\s\S]*state\.checkoutStatus = ""/);
+  assert.match(appSource, /async function logout\(\)[\s\S]*catch \(error\)[\s\S]*console\.warn\("Logout request failed"/);
   assert.match(appSource, /class="billing-status-panel"/);
+  assert.match(appSource, /const questionQuotaText = computed/);
+  assert.match(appSource, /quotaMeterText\(auth,\s*"question"\)/);
+  assert.match(appSource, /v-if="questionQuotaText" class="account-quota-row"/);
   assert.match(
     appSource,
     /class="billing-status-panel"[\s\S]*:style="\{ width: `\$\{summaryQuotaRatio\}%` \}"[\s\S]*:style="\{ width: `\$\{transcriptionQuotaRatio\}%` \}"/
@@ -260,7 +268,7 @@ test("quota and billing feedback are unified into status panels", () => {
   assert.match(appSource, /账单状态/);
   assert.match(appSource, /class="current-plan-badge"/);
   assert.match(appSource, /class="plan-status-copy"/);
-  assert.match(appSource, /class="mock-billing-panel"/);
+  assert.doesNotMatch(appSource, /mock-billing-panel|本地模拟支付|runMockBilling|showMockBilling/);
   assert.match(appSource, /开通 Pro ¥19\/月/);
   assert.doesNotMatch(appSource, /class="message pricing-message"/);
   assert.match(mainCss, /\.billing-status-panel\s*\{/);
@@ -291,6 +299,10 @@ test("completed downloads stay bound to the selected format", () => {
 });
 
 test("summary workbench shows module cards before final result and loads selected content", () => {
+  assert.match(appSource, /:question-quota-text="questionQuotaText"/);
+  assert.match(appSource, /:question-quota-exhausted="questionQuotaExhausted"/);
+  assert.match(summaryPanelSource, /questionQuotaText/);
+  assert.match(summaryPanelSource, /questionQuotaExhausted/);
   assert.match(summaryPanelSource, /class="summary-module-grid"/);
   assert.match(summaryPanelSource, /class="\{ active: summaryView === card\.id \}"/);
   assert.match(summaryPanelSource, /moduleStatus\(card\.id\)/);
@@ -335,6 +347,9 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryCss, /\.summary-status-pill\s*\{/);
   assert.match(summaryCss, /\.summary-loading-shell\s*\{/);
   assert.match(summaryCss, /\.summary-stream-preview\s*\{/);
+  assert.match(summaryQaSource, /本月 AI 问答/);
+  assert.match(summaryQaSource, /questionQuotaExhausted/);
+  assert.match(summaryQaSource, /本月 AI 问答次数已用完/);
   assert.match(summaryCss, /@media \(max-width:\s*760px\)[\s\S]*\.summary-module-grid[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
 });
 

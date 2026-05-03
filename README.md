@@ -17,7 +17,7 @@ It is designed for public video learning, review, and personal knowledge organiz
 - Fall back to local or cloud speech-to-text for public videos without usable subtitles.
 - Register and log in with email/password accounts.
 - 执行个人透明额度：未登录访客解析/下载限额、登录免费版更多额度、Pro 月度 AI 总结和语音转写额度，以及可选按量包。
-- 支持用 mock billing 离线测试个人订阅和按量包，也可接入 Stripe Checkout 处理真实月付订阅和按量包购买。
+- 通过 Stripe Checkout 处理真实月付订阅和按量包购买，会员与额度状态只由 Stripe 确认链路写入。
 - Publish crawlable GEO pages, `sitemap.xml`, `llms.txt`, `llms-full.txt`, and Markdown mirrors for AI search discovery.
 
 ## Safety Notes
@@ -36,6 +36,14 @@ The F2 resolver is loaded dynamically when the `f2` Python package is available.
 
 ## Development
 
+启动本地服务前，先复制统一配置模板：
+
+```bash
+cp .env.example .env
+```
+
+后端运行参数、AI 大模型、Stripe、SEO 和前端开发服务器配置都会从项目根目录 `.env` 读取。部署环境中注入的 shell 环境变量仍会覆盖 `.env`。
+
 Backend:
 
 ```bash
@@ -46,13 +54,13 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Membership defaults to local mock billing:
+Membership uses Stripe billing only. Local mock billing has been removed because it could mutate membership and credit balances outside the payment provider:
 
 ```bash
-BILLING_MODE=mock
+BILLING_MODE=stripe
 ```
 
-Stripe test mode 下，复制 `backend/config/stripe.env.example` 到 `backend/config/stripe.env`，填写 Stripe key、Pro 订阅 Price ID 和按量包 Price ID，然后重启后端。部署时 shell 环境变量仍会覆盖文件配置。详见 `docs/11-membership-stripe-setup.md`。
+Stripe test mode 下，在根目录 `.env` 中填写 Stripe key、Pro 订阅 Price ID 和按量包 Price ID，然后重启后端。详见 `docs/11-membership-stripe-setup.md`。
 
 Account endpoints include a basic IP/email rate limit. Override it with `AUTH_RATE_LIMIT_ATTEMPTS` and `AUTH_RATE_LIMIT_WINDOW_SECONDS` when needed for local testing.
 
@@ -72,8 +80,10 @@ Set the canonical production origin before building:
 
 ```bash
 cd frontend
-VITE_PUBLIC_SITE_URL=https://your-domain.example npm run build
+npm run build
 ```
+
+`PUBLIC_SITE_URL` 或 `VITE_PUBLIC_SITE_URL` 应写入根目录 `.env`，生产部署平台也可以通过环境变量覆盖。
 
 Useful commands:
 

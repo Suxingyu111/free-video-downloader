@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -17,6 +16,7 @@ from app.services.ai_provider import (
 )
 from app.services.audio_service import AudioExtractionService
 from app.services.bilibili_public_metadata import describe_bilibili_transcript_unavailable
+from app.services.env_file import bool_env_enabled, env_value
 from app.services.transcript_service import (
     Transcript,
     TranscriptSegment,
@@ -278,7 +278,7 @@ def segments_from_transcribed_text(text: str) -> list[TranscriptSegment]:
 
 
 def _demo_mode_enabled() -> bool:
-    return os.getenv("SAVEANY_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+    return bool_env_enabled("SAVEANY_DEMO_MODE")
 
 
 def serialize_transcript_segments(segments: list[TranscriptSegment]) -> list[dict]:
@@ -315,7 +315,7 @@ def build_draft_summary_result(
 
 
 def create_audio_preview_clip(audio_path: Path, output_dir: Path, *, seconds: int | None = None) -> Path | None:
-    preview_seconds = seconds or int(os.getenv("SUMMARY_DRAFT_AUDIO_SECONDS", "45") or "45")
+    preview_seconds = seconds or int(env_value("SUMMARY_DRAFT_AUDIO_SECONDS", "45") or "45")
     if preview_seconds <= 0:
         return None
     output_dir.mkdir(parents=True, exist_ok=True)

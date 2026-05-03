@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services import database
 from app.services.auth_service import get_user_by_id
-from app.services.billing_service import activate_mock_subscription
 from app.services.plan_catalog import PeriodType
+from tests.helpers import activate_pro_subscription
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
@@ -582,7 +582,7 @@ def test_me_keeps_legacy_daily_usage_fields_for_pro(monkeypatch, tmp_path):
     )
     user = get_user_by_id(registered.json()["user"]["id"])
     assert user is not None
-    activate_mock_subscription(user)
+    activate_pro_subscription(user)
 
     response = client.get("/api/me")
 

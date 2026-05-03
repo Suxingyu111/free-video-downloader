@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as api from "../src/services/api.js";
 import {
   askSummaryQuestion,
   connectSummaryEvents,
@@ -14,7 +15,6 @@ import {
   getSummary,
   loginAccount,
   logoutAccount,
-  mockBillingAction,
   registerAccount,
   requestPasswordReset,
   confirmPasswordReset
@@ -67,14 +67,95 @@ test("auth API helpers include browser credentials", async () => {
     calls.map(([url]) => url),
     [
       "/api/me",
+      "/api/csrf",
       "/api/auth/register",
+      "/api/csrf",
       "/api/auth/login",
       "/api/auth/logout",
+      "/api/csrf",
       "/api/auth/password-reset/request",
+      "/api/csrf",
       "/api/auth/password-reset/confirm"
     ]
   );
   assert.equal(calls.every(([, options]) => options.credentials === "include"), true);
+});
+
+
+test("auth helpers attach CSRF tokens for browser login flow", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options]);
+    if (url === "/api/csrf") {
+      return jsonResponse({ csrf_token: "prelogin-csrf" });
+    }
+    if (url === "/api/auth/register") {
+      assert.equal(options.headers["x-csrf-token"], "prelogin-csrf");
+      return jsonResponse({ user: { email: "user@example.com" }, csrf_token: "session-csrf" });
+    }
+    if (url === "/api/auth/logout") {
+      assert.equal(options.headers["x-csrf-token"], "session-csrf");
+      return jsonResponse({ ok: true });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  await registerAccount({ email: "user@example.com", password: "password-123" });
+  await logoutAccount();
+
+  assert.deepEqual(
+    calls.map(([url]) => url),
+    ["/api/csrf", "/api/auth/register", "/api/auth/logout"]
+  );
+});
+
+
+test("session mutation helpers send the latest session CSRF token", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options]);
+    if (url === "/api/csrf") {
+      return jsonResponse({ csrf_token: "prelogin-csrf" });
+    }
+    if (url === "/api/auth/login") {
+      return jsonResponse({ user: { email: "user@example.com" }, csrf_token: "session-csrf-new" });
+    }
+    if (url === "/api/summaries") {
+      assert.equal(options.headers["x-csrf-token"], "session-csrf-new");
+      return jsonResponse({ summary_id: "summary_123" });
+    }
+    if (url === "/api/summaries/summary_123/questions") {
+      assert.equal(options.headers["x-csrf-token"], "session-csrf-new");
+      return jsonResponse({ answer: "回答内容" });
+    }
+    if (url === "/api/billing/checkout") {
+      assert.equal(options.headers["x-csrf-token"], "session-csrf-new");
+      return jsonResponse({ mode: "stripe", url: "https://checkout.stripe.test" });
+    }
+    if (url === "/api/billing/portal") {
+      assert.equal(options.headers["x-csrf-token"], "session-csrf-new");
+      return jsonResponse({ mode: "stripe", url: "https://billing.stripe.test" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  await loginAccount({ email: "user@example.com", password: "password-123" });
+  await createSummaryTask({ url: "https://example.com/video", title: "Demo", language: "zh-CN" });
+  await askSummaryQuestion("summary_123", { question: "讲了什么？", language: "zh-CN" });
+  await createBillingCheckout();
+  await createBillingPortal();
+
+  assert.deepEqual(
+    calls.map(([url]) => url),
+    [
+      "/api/csrf",
+      "/api/auth/login",
+      "/api/summaries",
+      "/api/summaries/summary_123/questions",
+      "/api/billing/checkout",
+      "/api/billing/portal"
+    ]
+  );
 });
 
 
@@ -84,20 +165,24 @@ test("billing API helpers include browser credentials", async () => {
     calls.push([url, options]);
     return {
       ok: true,
-      json: async () => ({ mode: "mock", url: "/#pricing" })
+      json: async () => ({ mode: "stripe", url: "https://checkout.stripe.test" })
     };
   };
 
   await getBillingStatus();
   await createBillingCheckout();
   await createBillingPortal();
-  await mockBillingAction("activate");
 
   assert.deepEqual(
     calls.map(([url]) => url),
-    ["/api/billing/status", "/api/billing/checkout", "/api/billing/portal", "/api/billing/mock/activate"]
+    ["/api/billing/status", "/api/billing/checkout", "/api/billing/portal"]
   );
   assert.equal(calls.every(([, options]) => options.credentials === "include"), true);
+});
+
+
+test("billing API does not expose mock billing helpers", () => {
+  assert.equal("mockBillingAction" in api, false);
 });
 
 
@@ -138,13 +223,27 @@ test("askSummaryQuestion posts question to summary API", async () => {
     calls.push([url, options]);
     return {
       ok: true,
-      json: async () => ({ answer: "回答内容" })
+      json: async () => ({
+        answer: "回答内容",
+        usage: {
+          meters: {
+            question: { limit: 10, used: 1, remaining: 9 }
+          }
+        }
+      })
     };
   };
 
   const result = await askSummaryQuestion("summary_123", { question: "讲了什么？", language: "zh-CN" });
 
-  assert.deepEqual(result, { answer: "回答内容" });
+  assert.deepEqual(result, {
+    answer: "回答内容",
+    usage: {
+      meters: {
+        question: { limit: 10, used: 1, remaining: 9 }
+      }
+    }
+  });
   assert.equal(calls[0][0], "/api/summaries/summary_123/questions");
   assert.equal(calls[0][1].method, "POST");
   assert.equal(JSON.parse(calls[0][1].body).question, "讲了什么？");

@@ -2,7 +2,7 @@
 
 SaveAny 面向本地或自托管场景，后端用临时 token 交付文件，浏览器不会看到服务器真实路径，AI 总结数据则取决于用户配置的模型服务。
 
-Canonical URL: https://saveany.local/articles/self-hosted-video-summary-privacy/
+Canonical URL: https://your-domain.example/articles/self-hosted-video-summary-privacy/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -34,8 +34,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [隐私政策](https://saveany.local/privacy/): SaveAny 隐私政策说明本地或自托管部署下的视频链接、下载任务、临时文件、AI 总结数据、浏览器工作区缓存和文件 token 如何处理。
-- [万能视频下载总结器事实页](https://saveany.local/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [使用条款](https://saveany.local/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
-- [在线视频下载器](https://saveany.local/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
+- [隐私政策](https://your-domain.example/privacy/): SaveAny 隐私政策说明本地或自托管部署下的视频链接、下载任务、临时文件、AI 总结数据、浏览器工作区缓存和文件 token 如何处理。
+- [万能视频下载总结器事实页](https://your-domain.example/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [使用条款](https://your-domain.example/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
+- [在线视频下载器](https://your-domain.example/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。

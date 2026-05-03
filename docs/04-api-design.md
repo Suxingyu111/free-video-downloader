@@ -202,14 +202,10 @@ Registration, login failures, and password reset requests use short-window rate 
 - `POST /api/billing/checkout`
 - `POST /api/billing/portal`
 - `POST /api/billing/webhook`
-- `POST /api/billing/mock/activate`
-- `POST /api/billing/mock/cancel`
-- `POST /api/billing/mock/expire`
-- `POST /api/billing/mock/payment-failed`
 
-`BILLING_MODE=mock` returns local checkout and portal URLs and lets the frontend simulate subscription transitions against the same SQLite membership tables.
+`BILLING_MODE` 只支持 `stripe`。后端不再注册任何 `/api/billing/mock/*` 本地模拟账单接口，避免绕过支付服务直接写入会员、取消、过期、付款失败或按量包余额。
 
-`BILLING_MODE=stripe` creates Stripe Checkout subscription sessions and Customer Portal sessions. The webhook route verifies the Stripe signature from the raw request body, records Stripe event IDs idempotently, and updates membership from subscription and invoice events.
+`BILLING_MODE=stripe` creates Stripe Checkout subscription sessions and Customer Portal sessions. The webhook route verifies the Stripe signature from the raw request body, records Stripe event IDs idempotently, and updates membership from subscription, invoice, and Checkout payment events.
 
 ## AI Summary Entitlements
 

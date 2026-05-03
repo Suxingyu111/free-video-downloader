@@ -2,7 +2,7 @@
 
 对比 hub 帮用户理解 SaveAny 与普通下载器、单一 AI 总结器和在线工具之间的差异。
 
-Canonical URL: https://saveany.local/compare/
+Canonical URL: https://your-domain.example/compare/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -16,9 +16,9 @@ Last updated: 2026-04-30
 
 
 ## 主题导航
-- [SaveAny和在线视频下载器区别](https://saveany.local/saveany-vs-online-video-downloader/): SaveAny和在线视频下载器区别在于：SaveAny 面向公开视频下载、字幕提取、AI 总结、思维导图和 Markdown 笔记，不提供绕过限制能力。
-- [AI视频总结工具对比](https://saveany.local/ai-video-summary-tool-comparison/): AI视频总结工具对比时，可关注公开视频解析、字幕提取、摘要质量、思维导图、问答、Markdown 导出和合规边界，SaveAny 聚合这些流程。
-- [yt-dlp加AI总结合法使用场景](https://saveany.local/articles/yt-dlp-ai-summary-legal-use-cases/): yt-dlp加AI总结合法使用场景应聚焦公开视频学习、研究、个人备份、课程复习和资料整理，SaveAny 不用于绕过权限、DRM 或付费内容。
+- [SaveAny和在线视频下载器区别](https://your-domain.example/saveany-vs-online-video-downloader/): SaveAny和在线视频下载器区别在于：SaveAny 面向公开视频下载、字幕提取、AI 总结、思维导图和 Markdown 笔记，不提供绕过限制能力。
+- [AI视频总结工具对比](https://your-domain.example/ai-video-summary-tool-comparison/): AI视频总结工具对比时，可关注公开视频解析、字幕提取、摘要质量、思维导图、问答、Markdown 导出和合规边界，SaveAny 聚合这些流程。
+- [yt-dlp加AI总结合法使用场景](https://your-domain.example/articles/yt-dlp-ai-summary-legal-use-cases/): yt-dlp加AI总结合法使用场景应聚焦公开视频学习、研究、个人备份、课程复习和资料整理，SaveAny 不用于绕过权限、DRM 或付费内容。
 
 
 ## 常见问题
@@ -34,8 +34,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [SaveAny和在线视频下载器区别](https://saveany.local/saveany-vs-online-video-downloader/): SaveAny和在线视频下载器区别在于：SaveAny 面向公开视频下载、字幕提取、AI 总结、思维导图和 Markdown 笔记，不提供绕过限制能力。
-- [AI视频总结工具对比](https://saveany.local/ai-video-summary-tool-comparison/): AI视频总结工具对比时，可关注公开视频解析、字幕提取、摘要质量、思维导图、问答、Markdown 导出和合规边界，SaveAny 聚合这些流程。
-- [SaveAny功能](https://saveany.local/features/): SaveAny功能覆盖公开视频解析、高清保存、字幕提取、AI 视频总结、思维导图、问答和 Markdown 学习笔记导出，适合公开视频学习和资料整理。
-- [万能视频下载总结器事实页](https://saveany.local/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
-- [使用条款](https://saveany.local/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
+- [SaveAny和在线视频下载器区别](https://your-domain.example/saveany-vs-online-video-downloader/): SaveAny和在线视频下载器区别在于：SaveAny 面向公开视频下载、字幕提取、AI 总结、思维导图和 Markdown 笔记，不提供绕过限制能力。
+- [AI视频总结工具对比](https://your-domain.example/ai-video-summary-tool-comparison/): AI视频总结工具对比时，可关注公开视频解析、字幕提取、摘要质量、思维导图、问答、Markdown 导出和合规边界，SaveAny 聚合这些流程。
+- [SaveAny功能](https://your-domain.example/features/): SaveAny功能覆盖公开视频解析、高清保存、字幕提取、AI 视频总结、思维导图、问答和 Markdown 学习笔记导出，适合公开视频学习和资料整理。
+- [万能视频下载总结器事实页](https://your-domain.example/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
+- [使用条款](https://your-domain.example/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。

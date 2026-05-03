@@ -2,7 +2,6 @@ import pytest
 
 from app.services import database
 from app.services.auth_service import create_user
-from app.services.billing_service import activate_mock_subscription
 from app.services.entitlements import (
     QuotaExceeded,
     consume_summary_quota,
@@ -11,6 +10,8 @@ from app.services.entitlements import (
     reserve_summary_quota,
 )
 from app.services.plan_catalog import PeriodType
+from app.services.usage_meter import refund_reservation
+from tests.helpers import activate_pro_subscription
 
 
 def fixed_period_key(period_type: PeriodType) -> str:
@@ -50,7 +51,7 @@ def test_member_does_not_consume_free_daily_quota(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("pro@example.com", "pro-password")
-    activate_mock_subscription(user)
+    activate_pro_subscription(user)
 
     for _ in range(5):
         usage = consume_summary_quota(user)
@@ -158,6 +159,39 @@ def test_legacy_only_summary_reservation_refund_is_idempotent(monkeypatch, tmp_p
     assert legacy["summary_count"] == 0
     assert reservation["refunded_at"] is not None
     assert new_reservations["reservation_count"] == 0
+
+
+def test_refunded_meter_reservation_is_not_reseeded_from_stale_legacy_usage(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("FREE_SUMMARY_DAILY_LIMIT", "3")
+    monkeypatch.setattr("app.services.usage_meter.current_period_key", fixed_period_key)
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("refund-race@example.com", "refund-password")
+    reserve_summary_quota(user, "summary_refund_race")
+
+    refund_reservation("summary_refund_race")
+    usage = get_usage_summary(user)
+
+    assert usage.used_today == 0
+    assert usage.remaining_today == 3
+    with database.connect(tmp_path / "saveany.db") as conn:
+        period = conn.execute(
+            """
+            select summary_count
+            from usage_periods
+            where user_id = ? and period_type = ? and period_key = ?
+            """,
+            (user.id, PeriodType.DAY.value, "2026-05-01"),
+        ).fetchone()
+        legacy = conn.execute(
+            "select summary_count from usage_daily where user_id = ? and usage_date = ?",
+            (user.id, "2026-05-01"),
+        ).fetchone()
+
+    assert period["summary_count"] == 0
+    assert legacy["summary_count"] == 1
 
 
 def test_reservation_refund_uses_original_usage_date(monkeypatch, tmp_path):

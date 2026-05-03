@@ -1,4 +1,5 @@
 from pathlib import Path
+from time import sleep
 
 from fastapi.testclient import TestClient
 import pytest
@@ -7,12 +8,12 @@ from app.main import app
 from app import summary_routes
 from app.services import database, summary_service as summary_service_module
 from app.services.auth_service import create_user, get_user_by_id
-from app.services.billing_service import activate_mock_subscription
 from app.services.entitlements import get_usage_summary, reserve_summary_quota
 from app.services.analysis_store import analysis_store
 from app.services.plan_catalog import MeterType
 from app.services.summary_store import SummaryStore
 from app.services.usage_meter import entitlement_status, reserve_user_meter
+from tests.helpers import activate_pro_subscription
 
 
 class FakeSummaryService:
@@ -119,6 +120,22 @@ class FailingOnceQuestionService(FakeSummaryService):
         )
 
 
+class CountingQuestionService(FakeSummaryService):
+    def __init__(self):
+        super().__init__()
+        self.answer_calls = 0
+
+    def answer_question(self, *, title, transcript, summary, question, language):
+        self.answer_calls += 1
+        return super().answer_question(
+            title=title,
+            transcript=transcript,
+            summary=summary,
+            question=question,
+            language=language,
+        )
+
+
 class StartFailingThread:
     def __init__(self, *args, **kwargs):
         pass
@@ -213,6 +230,36 @@ def seed_analysis_snapshot(url, *, duration=120, webpage_url=None):
     )
 
 
+def seed_analysis_snapshot_without_subtitles(url, *, duration=120, webpage_url=None):
+    analysis_store.create(
+        url,
+        {
+            "kind": "video",
+            "id": "summary-test-video",
+            "title": "Demo",
+            "webpage_url": webpage_url or url,
+            "duration": duration,
+            "subtitles": [],
+            "entries": [],
+        },
+    )
+
+
+def seed_analysis_snapshot_with_subtitles(url, subtitles, *, duration=120, webpage_url=None):
+    analysis_store.create(
+        url,
+        {
+            "kind": "video",
+            "id": "summary-test-video",
+            "title": "Demo",
+            "webpage_url": webpage_url or url,
+            "duration": duration,
+            "subtitles": subtitles,
+            "entries": [],
+        },
+    )
+
+
 def summary_payload(url, *, server_duration=120, webpage_url=None, **overrides):
     seed_analysis_snapshot(url, duration=server_duration, webpage_url=webpage_url)
     payload = {"url": url, "title": "Demo", "language": "zh-CN"}
@@ -225,7 +272,18 @@ def wait_for_status(client, summary_id, status):
         snapshot = client.get(f"/api/summaries/{summary_id}").json()
         if snapshot["status"] == status:
             return snapshot
+        sleep(0.05)
     return snapshot
+
+
+def wait_for_usage(client, predicate):
+    usage = None
+    for _ in range(20):
+        usage = client.get("/api/me").json()["usage"]
+        if predicate(usage):
+            return usage
+        sleep(0.05)
+    return usage
 
 
 def test_create_summary_requires_login(isolated_summary_store):
@@ -299,7 +357,9 @@ def test_create_summary_task_runs_summary_and_exposes_markdown(monkeypatch, isol
         headers=session_headers,
     )
     assert answer.status_code == 200
-    assert answer.json() == {"answer": "回答：这一段讲了什么？"}
+    assert answer.json()["answer"] == "回答：这一段讲了什么？"
+    assert answer.json()["usage"]["meters"]["question"]["used"] == 1
+    assert answer.json()["usage"]["meters"]["question"]["remaining"] == 9
     assert fake.questions[0][1] == "[00:01] 测试字幕"
 
 
@@ -405,7 +465,9 @@ def test_cached_summary_creates_owned_task_for_second_user(monkeypatch, isolated
     assert second_markdown.status_code == 200
     assert "测试概览" in second_markdown.text
     assert second_answer.status_code == 200
-    assert second_answer.json() == {"answer": "回答：缓存内容是什么？"}
+    assert second_answer.json()["answer"] == "回答：缓存内容是什么？"
+    assert second_answer.json()["usage"]["meters"]["question"]["used"] == 1
+    assert second_answer.json()["usage"]["meters"]["question"]["remaining"] == 9
 
 
 def test_force_cross_account_cache_hit_clones_without_regenerating(monkeypatch, isolated_summary_store):
@@ -582,7 +644,7 @@ def test_uncached_summary_without_duration_returns_400_without_consuming_quota(m
         json={"url": "https://example.com/missing-duration", "title": "Demo", "language": "zh-CN"},
         headers=session_headers,
     )
-    usage = client.get("/api/me").json()["usage"]
+    usage = wait_for_usage(client, lambda value: value["used_today"] == 0)
 
     assert response.status_code == 400
     assert response.json()["detail"] == "请先解析视频后再生成 AI 总结。"
@@ -627,6 +689,38 @@ def test_summary_can_use_canonical_url_from_analysis_snapshot_without_duration(m
     response = client.post(
         "/api/summaries",
         json={"url": canonical_url, "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    assert response.status_code == 200
+    assert response.json()["cache_hit"] is False
+    assert fake.calls[0][0] == canonical_url
+
+
+def test_summary_allows_analyzed_video_when_duration_is_unknown(monkeypatch, isolated_summary_store):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+    submitted_url = "https://v.douyin.com/C-0B6EODTJg/"
+    canonical_url = "https://www.douyin.com/video/7601048622565821747"
+    analysis_store.create(
+        submitted_url,
+        {
+            "kind": "video",
+            "id": "summary-test-douyin",
+            "title": "抖音短链视频",
+            "webpage_url": canonical_url,
+            "duration": None,
+            "entries": [],
+        },
+    )
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": canonical_url, "title": "抖音短链视频", "language": "zh-CN"},
         headers=session_headers,
     )
     summary_id = response.json()["summary_id"]
@@ -730,7 +824,7 @@ def test_failed_pro_summary_refunds_metered_quota(monkeypatch, isolated_summary_
     session_headers = login(client)
     user = get_user_by_id(client.get("/api/me").json()["user"]["id"])
     assert user is not None
-    activate_mock_subscription(user)
+    activate_pro_subscription(user)
 
     response = client.post(
         "/api/summaries",
@@ -992,6 +1086,113 @@ def test_summary_question_requires_completed_task(monkeypatch, isolated_summary_
     assert answer.status_code == 409
 
 
+def test_free_user_question_quota_is_monthly_not_per_summary(monkeypatch, isolated_summary_store):
+    fake = CountingQuestionService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/monthly-question-quota"),
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    for index in range(10):
+        answer = client.post(
+            f"/api/summaries/{summary_id}/questions",
+            json={"question": f"第 {index + 1} 个问题？", "language": "zh-CN"},
+            headers=session_headers,
+        )
+        assert answer.status_code == 200
+        assert answer.json()["answer"] == f"回答：第 {index + 1} 个问题？"
+        assert answer.json()["usage"]["meters"]["question"]["remaining"] == 9 - index
+
+    exhausted = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "第 11 个问题？", "language": "zh-CN"},
+        headers=session_headers,
+    )
+
+    assert exhausted.status_code == 402
+    assert exhausted.json()["detail"] == "本月 AI 问答次数已用完，请下月继续使用或升级套餐。"
+    assert fake.answer_calls == 10
+
+
+def test_question_model_failure_refunds_monthly_question_quota(monkeypatch, isolated_summary_store):
+    fake = FailingOnceQuestionService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/question-monthly-refund"),
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    failed = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "失败会退回吗？", "language": "zh-CN"},
+        headers=session_headers,
+    )
+    status_after_failure = client.get("/api/entitlements/status").json()
+
+    assert failed.status_code == 400
+    assert status_after_failure["meters"]["question"]["used"] == 0
+    assert status_after_failure["meters"]["question"]["remaining"] == 10
+
+    successful = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "第二次可以继续吗？", "language": "zh-CN"},
+        headers=session_headers,
+    )
+
+    assert successful.status_code == 200
+    assert successful.json()["usage"]["meters"]["question"]["used"] == 1
+    assert successful.json()["usage"]["meters"]["question"]["remaining"] == 9
+
+
+def test_pro_user_question_quota_allows_200_monthly_questions(monkeypatch, isolated_summary_store):
+    fake = CountingQuestionService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+    user_id = client.get("/api/me").json()["user"]["id"]
+    user = get_user_by_id(user_id)
+    assert user is not None
+    activate_pro_subscription(user)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/pro-question-quota"),
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+
+    for index in range(200):
+        answer = client.post(
+            f"/api/summaries/{summary_id}/questions",
+            json={"question": f"Pro 问题 {index + 1}", "language": "zh-CN"},
+            headers=session_headers,
+        )
+        assert answer.status_code == 200
+
+    exhausted = client.post(
+        f"/api/summaries/{summary_id}/questions",
+        json={"question": "Pro 第 201 个问题", "language": "zh-CN"},
+        headers=session_headers,
+    )
+
+    assert exhausted.status_code == 402
+    assert fake.answer_calls == 200
+
+
 def test_summary_task_records_owner_and_question_requires_login(monkeypatch, isolated_summary_store):
     fake = FakeSummaryService()
     monkeypatch.setattr(summary_routes, "summary_service", fake)
@@ -1144,21 +1345,23 @@ def test_free_user_question_limit(monkeypatch, isolated_summary_store):
     summary_id = response.json()["summary_id"]
     wait_for_status(client, summary_id, "completed")
 
-    for index in range(3):
-        assert client.post(
+    for index in range(10):
+        answer = client.post(
             f"/api/summaries/{summary_id}/questions",
             json={"question": f"问题 {index}", "language": "zh-CN"},
             headers=session_headers,
-        ).status_code == 200
+        )
+        assert answer.status_code == 200
+        assert answer.json()["usage"]["meters"]["question"]["remaining"] == 9 - index
 
     blocked = client.post(
         f"/api/summaries/{summary_id}/questions",
-        json={"question": "第四个问题", "language": "zh-CN"},
+        json={"question": "第十一个问题", "language": "zh-CN"},
         headers=session_headers,
     )
 
     assert blocked.status_code == 402
-    assert "追问次数" in blocked.json()["detail"]
+    assert blocked.json()["detail"] == "本月 AI 问答次数已用完，请下月继续使用或升级套餐。"
 
 
 def test_failed_question_refunds_question_limit(monkeypatch, isolated_summary_store):
@@ -1180,13 +1383,18 @@ def test_failed_question_refunds_question_limit(monkeypatch, isolated_summary_st
         headers=session_headers,
     )
 
+    status_after_failure = client.get("/api/entitlements/status").json()
+
     assert failed.status_code >= 400
-    for index in range(3):
-        assert client.post(
+    assert status_after_failure["meters"]["question"]["used"] == 0
+    assert status_after_failure["meters"]["question"]["remaining"] == 10
+    for index in range(10):
+        answer = client.post(
             f"/api/summaries/{summary_id}/questions",
             json={"question": f"成功问题 {index}", "language": "zh-CN"},
             headers=session_headers,
-        ).status_code == 200
+        )
+        assert answer.status_code == 200
 
 
 def test_speech_to_text_reserves_transcription_minutes(monkeypatch, isolated_summary_store):
@@ -1207,6 +1415,24 @@ def test_speech_to_text_reserves_transcription_minutes(monkeypatch, isolated_sum
     assert usage["meters"]["transcription_minutes"]["remaining"] == 27
 
 
+def test_summary_snapshot_includes_realtime_usage_after_speech_to_text(monkeypatch, isolated_summary_store):
+    monkeypatch.setattr(summary_routes, "summary_service", SpeechToTextSummaryService())
+    client = TestClient(app)
+    session_headers = login(client)
+
+    response = client.post(
+        "/api/summaries",
+        json=summary_payload("https://example.com/no-subtitles-usage-snapshot", server_duration=125),
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(client, summary_id, "completed")
+
+    assert snapshot["usage"]["meters"]["summary"]["remaining"] == 2
+    assert snapshot["usage"]["meters"]["transcription_minutes"]["used"] == 3
+    assert snapshot["usage"]["meters"]["transcription_minutes"]["remaining"] == 27
+
+
 def test_speech_to_text_fractional_seconds_round_up_minutes(monkeypatch, isolated_summary_store):
     monkeypatch.setattr(summary_routes, "summary_service", SpeechToTextSummaryService(60.1))
     client = TestClient(app)
@@ -1223,6 +1449,155 @@ def test_speech_to_text_fractional_seconds_round_up_minutes(monkeypatch, isolate
 
     assert usage["meters"]["transcription_minutes"]["used"] == 2
     assert usage["meters"]["transcription_minutes"]["remaining"] == 28
+
+
+def test_no_subtitle_summary_rejects_insufficient_transcription_minutes_before_task_start(
+    monkeypatch,
+    isolated_summary_store,
+):
+    fake = SpeechToTextSummaryService(120)
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+    user = get_user_by_id(client.get("/api/me").json()["user"]["id"])
+    assert user is not None
+    reserve_user_meter(
+        user,
+        MeterType.TRANSCRIPTION_MINUTES,
+        29,
+        reservation_id="used_transcription_minutes",
+    )
+    seed_analysis_snapshot_without_subtitles("https://example.com/no-subtitle-preflight", duration=120)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/no-subtitle-preflight", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
+    )
+    usage = client.get("/api/me").json()["usage"]
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 402
+    assert response.json()["detail"] == "语音转写分钟不足，请购买对应按量包后继续。"
+    assert fake.calls == []
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+    assert status["meters"]["transcription_minutes"]["used"] == 29
+    assert status["meters"]["transcription_minutes"]["remaining"] == 1
+
+
+def test_unsupported_subtitle_summary_rejects_transcription_minutes_before_task_start(
+    monkeypatch,
+    isolated_summary_store,
+):
+    fake = SpeechToTextSummaryService(120)
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+    user = get_user_by_id(client.get("/api/me").json()["user"]["id"])
+    assert user is not None
+    reserve_user_meter(
+        user,
+        MeterType.TRANSCRIPTION_MINUTES,
+        29,
+        reservation_id="used_transcription_minutes_for_unsupported_subtitle",
+    )
+    seed_analysis_snapshot_with_subtitles(
+        "https://example.com/unsupported-subtitle-preflight",
+        [{"lang": "fr", "ext": "vtt", "automatic": False}],
+        duration=120,
+    )
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/unsupported-subtitle-preflight", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
+    )
+    usage = client.get("/api/me").json()["usage"]
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 402
+    assert response.json()["detail"] == "语音转写分钟不足，请购买对应按量包后继续。"
+    assert fake.calls == []
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+    assert status["meters"]["transcription_minutes"]["used"] == 29
+    assert status["meters"]["transcription_minutes"]["remaining"] == 1
+
+
+def test_supported_subtitle_summary_does_not_preflight_transcription_minutes(
+    monkeypatch,
+    isolated_summary_store,
+):
+    fake = FakeSummaryService()
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+    user = get_user_by_id(client.get("/api/me").json()["user"]["id"])
+    assert user is not None
+    reserve_user_meter(
+        user,
+        MeterType.TRANSCRIPTION_MINUTES,
+        29,
+        reservation_id="used_transcription_minutes_for_supported_subtitle",
+    )
+    seed_analysis_snapshot_with_subtitles(
+        "https://example.com/supported-subtitle-no-preflight",
+        [{"lang": "en", "ext": "vtt", "automatic": False}],
+        duration=120,
+    )
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/supported-subtitle-no-preflight", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    wait_for_status(client, summary_id, "completed")
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 200
+    assert fake.calls[0][0] == "https://example.com/supported-subtitle-no-preflight"
+    assert status["meters"]["transcription_minutes"]["used"] == 29
+    assert status["meters"]["transcription_minutes"]["remaining"] == 1
+
+
+def test_no_subtitle_summary_reserves_extra_minutes_when_audio_duration_is_higher(
+    monkeypatch,
+    isolated_summary_store,
+):
+    fake = SpeechToTextSummaryService(125)
+    monkeypatch.setattr(summary_routes, "summary_service", fake)
+    client = TestClient(app)
+    session_headers = login(client)
+    user = get_user_by_id(client.get("/api/me").json()["user"]["id"])
+    assert user is not None
+    reserve_user_meter(
+        user,
+        MeterType.TRANSCRIPTION_MINUTES,
+        28,
+        reservation_id="used_transcription_minutes_before_extra_check",
+    )
+    seed_analysis_snapshot_without_subtitles("https://example.com/no-subtitle-extra-minutes", duration=120)
+
+    response = client.post(
+        "/api/summaries",
+        json={"url": "https://example.com/no-subtitle-extra-minutes", "title": "Demo", "language": "zh-CN"},
+        headers=session_headers,
+    )
+    summary_id = response.json()["summary_id"]
+    snapshot = wait_for_status(client, summary_id, "failed")
+    usage = client.get("/api/me").json()["usage"]
+    status = client.get("/api/entitlements/status").json()
+
+    assert response.status_code == 200
+    assert snapshot["status"] == "failed"
+    assert snapshot["error"] == "语音转写分钟不足，请购买对应按量包后继续。"
+    assert fake.calls == []
+    assert usage["used_today"] == 0
+    assert usage["remaining_today"] == 3
+    assert status["meters"]["transcription_minutes"]["used"] == 28
+    assert status["meters"]["transcription_minutes"]["remaining"] == 2
 
 
 def test_speech_to_text_quota_failure_blocks_preview_and_full_transcription(monkeypatch, isolated_summary_store):

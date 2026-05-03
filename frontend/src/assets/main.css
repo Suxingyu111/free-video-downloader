@@ -1617,20 +1617,6 @@ select {
   padding-top: var(--space-3);
 }
 
-.mock-billing-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.mock-billing-panel .secondary-button {
-  min-height: 38px;
-  border-radius: 999px;
-  padding: 0 13px;
-  font-size: 13px;
-}
-
 .auth-modal {
   position: fixed;
   inset: 0;
@@ -1990,8 +1976,7 @@ select {
   }
 
   .pricing-card .primary-button,
-  .download-row .primary-button,
-  .mock-billing-panel .secondary-button {
+  .download-row .primary-button {
     width: 100%;
   }
 }

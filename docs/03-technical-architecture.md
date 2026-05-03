@@ -11,7 +11,7 @@ The application is split into a Vue SPA frontend and a FastAPI backend. During d
 - Douyin public resolver chain: F2 single-video resolver, douyinVd-compatible public page/sidecar resolver, and Playwright browser fallback for public video metadata.
 - task store: in-memory task state, progress updates, file token mapping.
 - auth and membership services: SQLite-backed email/password users, HttpOnly sessions, password reset tokens, short-window auth rate limits, subscriptions, Stripe events, daily AI summary usage, and quota reservations.
-- billing routes: mock billing for offline validation plus Stripe Checkout, Customer Portal, and signed webhook handling.
+- billing routes: Stripe Checkout, Customer Portal, signed webhook handling, and server-side checkout return confirmation.
 - asset proxy store: in-memory mapping from safe asset tokens to remote thumbnails, with source-page `Referer` forwarding.
 - file service: temporary workspace paths and safe file response lookup.
 
@@ -21,7 +21,7 @@ The application is split into a Vue SPA frontend and a FastAPI backend. During d
 - Tailwind CSS theme tokens.
 - API client for analyze, download, tasks, summaries, auth, billing, and SSE.
 - Industrial console UI components.
-- Account, quota, pricing, Stripe checkout, portal, and mock billing controls.
+- Account, quota, pricing, Stripe checkout, and portal controls.
 
 ## Data Storage
 

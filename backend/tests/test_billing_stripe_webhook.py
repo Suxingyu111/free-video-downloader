@@ -24,6 +24,25 @@ class FakeStripeWebhook:
         return json.loads(payload)
 
 
+class FakeStripeObject:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __getitem__(self, key):
+        return self.payload[key]
+
+    def to_dict_recursive(self):
+        return self.payload
+
+
+class FakeStripeObjectWebhook:
+    @staticmethod
+    def construct_event(payload, sig_header, secret):
+        if sig_header != "valid":
+            raise ValueError("bad signature")
+        return FakeStripeObject(json.loads(payload))
+
+
 class FakeStripeCustomer:
     created = []
 
@@ -811,6 +830,42 @@ def test_subscription_updated_webhook_is_idempotent(monkeypatch, tmp_path):
     assert subscription["stripe_subscription_id"] == "sub_123"
     assert subscription["stripe_price_id"] == "price_123"
     assert subscription["status"] == "active"
+
+
+def test_webhook_accepts_real_stripe_event_object(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    monkeypatch.setenv("BILLING_MODE", "stripe")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("stripe-object@example.com", "stripe-password")
+    monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeObjectWebhook)
+    client = TestClient(app)
+    event = {
+        "id": "evt_stripe_object",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_object",
+                "customer": "cus_object",
+                "status": "active",
+                "current_period_start": 1777600000,
+                "current_period_end": 1780278400,
+                "cancel_at_period_end": False,
+                "metadata": {"saveany_user_id": user.id},
+                "items": {"data": [{"price": {"id": "price_object"}}]},
+            }
+        },
+    }
+
+    response = client.post(
+        "/api/billing/webhook",
+        content=json.dumps(event),
+        headers={"Stripe-Signature": "valid"},
+    )
+
+    assert response.status_code == 200
+    membership = get_membership(user.id)
+    assert membership.active is True
 
 
 def test_checkout_session_completed_webhook_links_subscription(monkeypatch, tmp_path):

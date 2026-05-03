@@ -2,7 +2,7 @@
 
 SaveAny 的视频转文字页面聚焦公开视频字幕整理、文本检索、AI 摘要和 Markdown 笔记导出。
 
-Canonical URL: https://saveany.local/video-to-text/
+Canonical URL: https://your-domain.example/video-to-text/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ SaveAny 会在可用时整理字幕文本，并继续生成摘要、章节、知
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [视频字幕提取工具](https://saveany.local/subtitle-extractor/): SaveAny 视频字幕提取工具可从公开视频中整理字幕文本，配合 AI 总结生成摘要、问答、思维导图和 Markdown，适合学习笔记与内容复盘。
-- [YouTube字幕下载](https://saveany.local/youtube-subtitle-downloader/): YouTube字幕下载 页面介绍如何用 SaveAny 从 YouTube 公开视频整理字幕文本，并继续生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [AI视频笔记](https://saveany.local/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
-- [视频转思维导图](https://saveany.local/video-to-mindmap/): 视频转思维导图 页面说明如何用 SaveAny 将公开视频整理成摘要、章节、知识点和思维导图，帮助快速理解课程、访谈、播客和长视频内容结构。
+- [视频字幕提取工具](https://your-domain.example/subtitle-extractor/): SaveAny 视频字幕提取工具可从公开视频中整理字幕文本，配合 AI 总结生成摘要、问答、思维导图和 Markdown，适合学习笔记与内容复盘。
+- [YouTube字幕下载](https://your-domain.example/youtube-subtitle-downloader/): YouTube字幕下载 页面介绍如何用 SaveAny 从 YouTube 公开视频整理字幕文本，并继续生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [AI视频笔记](https://your-domain.example/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
+- [视频转思维导图](https://your-domain.example/video-to-mindmap/): 视频转思维导图 页面说明如何用 SaveAny 将公开视频整理成摘要、章节、知识点和思维导图，帮助快速理解课程、访谈、播客和长视频内容结构。

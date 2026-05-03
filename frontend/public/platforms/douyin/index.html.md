@@ -2,7 +2,7 @@
 
 抖音平台页强调公开视频、免登录态、短视频案例研究和合规边界。
 
-Canonical URL: https://saveany.local/platforms/douyin/
+Canonical URL: https://your-domain.example/platforms/douyin/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -39,8 +39,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [抖音视频下载器](https://saveany.local/douyin-video-downloader/): SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。
-- [抖音公开视频下载](https://saveany.local/douyin-public-video-download/): 抖音公开视频下载 页面说明如何用 SaveAny 保存可公开访问的抖音视频，整理短视频素材、字幕、AI 摘要、案例研究和内容复盘笔记资料库。
-- [SaveAny支持平台](https://saveany.local/platforms/): SaveAny支持平台包括 YouTube、Bilibili、抖音、TikTok、Instagram、Vimeo、Facebook、小红书和 Reddit 等公开视频来源。
-- [公开视频素材整理流程](https://saveany.local/public-video-archive-workflow/): 公开视频素材整理流程包括链接解析、高清保存、字幕提取、AI 总结、思维导图和 Markdown 归档，SaveAny 将这些步骤集中在一个工作台。
-- [使用条款](https://saveany.local/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
+- [抖音视频下载器](https://your-domain.example/douyin-video-downloader/): SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。
+- [抖音公开视频下载](https://your-domain.example/douyin-public-video-download/): 抖音公开视频下载 页面说明如何用 SaveAny 保存可公开访问的抖音视频，整理短视频素材、字幕、AI 摘要、案例研究和内容复盘笔记资料库。
+- [SaveAny支持平台](https://your-domain.example/platforms/): SaveAny支持平台包括 YouTube、Bilibili、抖音、TikTok、Instagram、Vimeo、Facebook、小红书和 Reddit 等公开视频来源。
+- [公开视频素材整理流程](https://your-domain.example/public-video-archive-workflow/): 公开视频素材整理流程包括链接解析、高清保存、字幕提取、AI 总结、思维导图和 Markdown 归档，SaveAny 将这些步骤集中在一个工作台。
+- [使用条款](https://your-domain.example/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。

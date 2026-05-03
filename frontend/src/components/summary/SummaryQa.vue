@@ -23,6 +23,14 @@ const props = defineProps({
   askingSummaryQuestion: {
     type: Boolean,
     default: false
+  },
+  questionQuotaText: {
+    type: String,
+    default: ""
+  },
+  questionQuotaExhausted: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -30,7 +38,9 @@ const emit = defineEmits(["update:question", "submit-question"]);
 
 const generatedPairs = computed(() => props.summaryResult?.qa_pairs || []);
 const hasQa = computed(() => generatedPairs.value.length || props.summaryQaHistory.length);
-const canSubmit = computed(() => props.summaryQuestion.trim() && !props.askingSummaryQuestion);
+const canSubmit = computed(
+  () => props.summaryQuestion.trim() && !props.askingSummaryQuestion && !props.questionQuotaExhausted
+);
 
 function handleDownloadQa() {
   const markdown = buildQaMarkdown(props.summaryResult || {}, props.summaryQaHistory);
@@ -69,8 +79,14 @@ function handleDownloadQa() {
         :value="summaryQuestion"
         rows="3"
         placeholder="基于字幕继续提问，例如：这段内容最重要的结论是什么？"
+        :disabled="askingSummaryQuestion || questionQuotaExhausted"
         @input="emit('update:question', $event.target.value)"
       ></textarea>
+      <p v-if="questionQuotaText" class="summary-module-eyebrow">本月 {{ questionQuotaText }}</p>
+      <p v-if="questionQuotaExhausted" class="message error" role="alert">
+        <XCircle :size="18" aria-hidden="true" />
+        <span>本月 AI 问答次数已用完</span>
+      </p>
       <button class="primary-button" type="submit" :disabled="!canSubmit">
         <Loader2 v-if="askingSummaryQuestion" :size="18" class="animate-spin" aria-hidden="true" />
         <MessageCircle v-else :size="18" aria-hidden="true" />

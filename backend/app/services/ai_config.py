@@ -6,9 +6,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.services.env_file import load_project_env_values
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_AI_CONFIG_FILE = BACKEND_DIR / "config" / "ai.config.json"
+AI_ENV_MAPPING = {
+    "AI_PROVIDER": "provider",
+    "AI_BASE_URL": "base_url",
+    "AI_API_KEY": "api_key",
+    "AI_TEXT_MODEL": "text_model",
+    "AI_TRANSCRIBE_PROVIDER": "transcribe_provider",
+    "AI_TRANSCRIBE_BASE_URL": "transcribe_base_url",
+    "AI_TRANSCRIBE_API_KEY": "transcribe_api_key",
+    "AI_TRANSCRIBE_MODEL": "transcribe_model",
+    "AI_TRANSCRIBE_DEVICE": "transcribe_device",
+    "AI_TRANSCRIBE_COMPUTE_TYPE": "transcribe_compute_type",
+    "AI_TRANSCRIBE_BEAM_SIZE": "transcribe_beam_size",
+    "AI_TRANSCRIBE_VAD_FILTER": "transcribe_vad_filter",
+    "AI_TIMEOUT_SECONDS": "timeout_seconds",
+}
 
 
 @dataclass(frozen=True)
@@ -29,49 +43,38 @@ class AIProviderConfig:
 
 
 def load_ai_provider_config(config_path: Path | None = None) -> AIProviderConfig:
-    path = config_path or Path(os.getenv("AI_CONFIG_FILE", DEFAULT_AI_CONFIG_FILE))
-    file_values = _load_config_file(path)
     values = {
-        "provider": str(file_values.get("provider") or AIProviderConfig.provider).strip() or AIProviderConfig.provider,
-        "base_url": str(file_values.get("base_url") or AIProviderConfig.base_url).strip().rstrip("/"),
-        "api_key": str(file_values.get("api_key") or AIProviderConfig.api_key).strip(),
-        "text_model": str(file_values.get("text_model") or AIProviderConfig.text_model).strip() or AIProviderConfig.text_model,
-        "transcribe_provider": str(file_values.get("transcribe_provider") or AIProviderConfig.transcribe_provider).strip()
-        or AIProviderConfig.transcribe_provider,
-        "transcribe_base_url": str(file_values.get("transcribe_base_url") or AIProviderConfig.transcribe_base_url).strip().rstrip("/"),
-        "transcribe_api_key": str(file_values.get("transcribe_api_key") or AIProviderConfig.transcribe_api_key).strip(),
-        "transcribe_model": str(file_values.get("transcribe_model") or AIProviderConfig.transcribe_model).strip()
-        or AIProviderConfig.transcribe_model,
-        "transcribe_device": str(file_values.get("transcribe_device") or AIProviderConfig.transcribe_device).strip()
-        or AIProviderConfig.transcribe_device,
-        "transcribe_compute_type": str(file_values.get("transcribe_compute_type") or AIProviderConfig.transcribe_compute_type).strip()
-        or AIProviderConfig.transcribe_compute_type,
-        "transcribe_beam_size": _coerce_int(file_values.get("transcribe_beam_size"), AIProviderConfig.transcribe_beam_size),
-        "transcribe_vad_filter": _coerce_bool(file_values.get("transcribe_vad_filter"), AIProviderConfig.transcribe_vad_filter),
-        "timeout_seconds": _coerce_timeout(file_values.get("timeout_seconds"), AIProviderConfig.timeout_seconds),
+        "provider": AIProviderConfig.provider,
+        "base_url": AIProviderConfig.base_url,
+        "api_key": AIProviderConfig.api_key,
+        "text_model": AIProviderConfig.text_model,
+        "transcribe_provider": AIProviderConfig.transcribe_provider,
+        "transcribe_base_url": AIProviderConfig.transcribe_base_url,
+        "transcribe_api_key": AIProviderConfig.transcribe_api_key,
+        "transcribe_model": AIProviderConfig.transcribe_model,
+        "transcribe_device": AIProviderConfig.transcribe_device,
+        "transcribe_compute_type": AIProviderConfig.transcribe_compute_type,
+        "transcribe_beam_size": AIProviderConfig.transcribe_beam_size,
+        "transcribe_vad_filter": AIProviderConfig.transcribe_vad_filter,
+        "timeout_seconds": AIProviderConfig.timeout_seconds,
     }
 
-    _override_from_env(values, "provider", "AI_PROVIDER")
-    _override_from_env(values, "base_url", "AI_BASE_URL", strip_trailing_slash=True)
-    _override_from_env(values, "api_key", "AI_API_KEY")
-    _override_from_env(values, "text_model", "AI_TEXT_MODEL")
-    _override_from_env(values, "transcribe_provider", "AI_TRANSCRIBE_PROVIDER")
-    _override_from_env(values, "transcribe_base_url", "AI_TRANSCRIBE_BASE_URL", strip_trailing_slash=True)
-    _override_from_env(values, "transcribe_api_key", "AI_TRANSCRIBE_API_KEY")
-    _override_from_env(values, "transcribe_model", "AI_TRANSCRIBE_MODEL")
-    _override_from_env(values, "transcribe_device", "AI_TRANSCRIBE_DEVICE")
-    _override_from_env(values, "transcribe_compute_type", "AI_TRANSCRIBE_COMPUTE_TYPE")
-    if os.getenv("AI_TRANSCRIBE_BEAM_SIZE"):
-        values["transcribe_beam_size"] = _coerce_int(os.getenv("AI_TRANSCRIBE_BEAM_SIZE"), values["transcribe_beam_size"])
-    if os.getenv("AI_TRANSCRIBE_VAD_FILTER"):
-        values["transcribe_vad_filter"] = _coerce_bool(
-            os.getenv("AI_TRANSCRIBE_VAD_FILTER"),
-            values["transcribe_vad_filter"],
-        )
-    if os.getenv("AI_TIMEOUT_SECONDS"):
-        values["timeout_seconds"] = _coerce_timeout(os.getenv("AI_TIMEOUT_SECONDS"), values["timeout_seconds"])
+    legacy_config_file = config_path or _explicit_legacy_config_path()
+    if legacy_config_file is not None:
+        _apply_config_values(values, _load_config_file(legacy_config_file))
+
+    env_file_values = load_project_env_values()
+    _apply_env_values(values, env_file_values)
+    _apply_env_values(values, os.environ)
 
     return AIProviderConfig(**values)
+
+
+def _explicit_legacy_config_path() -> Path | None:
+    raw = os.getenv("AI_CONFIG_FILE")
+    if not raw:
+        return None
+    return Path(raw)
 
 
 def _load_config_file(path: Path) -> dict[str, Any]:
@@ -86,18 +89,32 @@ def _load_config_file(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _override_from_env(
-    values: dict[str, Any],
-    key: str,
-    env_key: str,
-    *,
-    strip_trailing_slash: bool = False,
-) -> None:
-    raw = os.getenv(env_key)
-    if raw is None:
+def _apply_config_values(values: dict[str, Any], raw_values: dict[str, Any]) -> None:
+    for key in AIProviderConfig.__dataclass_fields__:
+        if key in raw_values:
+            _assign_config_value(values, key, raw_values[key])
+
+
+def _apply_env_values(values: dict[str, Any], raw_values) -> None:
+    for env_key, key in AI_ENV_MAPPING.items():
+        if env_key in raw_values:
+            _assign_config_value(values, key, raw_values[env_key])
+
+
+def _assign_config_value(values: dict[str, Any], key: str, raw_value: Any) -> None:
+    if key == "transcribe_beam_size":
+        values[key] = _coerce_int(raw_value, values[key])
         return
-    value = raw.strip()
-    if strip_trailing_slash:
+    if key == "transcribe_vad_filter":
+        values[key] = _coerce_bool(raw_value, values[key])
+        return
+    if key == "timeout_seconds":
+        values[key] = _coerce_timeout(raw_value, values[key])
+        return
+    value = str(raw_value or "").strip()
+    if not value:
+        return
+    if key in {"base_url", "transcribe_base_url"}:
         value = value.rstrip("/")
     values[key] = value
 

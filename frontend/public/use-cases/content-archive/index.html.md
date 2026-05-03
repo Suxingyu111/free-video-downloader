@@ -2,7 +2,7 @@
 
 素材归档场景页强调公开视频保存、字幕、摘要和知识库沉淀的完整流程。
 
-Canonical URL: https://saveany.local/use-cases/content-archive/
+Canonical URL: https://your-domain.example/use-cases/content-archive/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [公开视频素材整理流程](https://saveany.local/public-video-archive-workflow/): 公开视频素材整理流程包括链接解析、高清保存、字幕提取、AI 总结、思维导图和 Markdown 归档，SaveAny 将这些步骤集中在一个工作台。
-- [在线视频下载器](https://saveany.local/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
-- [公开视频下载功能](https://saveany.local/features/video-download/): 公开视频下载功能说明 SaveAny 如何解析 YouTube、B站、抖音、TikTok 等公开链接，选择清晰度并保存可访问视频，适合课程和素材归档。
-- [字幕提取功能](https://saveany.local/features/subtitle-extraction/): 字幕提取功能说明 SaveAny 如何从公开视频读取字幕或转写音频，生成可检索文本，并继续用于 AI 摘要和 Markdown 笔记，方便后续检索和导出。
-- [SaveAny使用场景](https://saveany.local/use-cases/): SaveAny使用场景包括课程学习、会议复盘、公开视频素材归档、字幕整理、AI 视频笔记和自托管知识库沉淀，帮助个人和团队形成可复习资料库。
+- [公开视频素材整理流程](https://your-domain.example/public-video-archive-workflow/): 公开视频素材整理流程包括链接解析、高清保存、字幕提取、AI 总结、思维导图和 Markdown 归档，SaveAny 将这些步骤集中在一个工作台。
+- [在线视频下载器](https://your-domain.example/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
+- [公开视频下载功能](https://your-domain.example/features/video-download/): 公开视频下载功能说明 SaveAny 如何解析 YouTube、B站、抖音、TikTok 等公开链接，选择清晰度并保存可访问视频，适合课程和素材归档。
+- [字幕提取功能](https://your-domain.example/features/subtitle-extraction/): 字幕提取功能说明 SaveAny 如何从公开视频读取字幕或转写音频，生成可检索文本，并继续用于 AI 摘要和 Markdown 笔记，方便后续检索和导出。
+- [SaveAny使用场景](https://your-domain.example/use-cases/): SaveAny使用场景包括课程学习、会议复盘、公开视频素材归档、字幕整理、AI 视频笔记和自托管知识库沉淀，帮助个人和团队形成可复习资料库。

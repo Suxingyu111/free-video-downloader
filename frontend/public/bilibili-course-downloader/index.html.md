@@ -2,7 +2,7 @@
 
 SaveAny 的 B站课程视频下载页面聚焦公开课程归档、字幕整理和 AI 课程笔记，不绕过登录、付费或平台权限限制。
 
-Canonical URL: https://saveany.local/bilibili-course-downloader/
+Canonical URL: https://your-domain.example/bilibili-course-downloader/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ B站课程视频下载 页面面向哔哩哔哩公开课程整理，使用 SaveA
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [B站视频下载器](https://saveany.local/bilibili-video-downloader/): SaveAny B站视频下载器支持哔哩哔哩公开视频解析和高清保存，可整理课程、合集、字幕与 AI 摘要，帮助学习者建立可复习、可导出的本地资料。
-- [B站课程总结工具](https://saveany.local/bilibili-course-summary-tool/): B站课程总结工具 SaveAny 面向哔哩哔哩公开视频，可整理课程字幕、生成 AI 摘要、知识点、问答和 Markdown 复习笔记，适合长期学习归档。
-- [如何提取B站课程字幕](https://saveany.local/how-to-extract-bilibili-subtitles/): 如何提取B站课程字幕？SaveAny 可解析哔哩哔哩公开视频，在可访问时整理字幕文本，并配合 AI 总结生成课程复习笔记和可导出的学习资料。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [视频转文字](https://saveany.local/video-to-text/): 视频转文字 页面介绍 SaveAny 如何把公开视频整理成字幕文本、摘要、章节、问答和 Markdown 笔记，适合课程学习、会议复盘和资料检索。
+- [B站视频下载器](https://your-domain.example/bilibili-video-downloader/): SaveAny B站视频下载器支持哔哩哔哩公开视频解析和高清保存，可整理课程、合集、字幕与 AI 摘要，帮助学习者建立可复习、可导出的本地资料。
+- [B站课程总结工具](https://your-domain.example/bilibili-course-summary-tool/): B站课程总结工具 SaveAny 面向哔哩哔哩公开视频，可整理课程字幕、生成 AI 摘要、知识点、问答和 Markdown 复习笔记，适合长期学习归档。
+- [如何提取B站课程字幕](https://your-domain.example/how-to-extract-bilibili-subtitles/): 如何提取B站课程字幕？SaveAny 可解析哔哩哔哩公开视频，在可访问时整理字幕文本，并配合 AI 总结生成课程复习笔记和可导出的学习资料。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [视频转文字](https://your-domain.example/video-to-text/): 视频转文字 页面介绍 SaveAny 如何把公开视频整理成字幕文本、摘要、章节、问答和 Markdown 笔记，适合课程学习、会议复盘和资料检索。

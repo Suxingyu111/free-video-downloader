@@ -29,6 +29,22 @@ export function updateAuthState(state, payload = {}) {
   state.error = "";
 }
 
+export function applyUsageState(state, usage = {}) {
+  const current = state.usage || {};
+  state.usage = defaultUsage({
+    ...current,
+    ...usage,
+    meters: {
+      ...(current.meters || {}),
+      ...(usage.meters || {})
+    },
+    credit_packs: {
+      ...(current.credit_packs || {}),
+      ...(usage.credit_packs || {})
+    }
+  });
+}
+
 export function clearAuthState(state) {
   state.user = null;
   state.membership = { active: false, plan: "free", status: "anonymous" };
@@ -67,6 +83,7 @@ export function quotaMeterText(state, meter) {
   const remaining = meterRemaining(value);
   if (meter === "summary") return `AI 总结还剩 ${remaining} 次`;
   if (meter === "transcription_minutes") return `语音转写还剩 ${remaining} 分钟`;
+  if (meter === "question") return `AI 问答还剩 ${remaining} 次`;
   if (meter === "analyze") return `解析还剩 ${remaining} 次`;
   if (meter === "download") return `下载还剩 ${remaining} 次`;
   return "";

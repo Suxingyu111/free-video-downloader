@@ -15,15 +15,19 @@ APP_CONFIG_ENV_KEYS = [
     "SAVEANY_DB_PATH",
     "SAVEANY_DEV_MODE",
     "SAVEANY_ENV",
+    "SAVEANY_ENV_FILE",
     "SAVEANY_IP_HASH_SALT",
     "SAVEANY_SECURE_COOKIES",
     "SAVEANY_SESSION_COOKIE",
     "SAVEANY_SESSION_DAYS",
     "SAVEANY_SESSION_IDLE_DAYS",
-    "STRIPE_CONFIG_FILE",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "STRIPE_PRO_MONTHLY_PRICE_ID",
+    "STRIPE_SUMMARY_SMALL_PACK_PRICE_ID",
+    "STRIPE_SUMMARY_LARGE_PACK_PRICE_ID",
+    "STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID",
+    "STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID",
     "PASSWORD_RESET_TOKEN_MINUTES",
 ]
 
@@ -33,9 +37,9 @@ def clear_app_config_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
-def test_load_config_reads_stripe_env_file(monkeypatch, tmp_path):
+def test_load_config_reads_env_file(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    config_path = tmp_path / "stripe.env"
+    config_path = tmp_path / ".env"
     config_path.write_text(
         """
         # Local Stripe test settings
@@ -47,7 +51,7 @@ def test_load_config_reads_stripe_env_file(monkeypatch, tmp_path):
         """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(config_path))
 
     config = load_config()
 
@@ -58,12 +62,50 @@ def test_load_config_reads_stripe_env_file(monkeypatch, tmp_path):
     assert config.stripe_pro_monthly_price_id == "price_file"
 
 
-def test_load_config_env_overrides_stripe_env_file(monkeypatch, tmp_path):
+def test_load_config_reads_project_env_file(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    config_path = tmp_path / "stripe.env"
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        """
+        SAVEANY_ENV=production
+        SAVEANY_SECURE_COOKIES=true
+        SAVEANY_DEV_MODE=false
+        SAVEANY_ALLOWED_ORIGINS=https://app.example.com/
+        BILLING_MODE=stripe
+        PUBLIC_APP_URL=https://app.example.com/
+        STRIPE_SECRET_KEY=sk_live_project_env
+        STRIPE_WEBHOOK_SECRET=whsec_project_env
+        STRIPE_PRO_MONTHLY_PRICE_ID=price_project_env
+        STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_summary_small_env
+        STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_summary_large_env
+        STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID=price_transcription_small_env
+        STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID=price_transcription_large_env
+        SAVEANY_IP_HASH_SALT=project-env-salt
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(env_path))
+
+    config = load_config()
+
+    assert config.environment == "production"
+    assert config.public_app_url == "https://app.example.com"
+    assert config.stripe_secret_key == "sk_live_project_env"
+    assert config.stripe_webhook_secret == "whsec_project_env"
+    assert config.stripe_pro_monthly_price_id == "price_project_env"
+    assert config.stripe_summary_small_pack_price_id == "price_summary_small_env"
+    assert config.stripe_summary_large_pack_price_id == "price_summary_large_env"
+    assert config.stripe_transcription_small_pack_price_id == "price_transcription_small_env"
+    assert config.stripe_transcription_large_pack_price_id == "price_transcription_large_env"
+    assert config.ip_hash_salt == "project-env-salt"
+
+
+def test_load_config_env_overrides_env_file(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    config_path = tmp_path / ".env"
     config_path.write_text(
         """
-        BILLING_MODE=mock
+        BILLING_MODE=legacy-file-mode
         PUBLIC_APP_URL=http://file.example.test
         STRIPE_SECRET_KEY=sk_test_file
         STRIPE_WEBHOOK_SECRET=whsec_file
@@ -71,7 +113,7 @@ def test_load_config_env_overrides_stripe_env_file(monkeypatch, tmp_path):
         """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(config_path))
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "http://env.example.test/")
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_env")
@@ -89,7 +131,7 @@ def test_load_config_env_overrides_stripe_env_file(monkeypatch, tmp_path):
 
 def test_load_config_reads_complete_production_config_from_file(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    config_path = tmp_path / "stripe.env"
+    config_path = tmp_path / ".env"
     config_path.write_text(
         """
         SAVEANY_ENV=production
@@ -113,7 +155,7 @@ def test_load_config_reads_complete_production_config_from_file(monkeypatch, tmp
         """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(config_path))
 
     config = load_config()
 
@@ -154,9 +196,21 @@ def test_app_config_loads_credit_pack_price_ids(monkeypatch, tmp_path):
     assert config.ip_hash_salt == "test-salt"
 
 
+def test_relative_db_path_from_env_file_resolves_from_project_root(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    env_path = tmp_path / ".env"
+    env_path.write_text("SAVEANY_DB_PATH=runtime/from-env.db\n", encoding="utf-8")
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(env_path))
+
+    config = load_config()
+
+    assert config.db_path.is_absolute()
+    assert str(config.db_path).endswith("/free-video-downloader/runtime/from-env.db")
+
+
 def test_production_requires_secure_cookies(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ENV", "production")
     monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "false")
     monkeypatch.setenv("BILLING_MODE", "stripe")
@@ -172,20 +226,20 @@ def test_production_requires_secure_cookies(monkeypatch, tmp_path):
 
 def test_rejects_invalid_saveany_env(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ENV", "staging")
 
     with pytest.raises(ValueError, match="SAVEANY_ENV"):
         load_config()
 
 
-def test_production_rejects_dev_mode_and_mock_billing(monkeypatch, tmp_path):
+def test_production_rejects_dev_mode(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ENV", "production")
     monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "true")
     monkeypatch.setenv("SAVEANY_DEV_MODE", "true")
-    monkeypatch.setenv("BILLING_MODE", "mock")
+    monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "https://app.example.com")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://app.example.com")
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
@@ -195,14 +249,10 @@ def test_production_rejects_dev_mode_and_mock_billing(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="SAVEANY_DEV_MODE"):
         load_config()
 
-    monkeypatch.setenv("SAVEANY_DEV_MODE", "false")
-    with pytest.raises(ValueError, match="BILLING_MODE"):
-        load_config()
-
 
 def test_production_requires_https_public_app_url(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ENV", "production")
     monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "true")
     monkeypatch.setenv("BILLING_MODE", "stripe")
@@ -218,7 +268,7 @@ def test_production_requires_https_public_app_url(monkeypatch, tmp_path):
 
 def test_production_requires_explicit_allowed_origins_without_wildcard(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ENV", "production")
     monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "true")
     monkeypatch.setenv("BILLING_MODE", "stripe")
@@ -237,7 +287,7 @@ def test_production_requires_explicit_allowed_origins_without_wildcard(monkeypat
 
 def test_allowed_origins_trim_whitespace_and_trailing_slashes(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", " https://app.example.com/ , http://localhost:5173/ ")
 
     config = load_config()
@@ -247,7 +297,7 @@ def test_allowed_origins_trim_whitespace_and_trailing_slashes(monkeypatch, tmp_p
 
 def test_production_requires_stripe_config_and_defaults_to_host_session_cookie(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("SAVEANY_ENV", "production")
     monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "true")
     monkeypatch.setenv("BILLING_MODE", "stripe")
@@ -273,15 +323,41 @@ def test_production_requires_stripe_config_and_defaults_to_host_session_cookie(m
 
 def test_development_defaults_include_allowed_origins_and_session_idle_days(monkeypatch, tmp_path):
     clear_app_config_env(monkeypatch)
-    monkeypatch.setenv("STRIPE_CONFIG_FILE", str(tmp_path / "missing-stripe.env"))
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
 
     config = load_config()
 
     assert config.environment == "development"
-    assert config.billing_mode == "mock"
+    assert config.billing_mode == "stripe"
     assert config.public_app_url == "http://localhost:5173"
     assert config.allowed_origins == ("http://localhost:5173", "http://127.0.0.1:5173")
     assert config.secure_cookies is False
     assert config.password_reset_token_minutes == 30
     assert config.session_cookie_name == "saveany_session"
     assert config.session_idle_days == 7
+
+
+def test_development_legacy_mock_billing_mode_is_treated_as_stripe(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setenv("BILLING_MODE", "mock")
+
+    config = load_config()
+
+    assert config.billing_mode == "stripe"
+
+
+def test_production_rejects_legacy_mock_billing_mode(monkeypatch, tmp_path):
+    clear_app_config_env(monkeypatch)
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setenv("SAVEANY_ENV", "production")
+    monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "true")
+    monkeypatch.setenv("BILLING_MODE", "mock")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://app.example.com")
+    monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+
+    with pytest.raises(ValueError, match="BILLING_MODE"):
+        load_config()

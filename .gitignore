@@ -49,3 +49,6 @@ backend/.pytest_cache/
 .superpowers/
 .agents/
 skills/
+*.env
+*.env.local
+*.env.*.local

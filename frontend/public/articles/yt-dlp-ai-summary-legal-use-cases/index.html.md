@@ -2,7 +2,7 @@
 
 SaveAny 把 yt-dlp 风格的视频解析能力与 AI 学习总结结合，适合公开视频课程、访谈、播客、讲座和资料归档，不处理受限内容。
 
-Canonical URL: https://saveany.local/articles/yt-dlp-ai-summary-legal-use-cases/
+Canonical URL: https://your-domain.example/articles/yt-dlp-ai-summary-legal-use-cases/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -41,8 +41,8 @@ yt-dlp加AI总结合法使用场景应聚焦公开视频学习、研究、个人
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [使用条款](https://saveany.local/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
-- [万能视频下载总结器事实页](https://saveany.local/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
-- [YouTube转MP4](https://saveany.local/youtube-to-mp4/): YouTube转MP4 页面说明如何用 SaveAny 解析 YouTube 公开视频，选择稳定 MP4 或原始画质，保存学习资料并继续生成字幕、摘要和笔记。
-- [AI视频笔记](https://saveany.local/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [使用条款](https://your-domain.example/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
+- [万能视频下载总结器事实页](https://your-domain.example/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
+- [YouTube转MP4](https://your-domain.example/youtube-to-mp4/): YouTube转MP4 页面说明如何用 SaveAny 解析 YouTube 公开视频，选择稳定 MP4 或原始画质，保存学习资料并继续生成字幕、摘要和笔记。
+- [AI视频笔记](https://your-domain.example/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。

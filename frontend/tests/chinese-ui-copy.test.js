@@ -104,15 +104,15 @@ test("membership UI exposes account billing and quota copy", () => {
     "当前套餐",
     "付款失败，请更新支付方式",
     "已取消续费，本周期内仍可使用",
-    "支付已返回，仍在等待 Stripe 确认",
-    "模拟开通",
-    "模拟取消",
-    "模拟过期",
-    "模拟付款失败"
+    "支付已返回，仍在等待 Stripe 确认"
   ];
 
   for (const phrase of requiredPhrases) {
     assert.match(membershipSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  for (const phrase of ["模拟开通", "模拟取消", "模拟过期", "模拟付款失败", "本地模拟支付"]) {
+    assert.doesNotMatch(membershipSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 
   assert.doesNotMatch(appSource, /团队版|团队协作|¥99/);

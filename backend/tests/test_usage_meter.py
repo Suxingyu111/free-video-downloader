@@ -12,6 +12,7 @@ from app.services.usage_meter import (
     refund_reservation,
     reserve_user_meter,
 )
+from tests.helpers import activate_pro_subscription
 
 
 def test_anonymous_daily_limits_are_enforced(monkeypatch, tmp_path):
@@ -48,11 +49,75 @@ def test_free_user_summary_reservation_and_refund(monkeypatch, tmp_path):
     assert status["meters"]["summary"]["remaining"] == 3
 
 
+def test_free_user_question_monthly_limit_and_refund(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("question-free@example.com", "meter-password")
+
+    for index in range(10):
+        usage = reserve_user_meter(
+            user,
+            MeterType.QUESTION,
+            1,
+            reservation_id=f"question_free_{index}",
+        )
+
+    assert usage["limit"] == 10
+    assert usage["used"] == 10
+    assert usage["remaining"] == 0
+
+    with pytest.raises(MeterExceeded) as exc:
+        reserve_user_meter(
+            user,
+            MeterType.QUESTION,
+            1,
+            reservation_id="question_free_11",
+        )
+
+    assert "AI 问答次数不足" in str(exc.value)
+
+    refund_reservation("question_free_9")
+    status = entitlement_status(user)
+
+    assert status["meters"]["question"]["limit"] == 10
+    assert status["meters"]["question"]["used"] == 9
+    assert status["meters"]["question"]["remaining"] == 1
+
+
+def test_pro_user_question_monthly_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
+    database.initialize_database(tmp_path / "saveany.db")
+    user = create_user("question-pro@example.com", "meter-password")
+    activate_pro_subscription(user)
+
+    for index in range(200):
+        usage = reserve_user_meter(
+            user,
+            MeterType.QUESTION,
+            1,
+            reservation_id=f"question_pro_{index}",
+        )
+
+    assert usage["limit"] == 200
+    assert usage["used"] == 200
+    assert usage["remaining"] == 0
+
+    with pytest.raises(MeterExceeded) as exc:
+        reserve_user_meter(
+            user,
+            MeterType.QUESTION,
+            1,
+            reservation_id="question_pro_201",
+        )
+
+    assert "AI 问答次数不足" in str(exc.value)
+
+
 def test_credit_pack_is_consumed_after_plan_allowance(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("pack-user@example.com", "meter-password")
-    add_credit_pack(user.id, pack_id="summary_small", source="mock", payment_reference="mock_1")
+    add_credit_pack(user.id, pack_id="summary_small", source="stripe", payment_reference="pi_pack_1")
 
     for index in range(3):
         reserve_user_meter(user, MeterType.SUMMARY, 1, reservation_id=f"plan_{index}")
@@ -75,7 +140,7 @@ def test_add_credit_pack_rejects_none_payment_reference(monkeypatch, tmp_path):
         add_credit_pack(
             user.id,
             pack_id="summary_small",
-            source="mock",
+            source="stripe",
             payment_reference=None,
         )
 
@@ -101,7 +166,7 @@ def test_add_credit_pack_rejects_blank_payment_reference(
         add_credit_pack(
             user.id,
             pack_id="summary_small",
-            source="mock",
+            source="stripe",
             payment_reference=payment_reference,
         )
 
@@ -123,13 +188,13 @@ def test_add_credit_pack_is_idempotent_for_payment_reference(monkeypatch, tmp_pa
     first = add_credit_pack(
         user.id,
         pack_id="summary_small",
-        source="mock",
+        source="stripe",
         payment_reference="payment_1",
     )
     second = add_credit_pack(
         user.id,
         pack_id="summary_small",
-        source="mock",
+        source="stripe",
         payment_reference="payment_1",
     )
 
@@ -187,7 +252,7 @@ def test_insufficient_credit_pack_reserve_rolls_back_partial_pack_updates(
     add_credit_pack(
         user.id,
         pack_id="summary_small",
-        source="mock",
+        source="stripe",
         payment_reference="rollback_1",
     )
 
@@ -231,8 +296,8 @@ def test_split_credit_pack_refund_restores_each_pack(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("split-pack@example.com", "meter-password")
-    add_credit_pack(user.id, pack_id="summary_small", source="mock", payment_reference="mock_1")
-    add_credit_pack(user.id, pack_id="summary_small", source="mock", payment_reference="mock_2")
+    add_credit_pack(user.id, pack_id="summary_small", source="stripe", payment_reference="pi_pack_1")
+    add_credit_pack(user.id, pack_id="summary_small", source="stripe", payment_reference="pi_pack_2")
 
     for index in range(3):
         reserve_user_meter(user, MeterType.SUMMARY, 1, reservation_id=f"plan_split_{index}")

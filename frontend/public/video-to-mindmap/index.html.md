@@ -2,7 +2,7 @@
 
 SaveAny 的视频转思维导图页面适合把公开视频转换成结构化学习资料，覆盖摘要、章节、知识点、问答和导出流程。
 
-Canonical URL: https://saveany.local/video-to-mindmap/
+Canonical URL: https://your-domain.example/video-to-mindmap/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [公开视频生成思维导图](https://saveany.local/public-video-to-mind-map/): 公开视频生成思维导图可以用 SaveAny 完成：解析公开视频后生成摘要、章节、知识点和思维导图，适合学习复盘、内容研究、资料归档和团队分享。
-- [视频转文字](https://saveany.local/video-to-text/): 视频转文字 页面介绍 SaveAny 如何把公开视频整理成字幕文本、摘要、章节、问答和 Markdown 笔记，适合课程学习、会议复盘和资料检索。
-- [AI视频笔记](https://saveany.local/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [如何把视频总结成笔记](https://saveany.local/how-to-video-summary/): 如何把视频总结成笔记？使用 SaveAny 粘贴公开视频链接，解析视频、整理字幕、生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
+- [公开视频生成思维导图](https://your-domain.example/public-video-to-mind-map/): 公开视频生成思维导图可以用 SaveAny 完成：解析公开视频后生成摘要、章节、知识点和思维导图，适合学习复盘、内容研究、资料归档和团队分享。
+- [视频转文字](https://your-domain.example/video-to-text/): 视频转文字 页面介绍 SaveAny 如何把公开视频整理成字幕文本、摘要、章节、问答和 Markdown 笔记，适合课程学习、会议复盘和资料检索。
+- [AI视频笔记](https://your-domain.example/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [如何把视频总结成笔记](https://your-domain.example/how-to-video-summary/): 如何把视频总结成笔记？使用 SaveAny 粘贴公开视频链接，解析视频、整理字幕、生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。

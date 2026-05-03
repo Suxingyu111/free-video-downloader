@@ -127,6 +127,23 @@ def _seed_summary_meter_from_legacy_usage(user: User) -> None:
         if legacy is None:
             return
 
+        meter_reservation = conn.execute(
+            """
+            select 1
+            from meter_reservations
+            where user_id = ? and meter_type = ? and period_type = ? and period_key = ?
+            limit 1
+            """,
+            (
+                user.id,
+                MeterType.SUMMARY.value,
+                allowance.period_type.value,
+                allowance.period_key,
+            ),
+        ).fetchone()
+        if meter_reservation is not None:
+            return
+
         legacy_count = int(legacy["summary_count"])
         current = conn.execute(
             f"""

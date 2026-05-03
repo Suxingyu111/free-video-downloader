@@ -89,7 +89,7 @@ def test_load_config_defaults_db_path_to_runtime_dir(monkeypatch):
 def test_load_config_rejects_invalid_billing_mode(monkeypatch):
     monkeypatch.setenv("BILLING_MODE", "invalid")
 
-    with pytest.raises(ValueError, match="BILLING_MODE must be one of: mock, stripe"):
+    with pytest.raises(ValueError, match="BILLING_MODE must be stripe"):
         load_config()
 
 

@@ -2,15 +2,11 @@
 
 SaveAny 的下载功能继续免费。AI 总结需要登录账号，免费账号每天默认 3 次额度，专业版会员解锁高频使用。
 
-## 本地无外网测试
+## 账单安全边界
 
-使用 mock billing：
+账单系统只支持 Stripe 模式。项目已移除本地 mock billing、模拟开通、模拟取消、模拟过期、模拟付款失败和模拟按量包接口，避免任何浏览器或脚本绕过 Stripe 直接写入会员与额度状态。
 
-```bash
-BILLING_MODE=mock
-```
-
-启动后端和前端，注册账号，打开套餐页，使用“模拟开通”“模拟取消”“模拟过期”“模拟付款失败”按钮验收会员状态。Mock billing 写入真实的本地 SQLite 会员表，因此可以覆盖登录、额度、购买、取消、过期和付款失败状态。
+本地验收请使用 Stripe test mode、Stripe CLI webhook 转发和 Stripe test card。后端 `BILLING_MODE` 只接受 `stripe`；没有配置 Stripe key 或 Price ID 时，购买接口会返回配置错误，而不会降级到本地模拟状态。
 
 ## Stripe Test Mode
 
@@ -21,13 +17,13 @@ BILLING_MODE=mock
    - `总结大包`：one-time Price，`¥19`，currency 为 `cny`。
    - `转写小包`：one-time Price，`¥8`，currency 为 `cny`。
    - `转写大包`：one-time Price，`¥29`，currency 为 `cny`。
-3. 复制本地 Stripe 配置模板：
+3. 复制统一配置模板：
 
 ```bash
-cp backend/config/stripe.env.example backend/config/stripe.env
+cp .env.example .env
 ```
 
-4. 编辑 `backend/config/stripe.env`：
+4. 编辑根目录 `.env` 中的 Stripe 配置：
 
 ```dotenv
 BILLING_MODE=stripe
@@ -41,7 +37,7 @@ STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID=price_...
 PUBLIC_APP_URL=http://127.0.0.1:5173
 ```
 
-`backend/config/stripe.env` 已被 git 忽略，不要提交真实密钥。Shell 环境变量仍然会覆盖该文件，方便生产部署平台使用 Environment Variables。
+`.env` 已被 git 忽略，不要提交真实密钥。Shell 环境变量仍然会覆盖该文件，方便生产部署平台使用 Environment Variables。
 
 5. 启动 Stripe CLI：
 
@@ -51,10 +47,10 @@ stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook
 
 把 Stripe CLI 输出的 `whsec_...` 填入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
 
-6. 打开套餐页，点击“开通专业版 ¥19/月”，用 Stripe test card 完成 Checkout。按量包可先通过后端 API 验收；前端购买入口完成后，再从套餐页购买按量包。
+6. 打开套餐页，点击“开通专业版 ¥19/月”，用 Stripe test card 完成 Checkout。按量包同样从套餐页购买，并使用 Stripe test mode 完成支付链路。
 7. 回到 SaveAny 后等待 webhook 确认会员或按量包状态。
 
-前端成功回跳不会自行开通会员。会员状态只由后端在 Stripe webhook 验签通过后更新。
+会员和按量包状态只由后端在 Stripe webhook 验签通过后更新；成功回跳确认也必须由后端查询 Stripe Checkout Session 后同步，不接受前端自报状态。
 
 ## 开发提示
 

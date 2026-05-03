@@ -2,7 +2,7 @@
 
 SaveAny 的公开视频下载功能基于可公开访问的链接，不接收 Cookie，不处理登录、付费、私密或 DRM 内容。
 
-Canonical URL: https://saveany.local/features/video-download/
+Canonical URL: https://your-domain.example/features/video-download/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -39,8 +39,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [在线视频下载器](https://saveany.local/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
-- [YouTube视频下载器](https://saveany.local/youtube-video-downloader/): SaveAny YouTube视频下载器支持公开视频链接解析，自动识别标题、封面、清晰度和字幕，提供高清 MP4 保存、播放列表处理与 AI 视频总结。
-- [B站视频下载器](https://saveany.local/bilibili-video-downloader/): SaveAny B站视频下载器支持哔哩哔哩公开视频解析和高清保存，可整理课程、合集、字幕与 AI 摘要，帮助学习者建立可复习、可导出的本地资料。
-- [抖音视频下载器](https://saveany.local/douyin-video-downloader/): SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。
-- [使用条款](https://saveany.local/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
+- [在线视频下载器](https://your-domain.example/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
+- [YouTube视频下载器](https://your-domain.example/youtube-video-downloader/): SaveAny YouTube视频下载器支持公开视频链接解析，自动识别标题、封面、清晰度和字幕，提供高清 MP4 保存、播放列表处理与 AI 视频总结。
+- [B站视频下载器](https://your-domain.example/bilibili-video-downloader/): SaveAny B站视频下载器支持哔哩哔哩公开视频解析和高清保存，可整理课程、合集、字幕与 AI 摘要，帮助学习者建立可复习、可导出的本地资料。
+- [抖音视频下载器](https://your-domain.example/douyin-video-downloader/): SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。
+- [使用条款](https://your-domain.example/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。

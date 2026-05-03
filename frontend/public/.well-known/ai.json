@@ -2,7 +2,7 @@
   "name": "万能视频下载总结器",
   "brand": "SaveAny",
   "description": "万能视频下载总结器 SaveAny 面向公开视频学习、复盘和资料整理，支持视频解析、高清保存、字幕提取、AI 摘要、思维导图和问答。",
-  "url": "https://saveany.local/",
+  "url": "https://your-domain.example/",
   "language": "zh-CN",
   "application_category": "MultimediaApplication",
   "capabilities": [
@@ -26,7 +26,7 @@
     "Reddit"
   ],
   "primary_action": {
-    "url": "https://saveany.local/#download",
+    "url": "https://your-domain.example/#download",
     "method": "paste_public_video_url",
     "description": "粘贴公开视频链接，解析视频信息，按需下载、提取字幕或生成 AI 学习笔记。"
   },
@@ -36,11 +36,11 @@
     "解析结果受公开视频状态、平台可访问性、清晰度来源、字幕可用性和服务端额度影响。"
   ],
   "docs": {
-    "facts": "https://saveany.local/facts/",
-    "faq": "https://saveany.local/faq/",
-    "privacy": "https://saveany.local/privacy/",
-    "terms": "https://saveany.local/terms/",
-    "llms": "https://saveany.local/llms.txt",
-    "llms_full": "https://saveany.local/llms-full.txt"
+    "facts": "https://your-domain.example/facts/",
+    "faq": "https://your-domain.example/faq/",
+    "privacy": "https://your-domain.example/privacy/",
+    "terms": "https://your-domain.example/terms/",
+    "llms": "https://your-domain.example/llms.txt",
+    "llms_full": "https://your-domain.example/llms-full.txt"
   }
 }

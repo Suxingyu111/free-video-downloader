@@ -2,7 +2,7 @@
 
 SaveAny 的抖音公开视频下载页面面向公开短视频保存、字幕整理和 AI 复盘，不要求上传 Cookie 或登录态。
 
-Canonical URL: https://saveany.local/douyin-public-video-download/
+Canonical URL: https://your-domain.example/douyin-public-video-download/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [抖音视频下载器](https://saveany.local/douyin-video-downloader/): SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。
-- [在线视频下载器](https://saveany.local/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
-- [公开视频素材整理流程](https://saveany.local/public-video-archive-workflow/): 公开视频素材整理流程包括链接解析、高清保存、字幕提取、AI 总结、思维导图和 Markdown 归档，SaveAny 将这些步骤集中在一个工作台。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [AI视频笔记](https://saveany.local/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。
+- [抖音视频下载器](https://your-domain.example/douyin-video-downloader/): SaveAny 抖音视频下载器面向抖音公开视频链接，支持免登录解析、视频保存、字幕整理和 AI 总结，适合短视频素材归档、案例研究与内容复盘。
+- [在线视频下载器](https://your-domain.example/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
+- [公开视频素材整理流程](https://your-domain.example/public-video-archive-workflow/): 公开视频素材整理流程包括链接解析、高清保存、字幕提取、AI 总结、思维导图和 Markdown 归档，SaveAny 将这些步骤集中在一个工作台。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [AI视频笔记](https://your-domain.example/ai-video-notes/): AI视频笔记 页面介绍 SaveAny 如何把公开视频转换成摘要、章节、知识点、思维导图、问答和 Markdown，帮助学习者沉淀可复习资料。

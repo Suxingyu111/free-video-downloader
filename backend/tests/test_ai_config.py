@@ -6,6 +6,7 @@ from app.services.ai_config import load_ai_provider_config
 
 
 AI_ENV_KEYS = [
+    "SAVEANY_ENV_FILE",
     "AI_CONFIG_FILE",
     "AI_PROVIDER",
     "AI_BASE_URL",
@@ -30,6 +31,7 @@ def clear_ai_env(monkeypatch):
 
 def test_ai_config_uses_safe_defaults_without_file(monkeypatch, tmp_path):
     clear_ai_env(monkeypatch)
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("AI_CONFIG_FILE", str(tmp_path / "missing-ai-config.json"))
 
     config = load_ai_provider_config()
@@ -51,6 +53,7 @@ def test_ai_config_uses_safe_defaults_without_file(monkeypatch, tmp_path):
 
 def test_ai_config_reads_json_file(monkeypatch, tmp_path):
     clear_ai_env(monkeypatch)
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     config_path = tmp_path / "ai.config.json"
     config_path.write_text(
         json.dumps(
@@ -91,8 +94,50 @@ def test_ai_config_reads_json_file(monkeypatch, tmp_path):
     assert config.timeout_seconds == 42.0
 
 
+def test_ai_config_reads_project_env_file(monkeypatch, tmp_path):
+    clear_ai_env(monkeypatch)
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        """
+        AI_PROVIDER=openai-compatible
+        AI_BASE_URL=https://ai.env.example.com/v1/
+        AI_API_KEY=env-file-key
+        AI_TEXT_MODEL=env-summary-model
+        AI_TRANSCRIBE_PROVIDER=local-faster-whisper
+        AI_TRANSCRIBE_BASE_URL=https://speech.env.example.com/v1/
+        AI_TRANSCRIBE_API_KEY=env-speech-key
+        AI_TRANSCRIBE_MODEL=env-speech-model
+        AI_TRANSCRIBE_DEVICE=cuda
+        AI_TRANSCRIBE_COMPUTE_TYPE=float16
+        AI_TRANSCRIBE_BEAM_SIZE=7
+        AI_TRANSCRIBE_VAD_FILTER=false
+        AI_TIMEOUT_SECONDS=33.5
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(env_path))
+    monkeypatch.setenv("AI_CONFIG_FILE", str(tmp_path / "missing-ai-config.json"))
+
+    config = load_ai_provider_config()
+
+    assert config.provider == "openai-compatible"
+    assert config.base_url == "https://ai.env.example.com/v1"
+    assert config.api_key == "env-file-key"
+    assert config.text_model == "env-summary-model"
+    assert config.transcribe_provider == "local-faster-whisper"
+    assert config.transcribe_base_url == "https://speech.env.example.com/v1"
+    assert config.transcribe_api_key == "env-speech-key"
+    assert config.transcribe_model == "env-speech-model"
+    assert config.transcribe_device == "cuda"
+    assert config.transcribe_compute_type == "float16"
+    assert config.transcribe_beam_size == 7
+    assert config.transcribe_vad_filter is False
+    assert config.timeout_seconds == 33.5
+
+
 def test_ai_config_env_overrides_json_file(monkeypatch, tmp_path):
     clear_ai_env(monkeypatch)
+    monkeypatch.setenv("SAVEANY_ENV_FILE", str(tmp_path / "missing.env"))
     config_path = tmp_path / "ai.config.json"
     config_path.write_text(
         json.dumps(

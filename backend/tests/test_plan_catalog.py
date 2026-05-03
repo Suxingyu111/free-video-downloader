@@ -23,13 +23,13 @@ def test_personal_plan_catalog_has_confirmed_limits():
     assert free.download_daily_limit == 10
     assert free.summary_daily_limit == 3
     assert free.transcription_monthly_minutes == 30
-    assert free.questions_per_summary == 3
+    assert free.question_monthly_limit == 10
 
     assert pro.analyze_monthly_limit == 300
     assert pro.download_monthly_limit == 100
     assert pro.summary_monthly_limit == 120
     assert pro.transcription_monthly_minutes == 600
-    assert pro.questions_per_summary == 20
+    assert pro.question_monthly_limit == 200
 
 
 def test_credit_pack_catalog_has_confirmed_packs():

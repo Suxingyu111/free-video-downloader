@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyUsageState,
   authInitialState,
   clearAuthState,
   membershipLabel,
@@ -41,7 +42,7 @@ test("membership label describes active pro plan", () => {
 
 test("clearAuthState resets account state without losing billing mode", () => {
   const state = authInitialState();
-  state.billingMode = "mock";
+  state.billingMode = "stripe";
 
   updateAuthState(state, {
     user: { email: "user@example.com" },
@@ -52,7 +53,7 @@ test("clearAuthState resets account state without losing billing mode", () => {
 
   assert.equal(state.user, null);
   assert.equal(state.membership.status, "anonymous");
-  assert.equal(state.billingMode, "mock");
+  assert.equal(state.billingMode, "stripe");
   assert.equal(membershipLabel(state), "未登录");
   assert.equal(remainingSummaryText(state), "登录后每天可免费总结 3 次");
 });
@@ -83,6 +84,7 @@ test("quotaMeterText renders plan and pack remaining values", () => {
       meters: {
         summary: { limit: 3, used: 1, remaining: 2, plan_remaining: 2, pack_remaining: 0 },
         transcription_minutes: { limit: 30, used: 5, remaining: 25, plan_remaining: 25, pack_remaining: 0 },
+        question: { limit: 10, used: 4, remaining: 6, plan_remaining: 6, pack_remaining: 0 },
         analyze: { limit: 10, used: 3, remaining: 7, plan_remaining: 7, pack_remaining: 0 },
         download: { limit: 20, used: 4, remaining: 16, plan_remaining: 16, pack_remaining: 0 }
       }
@@ -91,6 +93,7 @@ test("quotaMeterText renders plan and pack remaining values", () => {
 
   assert.equal(quotaMeterText(state, "summary"), "AI 总结还剩 2 次");
   assert.equal(quotaMeterText(state, "transcription_minutes"), "语音转写还剩 25 分钟");
+  assert.equal(quotaMeterText(state, "question"), "AI 问答还剩 6 次");
   assert.equal(quotaMeterText(state, "analyze"), "解析还剩 7 次");
   assert.equal(quotaMeterText(state, "download"), "下载还剩 16 次");
 });
@@ -225,4 +228,32 @@ test("auth usage defaults include isolated meter and credit pack objects", () =>
   assert.deepEqual(partialUsage.usage.credit_packs, {});
   assert.notEqual(partialUsage.usage.meters, withoutUsage.usage.meters);
   assert.notEqual(partialUsage.usage.credit_packs, withoutUsage.usage.credit_packs);
+});
+
+test("applyUsageState updates realtime summary and transcription quotas", () => {
+  const state = authInitialState();
+  updateAuthState(state, {
+    user: { email: "quota@example.com" },
+    usage: {
+      meters: {
+        summary: { limit: 3, used: 0, remaining: 3 },
+        transcription_minutes: { limit: 30, used: 0, remaining: 30 }
+      },
+      credit_packs: {}
+    }
+  });
+
+  applyUsageState(state, {
+    meters: {
+      summary: { limit: 3, used: 1, remaining: 2 },
+      transcription_minutes: { limit: 30, used: 4, remaining: 26 }
+    },
+    credit_packs: {
+      summary: { remaining: 0 },
+      transcription_minutes: { remaining: 0 }
+    }
+  });
+
+  assert.equal(quotaMeterText(state, "summary"), "AI 总结还剩 2 次");
+  assert.equal(quotaMeterText(state, "transcription_minutes"), "语音转写还剩 26 分钟");
 });

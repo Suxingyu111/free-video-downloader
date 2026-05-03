@@ -36,7 +36,8 @@ export async function createSummaryTask(payload) {
   const response = await fetch("/api/summaries", {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "x-csrf-token": sessionCsrfToken()
     },
     credentials: "include",
     body: JSON.stringify(payload)
@@ -62,23 +63,23 @@ export async function getMe() {
 }
 
 export async function registerAccount(payload) {
-  return postJson("/api/auth/register", payload);
+  return postJson("/api/auth/register", payload, { csrf: "prelogin", captureSessionCsrf: true });
 }
 
 export async function loginAccount(payload) {
-  return postJson("/api/auth/login", payload);
+  return postJson("/api/auth/login", payload, { csrf: "prelogin", captureSessionCsrf: true });
 }
 
 export async function logoutAccount() {
-  return postJson("/api/auth/logout");
+  return postJson("/api/auth/logout", undefined, { csrf: "session", clearSessionCsrf: true });
 }
 
 export async function requestPasswordReset(payload) {
-  return postJson("/api/auth/password-reset/request", payload);
+  return postJson("/api/auth/password-reset/request", payload, { csrf: "prelogin" });
 }
 
 export async function confirmPasswordReset(payload) {
-  return postJson("/api/auth/password-reset/confirm", payload);
+  return postJson("/api/auth/password-reset/confirm", payload, { csrf: "prelogin" });
 }
 
 export async function getBillingStatus() {
@@ -104,19 +105,15 @@ export async function getEntitlementStatus() {
 }
 
 export async function createBillingCheckout(payload) {
-  return postJson("/api/billing/checkout", payload);
+  return postJson("/api/billing/checkout", payload, { csrf: "session" });
 }
 
 export async function confirmBillingCheckout(sessionId) {
-  return postJson("/api/billing/checkout/confirm", { session_id: sessionId });
+  return postJson("/api/billing/checkout/confirm", { session_id: sessionId }, { csrf: "session" });
 }
 
 export async function createBillingPortal() {
-  return postJson("/api/billing/portal");
-}
-
-export async function mockBillingAction(action) {
-  return postJson(`/api/billing/mock/${action}`);
+  return postJson("/api/billing/portal", undefined, { csrf: "session" });
 }
 
 export async function getTask(taskId) {
@@ -145,8 +142,10 @@ export async function askSummaryQuestion(summaryId, payload) {
   const response = await fetch(`/api/summaries/${summaryId}/questions`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "x-csrf-token": sessionCsrfToken()
     },
+    credentials: "include",
     body: JSON.stringify(payload)
   });
 
@@ -197,15 +196,58 @@ async function readApiError(response) {
   }
 }
 
-async function postJson(url, payload) {
+const SESSION_CSRF_STORAGE_KEY = "saveany_session_csrf";
+let currentSessionCsrfToken = "";
+
+function csrfStorage() {
+  try {
+    return globalThis.sessionStorage || globalThis.window?.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function sessionCsrfToken() {
+  if (currentSessionCsrfToken) return currentSessionCsrfToken;
+  const stored = csrfStorage()?.getItem(SESSION_CSRF_STORAGE_KEY) || "";
+  currentSessionCsrfToken = stored;
+  return currentSessionCsrfToken;
+}
+
+function storeSessionCsrfToken(token) {
+  currentSessionCsrfToken = token || "";
+  const storage = csrfStorage();
+  if (!storage) return;
+  if (currentSessionCsrfToken) {
+    storage.setItem(SESSION_CSRF_STORAGE_KEY, currentSessionCsrfToken);
+  } else {
+    storage.removeItem(SESSION_CSRF_STORAGE_KEY);
+  }
+}
+
+async function preloginCsrfToken() {
+  const response = await fetch("/api/csrf", { credentials: "include" });
+  if (!response.ok) {
+    const error = await readApiError(response);
+    throw new Error(error);
+  }
+  const payload = await response.json();
+  return payload.csrf_token || "";
+}
+
+async function postJson(url, payload, { csrf = "none", captureSessionCsrf = false, clearSessionCsrf = false } = {}) {
   const options = {
     method: "POST",
     credentials: "include"
   };
+  const headers = {};
   if (payload !== undefined) {
-    options.headers = { "Content-Type": "application/json" };
+    headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(payload);
   }
+  if (csrf === "prelogin") headers["x-csrf-token"] = await preloginCsrfToken();
+  if (csrf === "session") headers["x-csrf-token"] = sessionCsrfToken();
+  if (Object.keys(headers).length) options.headers = headers;
 
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -214,5 +256,8 @@ async function postJson(url, payload) {
     apiError.status = response.status;
     throw apiError;
   }
-  return response.json();
+  const data = await response.json();
+  if (captureSessionCsrf) storeSessionCsrfToken(data.csrf_token || "");
+  if (clearSessionCsrf) storeSessionCsrfToken("");
+  return data;
 }

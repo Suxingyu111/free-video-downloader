@@ -2,7 +2,7 @@
 
 课程学习场景页面向学生和自学者，聚合公开视频下载、字幕、AI 总结、思维导图和 Markdown 导出。
 
-Canonical URL: https://saveany.local/use-cases/course-learning/
+Canonical URL: https://your-domain.example/use-cases/course-learning/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [如何把视频总结成笔记](https://saveany.local/how-to-video-summary/): 如何把视频总结成笔记？使用 SaveAny 粘贴公开视频链接，解析视频、整理字幕、生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
-- [B站课程视频下载](https://saveany.local/bilibili-course-downloader/): B站课程视频下载 页面面向哔哩哔哩公开课程整理，使用 SaveAny 保存公开视频、提取字幕、生成课程摘要、知识点和 Markdown 复习笔记。
-- [YouTube视频总结工具](https://saveany.local/youtube-video-summary-tool/): YouTube视频总结工具 SaveAny 可解析 YouTube 公开视频，整理字幕、生成摘要、知识点、思维导图、问答和 Markdown 学习笔记。
-- [AI视频总结功能](https://saveany.local/features/ai-video-summary/): AI视频总结功能说明 SaveAny 如何把公开视频字幕或转写内容生成摘要、章节、知识点、思维导图、问答和 Markdown 笔记，适合长视频学习复盘。
-- [SaveAny使用场景](https://saveany.local/use-cases/): SaveAny使用场景包括课程学习、会议复盘、公开视频素材归档、字幕整理、AI 视频笔记和自托管知识库沉淀，帮助个人和团队形成可复习资料库。
+- [如何把视频总结成笔记](https://your-domain.example/how-to-video-summary/): 如何把视频总结成笔记？使用 SaveAny 粘贴公开视频链接，解析视频、整理字幕、生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
+- [B站课程视频下载](https://your-domain.example/bilibili-course-downloader/): B站课程视频下载 页面面向哔哩哔哩公开课程整理，使用 SaveAny 保存公开视频、提取字幕、生成课程摘要、知识点和 Markdown 复习笔记。
+- [YouTube视频总结工具](https://your-domain.example/youtube-video-summary-tool/): YouTube视频总结工具 SaveAny 可解析 YouTube 公开视频，整理字幕、生成摘要、知识点、思维导图、问答和 Markdown 学习笔记。
+- [AI视频总结功能](https://your-domain.example/features/ai-video-summary/): AI视频总结功能说明 SaveAny 如何把公开视频字幕或转写内容生成摘要、章节、知识点、思维导图、问答和 Markdown 笔记，适合长视频学习复盘。
+- [SaveAny使用场景](https://your-domain.example/use-cases/): SaveAny使用场景包括课程学习、会议复盘、公开视频素材归档、字幕整理、AI 视频笔记和自托管知识库沉淀，帮助个人和团队形成可复习资料库。

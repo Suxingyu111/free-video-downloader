@@ -2,7 +2,7 @@
 
 SaveAny 的 YouTube 转 MP4 页面面向公开视频保存场景，强调清晰度选择、字幕整理、AI 总结和合规下载边界。
 
-Canonical URL: https://saveany.local/youtube-to-mp4/
+Canonical URL: https://your-domain.example/youtube-to-mp4/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -46,8 +46,8 @@ SaveAny 会展示当前可解析的公开视频格式，用户可以选择稳定
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [YouTube视频下载器](https://saveany.local/youtube-video-downloader/): SaveAny YouTube视频下载器支持公开视频链接解析，自动识别标题、封面、清晰度和字幕，提供高清 MP4 保存、播放列表处理与 AI 视频总结。
-- [YouTube字幕下载](https://saveany.local/youtube-subtitle-downloader/): YouTube字幕下载 页面介绍如何用 SaveAny 从 YouTube 公开视频整理字幕文本，并继续生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
-- [YouTube视频总结工具](https://saveany.local/youtube-video-summary-tool/): YouTube视频总结工具 SaveAny 可解析 YouTube 公开视频，整理字幕、生成摘要、知识点、思维导图、问答和 Markdown 学习笔记。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [在线视频下载器](https://saveany.local/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
+- [YouTube视频下载器](https://your-domain.example/youtube-video-downloader/): SaveAny YouTube视频下载器支持公开视频链接解析，自动识别标题、封面、清晰度和字幕，提供高清 MP4 保存、播放列表处理与 AI 视频总结。
+- [YouTube字幕下载](https://your-domain.example/youtube-subtitle-downloader/): YouTube字幕下载 页面介绍如何用 SaveAny 从 YouTube 公开视频整理字幕文本，并继续生成 AI 摘要、思维导图、问答和 Markdown 学习笔记。
+- [YouTube视频总结工具](https://your-domain.example/youtube-video-summary-tool/): YouTube视频总结工具 SaveAny 可解析 YouTube 公开视频，整理字幕、生成摘要、知识点、思维导图、问答和 Markdown 学习笔记。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [在线视频下载器](https://your-domain.example/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。

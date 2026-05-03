@@ -2,7 +2,7 @@
 
 SaveAny 的合规边界是公开视频学习、研究、个人备份和资料整理，不提供 DRM、付费、私密、登录限定或平台风控绕过能力。
 
-Canonical URL: https://saveany.local/articles/public-video-downloader-drm-boundary/
+Canonical URL: https://your-domain.example/articles/public-video-downloader-drm-boundary/
 Last updated: 2026-04-30
 
 ## 页面定位
@@ -39,8 +39,8 @@ Last updated: 2026-04-30
 - 本地或自托管部署时，下载任务和临时文件由自己的服务处理，避免暴露服务器真实路径。
 
 ## 相关页面
-- [使用条款](https://saveany.local/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
-- [万能视频下载总结器事实页](https://saveany.local/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
-- [在线视频下载器](https://saveany.local/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
-- [AI视频总结器](https://saveany.local/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
-- [隐私政策](https://saveany.local/privacy/): SaveAny 隐私政策说明本地或自托管部署下的视频链接、下载任务、临时文件、AI 总结数据、浏览器工作区缓存和文件 token 如何处理。
+- [使用条款](https://your-domain.example/terms/): SaveAny 使用条款说明公开视频下载、AI 总结、字幕提取、版权责任、平台条款，以及禁止绕过登录、付费、DRM、验证码或风控限制的边界。
+- [万能视频下载总结器事实页](https://your-domain.example/facts/): 万能视频下载总结器事实页汇总 SaveAny 的产品定义、支持平台、核心能力、不支持范围、隐私边界和合规说明，方便搜索引擎、AI 与用户引用。
+- [在线视频下载器](https://your-domain.example/online-video-downloader/): 在线视频下载器 页面介绍 SaveAny 如何支持多平台公开视频解析、高清保存、字幕提取和 AI 总结，适合学习资料、素材归档、课程复习和内容复盘。
+- [AI视频总结器](https://your-domain.example/video-summary/): SaveAny AI视频总结器可把公开视频转换成结构化摘要、字幕文本、思维导图和问答，支持 Markdown 导出，适合课程学习、会议复盘、播客整理和长视频快速理解。
+- [隐私政策](https://your-domain.example/privacy/): SaveAny 隐私政策说明本地或自托管部署下的视频链接、下载任务、临时文件、AI 总结数据、浏览器工作区缓存和文件 token 如何处理。

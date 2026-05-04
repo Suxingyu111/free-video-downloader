@@ -1215,7 +1215,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python main.py
 ```
 
 后端地址：
@@ -1223,6 +1223,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```text
 http://127.0.0.1:8000
 ```
+
+默认监听地址、端口和热重载可通过 `backend/.env` 中的 `SAVEANY_BACKEND_HOST`、`SAVEANY_BACKEND_PORT`、`SAVEANY_BACKEND_RELOAD` 调整。
 
 健康检查：
 

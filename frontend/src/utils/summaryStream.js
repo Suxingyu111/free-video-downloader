@@ -1,5 +1,6 @@
 const DEFAULT_STREAM_LINE_LIMIT = 18;
 const DEFAULT_STREAM_LINE_LENGTH = 72;
+const DEFAULT_STREAM_STABLE_LINE_LIMIT = 5;
 
 export function normalizeSummaryStreamLines(text, options = {}) {
   const maxLines = Number.isFinite(options.maxLines) ? Math.max(1, Math.floor(options.maxLines)) : DEFAULT_STREAM_LINE_LIMIT;
@@ -39,12 +40,71 @@ export function diffSummaryStreamLines(previousLines = [], nextLines = []) {
   return next;
 }
 
+export function normalizeSummaryStreamPreview(text, options = {}) {
+  const maxStableLines = Number.isFinite(options.maxStableLines)
+    ? Math.max(0, Math.floor(options.maxStableLines))
+    : DEFAULT_STREAM_STABLE_LINE_LIMIT;
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    return {
+      headline: "",
+      headlineDraft: "",
+      stableLines: [],
+      bodyLines: [],
+      draftLine: ""
+    };
+  }
+
+  const stableLines = lines.slice(0, -1);
+  let draftLine = lines.at(-1) || "";
+  if (isCompleteStreamLine(draftLine)) {
+    stableLines.push(draftLine);
+    draftLine = "";
+  }
+
+  const headlineIndex = stableLines.findIndex(isLeadSummaryLine);
+  const headline = headlineIndex >= 0 ? stripLeadSummaryLabel(stableLines[headlineIndex]) : "";
+  const bodySourceLines = stableLines.filter((line, index) => index !== headlineIndex);
+  const boundedStableLines = stableLines.slice(-maxStableLines);
+  const headlineDraft = !headline && isLeadSummaryLine(draftLine) ? stripLeadSummaryLabel(draftLine) : "";
+
+  return {
+    headline,
+    headlineDraft,
+    stableLines: boundedStableLines,
+    bodyLines: bodySourceLines.slice(-maxStableLines),
+    draftLine
+  };
+}
+
 function sanitizeLines(lines) {
   return Array.isArray(lines)
     ? lines
         .map((line) => String(line || "").trim())
         .filter(Boolean)
     : [];
+}
+
+function isCompleteStreamLine(line) {
+  const value = String(line || "").trim();
+  if (!value) return false;
+  if (/[。！？!?；;]$/.test(value)) return true;
+  if (/[:：]$/.test(value) && !/^一句话(?:结论|概览)?[:：]?$/.test(value)) return true;
+  return false;
+}
+
+function isLeadSummaryLine(line) {
+  const value = String(line || "").trim();
+  if (!value || value === "一句话") return false;
+  return /^一句话(?:结论|概览)?[:：]?/.test(value);
+}
+
+function stripLeadSummaryLabel(line) {
+  const value = String(line || "").trim();
+  return value.replace(/^一句话(?:结论|概览)?[:：]?\s*/, "").trim();
 }
 
 function splitReadableLine(line, maxLineLength) {

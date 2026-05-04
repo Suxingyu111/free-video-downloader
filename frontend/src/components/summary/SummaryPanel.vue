@@ -1,11 +1,11 @@
 <script setup>
 import { Brain, FileText, Loader2, MessageCircle, NotebookText } from "lucide-vue-next";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed } from "vue";
 import SummaryMindMap from "./SummaryMindMap.vue";
 import SummaryOverview from "./SummaryOverview.vue";
 import SummaryQa from "./SummaryQa.vue";
 import SummaryTranscript from "./SummaryTranscript.vue";
-import { diffSummaryStreamLines, normalizeSummaryStreamLines } from "../../utils/summaryStream";
+import { normalizeSummaryStreamPreview } from "../../utils/summaryStream";
 
 const props = defineProps({
   summaryTask: {
@@ -89,32 +89,35 @@ const resultWithTitle = computed(() => {
 });
 const activeCard = computed(() => moduleCards.find((card) => card.id === props.summaryView) || moduleCards[0]);
 const shouldShowLoadingState = computed(() => !props.summaryResult);
-const hasStreamPreview = computed(() => Boolean(revealedStreamLines.value.length || streamRevealQueue.value.length));
-const STREAM_LINE_LIMIT = 32;
-const STREAM_SOURCE_LIMIT = 96;
-const STREAM_LINE_REVEAL_MS = 520;
-const STREAM_READABLE_LINE_LENGTH = 56;
-const streamSourceLines = ref([]);
-const revealedStreamLines = ref([]);
-const streamRevealQueue = ref([]);
-let streamRevealTimer = null;
-
-watch(
-  () => props.summaryTask?.id,
-  () => {
-    resetStreamReveal();
-    enqueueStreamLines(props.summaryTask?.streamed_text || "");
-  },
-  { immediate: true }
+const STREAM_STABLE_LINE_LIMIT = 5;
+const streamPreview = computed(() =>
+  normalizeSummaryStreamPreview(props.summaryTask?.streamed_text || "", {
+    maxStableLines: STREAM_STABLE_LINE_LIMIT
+  })
 );
-
-watch(
-  () => props.summaryTask?.streamed_text,
-  (text) => {
-    enqueueStreamLines(text);
-  },
-  { immediate: true }
+const streamHeadlineText = computed(() => streamPreview.value.headline || streamPreview.value.headlineDraft);
+const hasHeadlineDraft = computed(() => Boolean(streamPreview.value.headlineDraft));
+const streamBodyLines = computed(() => streamPreview.value.bodyLines);
+const streamDraftLine = computed(() => {
+  const draft = streamPreview.value.draftLine || "";
+  return hasHeadlineDraft.value ? "" : draft;
+});
+const hasStreamPreview = computed(() =>
+  Boolean(streamHeadlineText.value || streamBodyLines.value.length || streamDraftLine.value)
 );
+const generationSteps = computed(() => {
+  const stage = props.summaryTask?.stage || "queued";
+  const status = props.summaryTask?.status || "queued";
+  const transcriptActive = ["subtitle", "speech_to_text"].includes(stage) || status === "transcribing";
+  const transcriptDone = ["summary", "completed"].includes(stage) || ["summarizing", "completed"].includes(status);
+  const summaryActive = stage === "summary" || status === "summarizing";
+  const summaryDone = status === "completed";
+  return [
+    { label: transcriptDone ? "字幕已提取" : "提取字幕", state: transcriptDone ? "done" : transcriptActive ? "active" : "waiting" },
+    { label: summaryDone ? "摘要已生成" : "提炼摘要", state: summaryDone ? "done" : summaryActive ? "active" : "waiting" },
+    { label: summaryDone ? "结构已完成" : "整理章节结构", state: summaryDone ? "done" : summaryActive && hasStreamPreview.value ? "active" : "waiting" }
+  ];
+});
 
 function moduleStatus(moduleId) {
   if (props.summaryResult) {
@@ -153,61 +156,6 @@ function selectView(view) {
 function useQuestion(question) {
   emit("use-question", question);
 }
-
-function enqueueStreamLines(text) {
-  const nextLines = normalizeSummaryStreamLines(text || "", {
-    maxLines: STREAM_SOURCE_LIMIT,
-    maxLineLength: STREAM_READABLE_LINE_LENGTH
-  });
-  const pendingLines = diffSummaryStreamLines(streamSourceLines.value, nextLines);
-  streamSourceLines.value = nextLines;
-  if (!nextLines.length) {
-    resetStreamReveal();
-    return;
-  }
-  if (!pendingLines.length) return;
-
-  streamRevealQueue.value.push(...pendingLines);
-  if (!revealedStreamLines.value.length) {
-    revealNextStreamLine();
-    return;
-  }
-  scheduleNextStreamLine();
-}
-
-function revealNextStreamLine() {
-  if (streamRevealTimer && typeof window !== "undefined") {
-    window.clearTimeout(streamRevealTimer);
-  }
-  streamRevealTimer = null;
-  const nextLine = streamRevealQueue.value.shift();
-  if (!nextLine) return;
-  revealedStreamLines.value = [...revealedStreamLines.value, nextLine].slice(-STREAM_LINE_LIMIT);
-  scheduleNextStreamLine();
-}
-
-function scheduleNextStreamLine() {
-  if (streamRevealTimer || !streamRevealQueue.value.length) return;
-  if (typeof window === "undefined") {
-    revealNextStreamLine();
-    return;
-  }
-  streamRevealTimer = window.setTimeout(revealNextStreamLine, STREAM_LINE_REVEAL_MS);
-}
-
-function resetStreamReveal() {
-  if (streamRevealTimer && typeof window !== "undefined") {
-    window.clearTimeout(streamRevealTimer);
-  }
-  streamRevealTimer = null;
-  streamSourceLines.value = [];
-  revealedStreamLines.value = [];
-  streamRevealQueue.value = [];
-}
-
-onBeforeUnmount(() => {
-  resetStreamReveal();
-});
 </script>
 
 <template>
@@ -276,13 +224,27 @@ onBeforeUnmount(() => {
             <p class="summary-module-eyebrow">{{ activeCard.label }}</p>
             <h4>{{ activeCard.loadingTitle }}</h4>
             <p>{{ activeCard.loadingText }}</p>
+            <div class="summary-generation-steps" aria-label="总结生成步骤">
+              <span v-for="step in generationSteps" :key="step.label" :data-state="step.state">{{ step.label }}</span>
+            </div>
             <div v-if="hasStreamPreview" class="summary-stream-preview" aria-label="AI 实时总结内容">
-              <ol>
-                <li v-for="(line, index) in revealedStreamLines" :key="`${line}-${index}`">
-                  <span>{{ line }}</span>
-                </li>
-              </ol>
-              <span v-if="isSummaryRunning" class="summary-stream-cursor" aria-hidden="true"></span>
+              <div v-if="streamHeadlineText" class="summary-stream-headline">
+                <span>一句话结论</span>
+                <p>
+                  {{ streamHeadlineText }}
+                  <span v-if="isSummaryRunning && hasHeadlineDraft" class="summary-stream-cursor" aria-hidden="true"></span>
+                </p>
+              </div>
+              <div v-if="streamBodyLines.length" class="summary-stream-body">
+                <span>已生成内容</span>
+                <ul>
+                  <li v-for="(line, index) in streamBodyLines" :key="`${line}-${index}`">{{ line }}</li>
+                </ul>
+              </div>
+              <p v-if="streamDraftLine" class="summary-stream-draft">
+                <span>{{ streamDraftLine }}</span>
+                <span v-if="isSummaryRunning" class="summary-stream-cursor" aria-hidden="true"></span>
+              </p>
             </div>
             <div v-else class="summary-loading-bars" aria-hidden="true">
               <span></span>

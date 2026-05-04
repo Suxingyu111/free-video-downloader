@@ -424,8 +424,9 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryPanelSource, /class="summary-module-icon"/);
   assert.match(summaryPanelSource, /class="summary-status-pill"/);
   assert.match(summaryPanelSource, /class="summary-loading-shell"/);
-  assert.match(summaryPanelSource, /revealedStreamLines/);
+  assert.match(summaryPanelSource, /summary-generation-steps/);
   assert.match(summaryPanelSource, /summary-stream-preview/);
+  assert.match(summaryPanelSource, /summary-stream-headline/);
   assert.match(summaryPanelSource, /summary-loading-bars/);
   assert.match(summaryOverviewSource, /summaryMarkdown/);
   assert.match(summaryOverviewSource, /<SummaryMarkdownRenderer\s+:markdown="summaryMarkdown"/);
@@ -446,20 +447,26 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryCss, /\.summary-loading-state\s*\{[\s\S]*min-height:\s*220px/);
   assert.match(summaryCss, /\.summary-status-pill\s*\{/);
   assert.match(summaryCss, /\.summary-loading-shell\s*\{/);
+  assert.match(summaryCss, /\.summary-generation-steps\s*\{/);
   assert.match(summaryCss, /\.summary-stream-preview\s*\{/);
+  assert.match(summaryCss, /\.summary-stream-headline,[\s\S]*\.summary-stream-draft\s*\{/);
   assert.match(summaryQaSource, /本月 AI 问答/);
   assert.match(summaryQaSource, /questionQuotaExhausted/);
   assert.match(summaryQaSource, /本月 AI 问答次数已用完/);
   assert.match(summaryCss, /@media \(max-width:\s*760px\)[\s\S]*\.summary-module-grid[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
 });
 
-test("summary streaming preview reveals generated lines incrementally", () => {
-  assert.match(summaryPanelSource, /normalizeSummaryStreamLines/);
-  assert.match(summaryPanelSource, /diffSummaryStreamLines/);
-  assert.match(summaryPanelSource, /revealedStreamLines/);
-  assert.match(summaryPanelSource, /streamRevealQueue/);
-  assert.match(summaryPanelSource, /window\.setTimeout\(revealNextStreamLine,\s*STREAM_LINE_REVEAL_MS\)/);
-  assert.match(summaryPanelSource, /v-for="\(\s*line,\s*index\s*\) in revealedStreamLines"/);
+test("summary streaming preview replaces the active draft instead of replaying old chunks", () => {
+  assert.match(summaryPanelSource, /normalizeSummaryStreamPreview/);
+  assert.match(summaryPanelSource, /streamHeadlineText/);
+  assert.match(summaryPanelSource, /streamBodyLines/);
+  assert.match(summaryPanelSource, /streamDraftLine/);
+  assert.match(summaryPanelSource, /v-for="step in generationSteps"/);
+  assert.match(summaryPanelSource, /v-for="\(\s*line,\s*index\s*\) in streamBodyLines"/);
+  assert.doesNotMatch(summaryPanelSource, /diffSummaryStreamLines/);
+  assert.doesNotMatch(summaryPanelSource, /revealedStreamLines/);
+  assert.doesNotMatch(summaryPanelSource, /streamRevealQueue/);
+  assert.doesNotMatch(summaryPanelSource, /window\.setTimeout\(revealNextStreamLine/);
 });
 
 test("mind map view exposes zoom controls and fit-to-screen rendering", () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const appSource = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
@@ -8,7 +8,10 @@ const summaryPanelSource = readFileSync(new URL("../src/components/summary/Summa
 const summaryQaSource = readFileSync(new URL("../src/components/summary/SummaryQa.vue", import.meta.url), "utf8");
 const summaryOverviewSource = readFileSync(new URL("../src/components/summary/SummaryOverview.vue", import.meta.url), "utf8");
 const summaryMindMapSource = readFileSync(new URL("../src/components/summary/SummaryMindMap.vue", import.meta.url), "utf8");
+const summaryMarkdownRendererUrl = new URL("../src/components/summary/SummaryMarkdownRenderer.vue", import.meta.url);
+const summaryMarkdownRendererSource = existsSync(summaryMarkdownRendererUrl) ? readFileSync(summaryMarkdownRendererUrl, "utf8") : "";
 const summaryCss = readFileSync(new URL("../src/assets/summary.css", import.meta.url), "utf8");
+const packageJson = readFileSync(new URL("../package.json", import.meta.url), "utf8");
 
 test("analyzing a video automatically starts the AI summary task", () => {
   assert.match(appSource, /startSummaryForResult\(result,\s*\{\s*mode:\s*"auto"\s*\}\)/);
@@ -17,6 +20,24 @@ test("analyzing a video automatically starts the AI summary task", () => {
   assert.match(appSource, /analysis_token:\s*result\.analysis_token/);
   assert.doesNotMatch(appSource, /force:\s*mode\s*!==\s*"auto"/);
   assert.doesNotMatch(appSource, /@click="handleSummary"/);
+});
+
+test("summary overview renders only the summary content through the markdown renderer", () => {
+  assert.match(packageJson, /"markdown-it":/);
+  assert.match(summaryMarkdownRendererSource, /import markdownit from "markdown-it"/);
+  assert.match(summaryMarkdownRendererSource, /html:\s*false/);
+  assert.match(summaryMarkdownRendererSource, /linkify:\s*true/);
+  assert.match(summaryMarkdownRendererSource, /typographer:\s*true/);
+  assert.match(summaryMarkdownRendererSource, /class="summary-markdown-body"/);
+  assert.match(summaryOverviewSource, /import SummaryMarkdownRenderer from "\.\/SummaryMarkdownRenderer\.vue"/);
+  assert.match(summaryOverviewSource, /<SummaryMarkdownRenderer\s+:markdown="summaryMarkdown"/);
+  assert.doesNotMatch(summaryOverviewSource, /readableSummaryLines/);
+  assert.doesNotMatch(summaryPanelSource, /SummaryMarkdownRenderer/);
+  assert.doesNotMatch(summaryQaSource, /SummaryMarkdownRenderer/);
+  assert.doesNotMatch(summaryMindMapSource, /SummaryMarkdownRenderer/);
+  assert.match(summaryCss, /\.summary-markdown-body\s*\{/);
+  assert.match(summaryCss, /\.summary-markdown-body h2\s*\{/);
+  assert.match(summaryCss, /\.summary-markdown-body table\s*\{/);
 });
 
 test("analyzed results appear below the unchanged hero search area", () => {
@@ -382,6 +403,7 @@ test("summary workbench shows module cards before final result and loads selecte
   assert.doesNotMatch(summaryPanelSource, /<nav v-if="summaryResult" class="summary-tabs"/);
   assert.doesNotMatch(summaryPanelSource, /<div v-if="summaryResult" class="summary-content"/);
   assert.match(summaryOverviewSource, /summary-line-reveal/);
+  assert.match(summaryOverviewSource, /SummaryMarkdownRenderer/);
   assert.match(summaryCss, /\.summary-module-grid\s*\{/);
   assert.match(summaryCss, /@keyframes summaryLineReveal/);
 });
@@ -405,19 +427,18 @@ test("summary module cards and loading state use compact professional controls",
   assert.match(summaryPanelSource, /revealedStreamLines/);
   assert.match(summaryPanelSource, /summary-stream-preview/);
   assert.match(summaryPanelSource, /summary-loading-bars/);
-  assert.match(summaryOverviewSource, /<h5>快速导读<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>结构化增强<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>一句话结论<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>完整理解<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>主线脉络<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>例子和证据<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>行动清单<\/h5>/);
-  assert.match(summaryOverviewSource, /<h5>边界和限制<\/h5>/);
+  assert.match(summaryOverviewSource, /summaryMarkdown/);
+  assert.match(summaryOverviewSource, /<SummaryMarkdownRenderer\s+:markdown="summaryMarkdown"/);
+  assert.match(summaryOverviewSource, /<h5>章节时间轴<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>关键片段<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>术语解释<\/h5>/);
+  assert.match(summaryOverviewSource, /<h5>可以继续追问<\/h5>/);
   assert.match(summaryCss, /\.summary-module-grid\s*\{[\s\S]*gap:\s*10px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*gap:\s*14px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*padding:\s*18px/);
   assert.match(summaryCss, /\.summary-card\s*\{[\s\S]*background:\s*var\(--color-paper-surface\)/);
   assert.match(summaryCss, /\.summary-overview-body\s*\{[\s\S]*background:\s*var\(--color-paper-elevated\)/);
+  assert.match(summaryCss, /\.summary-markdown-body h2\s*\{/);
   assert.match(summaryCss, /\.summary-section h5\s*\{[\s\S]*border-bottom:\s*1px solid var\(--color-line\)/);
   assert.match(summaryCss, /\.summary-list\s*\{[\s\S]*list-style:\s*disc/);
   assert.match(summaryCss, /\.summary-module-card\s*\{[\s\S]*min-height:\s*76px/);

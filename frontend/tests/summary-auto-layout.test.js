@@ -476,3 +476,30 @@ test("mind map view exposes zoom controls and fit-to-screen rendering", () => {
   assert.match(summaryCss, /\.mind-map-overlay\s*\{[\s\S]*inset:\s*0/);
   assert.match(summaryCss, /\.mind-map-overlay-body\s*\{[\s\S]*place-items:\s*center/);
 });
+
+test("mind map view supports search, level reveal, node focus, and direct canvas gestures", () => {
+  assert.match(summaryMindMapSource, /createVisibleMindMap/);
+  assert.match(summaryMindMapSource, /searchQuery/);
+  assert.match(summaryMindMapSource, /visibleDepth/);
+  assert.match(summaryMindMapSource, /focusedNodeId/);
+  assert.match(summaryMindMapSource, /handleMindMapNodeClick/);
+  assert.match(summaryMindMapSource, /handleViewportPointerDown/);
+  assert.match(summaryMindMapSource, /handleViewportWheel/);
+  assert.match(summaryMindMapSource, /@click="handleMindMapNodeClick"/);
+  assert.match(summaryMindMapSource, /@pointerdown="handleViewportPointerDown"/);
+  assert.match(summaryMindMapSource, /@wheel\.prevent="handleViewportWheel"/);
+  assert.match(summaryMindMapSource, /aria-label="搜索思维导图节点"/);
+  assert.match(summaryMindMapSource, /aria-label="显示思维导图层级"/);
+  assert.match(summaryMindMapSource, /清除聚焦/);
+  assert.match(summaryCss, /\.mind-map-filterbar\s*\{/);
+  assert.match(summaryCss, /\.mind-map-search\s*\{/);
+  assert.match(summaryCss, /\.mind-map-viewport\.dragging\s*\{/);
+  assert.match(summaryCss, /\.mind-map-hintbar\s*\{/);
+});
+
+test("mind map view exposes interactive HTML export", () => {
+  assert.match(summaryMindMapSource, /buildInteractiveMindMapHtml/);
+  assert.match(summaryMindMapSource, /handleDownloadInteractiveHtml/);
+  assert.match(summaryMindMapSource, /下载交互式思维导图 HTML/);
+  assert.match(summaryMindMapSource, />HTML<\/span>/);
+});

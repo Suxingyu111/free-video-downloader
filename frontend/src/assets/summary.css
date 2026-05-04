@@ -823,16 +823,127 @@
   min-height: 44px;
 }
 
+.mind-map-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(238, 244, 248, 0.78));
+  padding: 10px;
+}
+
+.mind-map-filterbar-compact {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.mind-map-search,
+.mind-map-level-select {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-surface);
+  padding: 0 12px;
+  color: var(--color-muted);
+}
+
+.mind-map-search {
+  flex: 1 1 260px;
+}
+
+.mind-map-level-select {
+  flex: 0 0 auto;
+}
+
+.mind-map-search input,
+.mind-map-level-select select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 760;
+  outline: 0;
+}
+
+.mind-map-search input {
+  width: 100%;
+}
+
+.mind-map-level-select select {
+  min-width: 88px;
+  cursor: pointer;
+}
+
+.mind-map-search input::placeholder {
+  color: #718096;
+}
+
+.mind-map-input-clear {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--color-muted);
+  padding: 0;
+}
+
+.mind-map-input-clear:hover {
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--color-accent-strong);
+}
+
+.mind-map-focus-clear {
+  flex: 0 0 auto;
+}
+
+.mind-map-hintbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-muted);
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.mind-map-hintbar span {
+  display: inline-flex;
+  min-height: 28px;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 0 10px;
+  overflow-wrap: anywhere;
+}
+
 .mind-map-viewport,
 .mind-map-overlay-body {
   overflow: auto;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  border-radius: var(--radius-md);
   background:
-    linear-gradient(180deg, rgba(245, 243, 234, 0.94), rgba(233, 228, 216, 0.98)),
-    repeating-linear-gradient(90deg, rgba(71, 85, 105, 0.16) 0, rgba(71, 85, 105, 0.16) 1px, transparent 1px, transparent 28px),
-    repeating-linear-gradient(0deg, rgba(71, 85, 105, 0.14) 0, rgba(71, 85, 105, 0.14) 1px, transparent 1px, transparent 28px);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(238, 246, 243, 0.96)),
+    repeating-linear-gradient(90deg, rgba(15, 118, 110, 0.07) 0, rgba(15, 118, 110, 0.07) 1px, transparent 1px, transparent 34px),
+    repeating-linear-gradient(0deg, rgba(82, 97, 114, 0.07) 0, rgba(82, 97, 114, 0.07) 1px, transparent 1px, transparent 34px);
   padding: 16px;
+  cursor: grab;
+  scrollbar-color: rgba(15, 118, 110, 0.34) rgba(15, 23, 42, 0.06);
 }
 
 .mind-map-viewport {
@@ -843,6 +954,16 @@
 
 .mind-map-toolbar {
   align-items: center;
+}
+
+.mind-map-viewport.dragging,
+.mind-map-overlay-body.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.mind-map-viewport.dragging {
+  cursor: grabbing;
 }
 
 .mind-map-zoom-controls {
@@ -897,12 +1018,25 @@
   max-width: none;
 }
 
+.mind-map-surface .mind-map-node {
+  cursor: pointer;
+  transition: opacity 160ms ease;
+}
+
+.mind-map-surface .mind-map-node:focus-visible {
+  outline: none;
+}
+
+.mind-map-surface .mind-map-node:hover {
+  opacity: 0.86;
+}
+
 .mind-map-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 14px;
   border: 1px solid var(--color-line);
   border-radius: 0;
@@ -989,6 +1123,17 @@
   .mind-map-viewport,
   .mind-map-overlay-body {
     padding: 12px;
+  }
+
+  .mind-map-filterbar {
+    padding: 8px;
+  }
+
+  .mind-map-search,
+  .mind-map-level-select,
+  .mind-map-focus-clear {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .mind-map-overlay {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as mindMapUtils from "../src/utils/mindMap.js";
 import {
   calculateMindMapFitZoom,
   clampMindMapZoom,
@@ -187,4 +188,94 @@ test("clampMindMapZoom constrains manual zoom steps", () => {
   assert.equal(clampMindMapZoom(0.1), 0.35);
   assert.equal(clampMindMapZoom(1.234), 1.23);
   assert.equal(clampMindMapZoom(4), 2.5);
+});
+
+test("createVisibleMindMap folds deeper branches into a readable count node", () => {
+  const tree = normalizeMindMap({
+    title: "Root",
+    children: [
+      {
+        title: "Branch",
+        children: [
+          { title: "Hidden A", children: [{ title: "Hidden A1" }] },
+          { title: "Hidden B" }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(typeof mindMapUtils.createVisibleMindMap, "function");
+  const visible = mindMapUtils.createVisibleMindMap(tree, { visibleDepth: 1 });
+
+  assert.equal(visible.children[0].label, "Branch");
+  assert.equal(visible.children[0].children.length, 1);
+  assert.equal(visible.children[0].children[0].isCollapsedSummary, true);
+  assert.equal(visible.children[0].children[0].hiddenCount, 3);
+  assert.equal(visible.children[0].children[0].label, "还有 3 个要点");
+});
+
+test("createVisibleMindMap keeps matching deep search paths visible and marks matched nodes", () => {
+  const tree = normalizeMindMap({
+    title: "Root",
+    children: [
+      { title: "章节背景", children: [{ title: "普通信息" }] },
+      { title: "实践路径", children: [{ title: "字幕转思维导图" }] }
+    ]
+  });
+
+  const visible = mindMapUtils.createVisibleMindMap(tree, { visibleDepth: 1, query: "思维导图" });
+  const matchedBranch = visible.children.find((node) => node.label === "实践路径");
+  const matchedLeaf = matchedBranch.children.find((node) => node.label === "字幕转思维导图");
+
+  assert.equal(matchedBranch.isSearchAncestor, true);
+  assert.equal(matchedLeaf.isSearchMatch, true);
+  assert.equal(matchedLeaf.children.length, 0);
+});
+
+test("renderMindMapSvg exposes node metadata and focus styling for interactive maps", () => {
+  const tree = normalizeMindMap({
+    title: "Root",
+    children: [{ title: "Branch", children: [{ title: "Leaf" }] }, { title: "Other" }]
+  });
+  const visible = mindMapUtils.createVisibleMindMap(tree, { visibleDepth: 3, query: "leaf" });
+  const leafId = visible.children[0].children[0].id;
+  const svg = renderMindMapSvg(visible, { focusedNodeId: leafId });
+
+  assert.match(svg, /data-node-id="0-0-0"/);
+  assert.match(svg, /data-depth="2"/);
+  assert.match(svg, /mind-map-node is-search-match is-focus-related/);
+  assert.match(svg, /mind-map-node is-dimmed/);
+  assert.match(svg, /<defs>/);
+  assert.match(svg, /font-family="Fira Sans, PingFang SC/);
+});
+
+test("buildInteractiveMindMapHtml packages the styled mind map with standalone interactions", () => {
+  const tree = normalizeMindMap({
+    title: "Root <Topic>",
+    children: [
+      { title: "字幕与转写", children: [{ title: "时间轴" }] },
+      { title: "导出格式" }
+    ]
+  });
+
+  assert.equal(typeof mindMapUtils.buildInteractiveMindMapHtml, "function");
+  const html = mindMapUtils.buildInteractiveMindMapHtml(tree, {
+    title: "Root <Topic>",
+    visibleDepth: 1,
+    searchQuery: "字幕",
+    focusedNodeId: "0-0"
+  });
+
+  assert.match(html, /^<!doctype html>/i);
+  assert.match(html, /<title>Root &lt;Topic&gt; - 交互式思维导图<\/title>/);
+  assert.match(html, /data-mind-map-app/);
+  assert.match(html, /aria-label="搜索思维导图节点"/);
+  assert.match(html, /id="mind-map-level"/);
+  assert.match(html, /id="mind-map-download-svg"/);
+  assert.match(html, /function renderMindMap/);
+  assert.match(html, /function handleViewportWheel/);
+  assert.match(html, /const MIND_MAP_TREE = /);
+  assert.match(html, /"searchQuery":"字幕"/);
+  assert.match(html, /Root \\u003cTopic\\u003e/);
+  assert.doesNotMatch(html, /Root <Topic>/);
 });

@@ -4,9 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { loadProjectEnv } from "../scripts/env-file.mjs";
+import { defaultBackendEnvFile, defaultProjectEnvFile, loadProjectEnv } from "../scripts/env-file.mjs";
 
-test("loadProjectEnv reads project .env without overriding existing process env", async () => {
+test("default env file points at the backend .env", () => {
+  assert.match(defaultBackendEnvFile, /backend\/\.env$/);
+  assert.equal(defaultProjectEnvFile, defaultBackendEnvFile);
+});
+
+test("loadProjectEnv reads backend .env without overriding existing process env", async () => {
   const directory = await mkdtemp(join(tmpdir(), "saveany-env-"));
   const previousEnv = {
     PUBLIC_SITE_URL: process.env.PUBLIC_SITE_URL,

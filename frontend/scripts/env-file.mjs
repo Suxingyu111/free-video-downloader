@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(scriptDir, "..");
 const projectRoot = resolve(frontendRoot, "..");
+const backendRoot = resolve(projectRoot, "backend");
 
-export const defaultProjectEnvFile = resolve(projectRoot, ".env");
+export const defaultBackendEnvFile = resolve(backendRoot, ".env");
+export const defaultProjectEnvFile = defaultBackendEnvFile;
 
 export function parseEnvFile(content, { source = ".env" } = {}) {
   const values = {};

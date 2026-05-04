@@ -20,10 +20,10 @@ SaveAny 的下载功能继续免费。AI 总结需要登录账号，免费账号
 3. 复制统一配置模板：
 
 ```bash
-cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 
-4. 编辑根目录 `.env` 中的 Stripe 配置：
+4. 编辑 `backend/.env` 中的 Stripe 配置：
 
 ```dotenv
 BILLING_MODE=stripe
@@ -37,7 +37,7 @@ STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID=price_...
 PUBLIC_APP_URL=http://127.0.0.1:5173
 ```
 
-`.env` 已被 git 忽略，不要提交真实密钥。Shell 环境变量仍然会覆盖该文件，方便生产部署平台使用 Environment Variables。
+`backend/.env` 已被 git 忽略，不要提交真实密钥。Shell 环境变量仍然会覆盖该文件，方便生产部署平台使用 Environment Variables。
 
 5. 启动 Stripe CLI：
 

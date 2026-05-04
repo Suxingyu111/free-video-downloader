@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 
 
-PROJECT_DIR = Path(__file__).resolve().parents[3]
-DEFAULT_ENV_FILE = PROJECT_DIR / ".env"
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+PROJECT_DIR = BACKEND_DIR.parent
+DEFAULT_ENV_FILE = BACKEND_DIR / ".env"
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
 

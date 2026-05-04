@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.services.app_config import load_config
+from app.services.env_file import project_env_path
 
 
 APP_CONFIG_ENV_KEYS = [
@@ -36,6 +39,12 @@ APP_CONFIG_ENV_KEYS = [
 def clear_app_config_env(monkeypatch):
     for key in APP_CONFIG_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
+
+
+def test_default_env_file_lives_in_backend_directory(monkeypatch):
+    clear_app_config_env(monkeypatch)
+
+    assert project_env_path() == Path(__file__).resolve().parents[1] / ".env"
 
 
 def test_load_config_reads_env_file(monkeypatch, tmp_path):

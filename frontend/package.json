@@ -33,7 +33,7 @@
     "@vitejs/plugin-vue": "^6.0.2",
     "d3-hierarchy": "^3.1.2",
     "d3-shape": "^3.2.0",
-    "lucide-vue-next": "^0.562.0",
+    "lucide-vue-next": "^1.0.0",
     "markdown-it": "^14.1.1",
     "tailwindcss": "^4.1.18",
     "vite": "^8.0.7",

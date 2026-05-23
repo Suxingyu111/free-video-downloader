@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
-    "@vitejs/plugin-vue": "^6.0.2",
+    "@vitejs/plugin-vue": "^6.0.7",
     "d3-hierarchy": "^3.1.2",
     "d3-shape": "^3.2.0",
     "lucide-vue-next": "^0.562.0",

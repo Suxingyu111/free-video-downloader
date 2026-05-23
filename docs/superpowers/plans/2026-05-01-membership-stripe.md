@@ -1400,7 +1400,7 @@ class FakeStripeWebhook:
 def test_webhook_rejects_bad_signature(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
     client = TestClient(app)
@@ -1417,7 +1417,7 @@ def test_webhook_rejects_bad_signature(monkeypatch, tmp_path):
 def test_subscription_updated_webhook_is_idempotent(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("stripe@example.com", "stripe-password")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
@@ -2320,8 +2320,8 @@ Start backend and frontend, register an account, open the pricing page, and use 
 
 ```bash
 BILLING_MODE=stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_SECRET_KEY=stripe_secret_placeholder
+STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
 STRIPE_PRO_MONTHLY_PRICE_ID=price_...
 PUBLIC_APP_URL=http://localhost:5173
 ```
@@ -2431,5 +2431,5 @@ If no changes were needed, do not create an empty commit.
 ## Self-Review
 
 - Spec coverage: Tasks cover account registration/login/logout/password reset, SQLite persistence, membership state, Stripe Checkout, Stripe webhook signature verification and idempotency, Customer Portal, mock billing, AI summary quota, frontend UI, docs, and verification.
-- Placeholder scan: This plan contains no unresolved placeholders. Secrets are shown with `sk_test_...` and `whsec_...` only in setup documentation, not as implementation gaps.
+- Placeholder scan: This plan contains no unresolved placeholders. Secrets are shown with `stripe_secret_placeholder` and `stripe_webhook_placeholder` only in setup documentation, not as implementation gaps.
 - Type consistency: Backend uses `User`, `Membership`, and `UsageSummary` consistently. Frontend auth state uses `user`, `membership`, and `usage` consistently with `/api/me`.

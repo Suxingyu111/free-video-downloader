@@ -27,8 +27,8 @@ cp backend/.env.example backend/.env
 
 ```dotenv
 BILLING_MODE=stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_SECRET_KEY=stripe_secret_placeholder
+STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
 STRIPE_PRO_MONTHLY_PRICE_ID=price_...
 STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_...
 STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_...
@@ -45,7 +45,7 @@ PUBLIC_APP_URL=http://127.0.0.1:5173
 stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook
 ```
 
-把 Stripe CLI 输出的 `whsec_...` 填入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
+把 Stripe CLI 输出的 `stripe_webhook_placeholder` 填入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
 
 6. 打开套餐页，点击“开通专业版 ¥19/月”，用 Stripe test card 完成 Checkout。按量包同样从套餐页购买，并使用 Stripe test mode 完成支付链路。
 7. 回到 SaveAny 后等待 webhook 确认会员或按量包状态。

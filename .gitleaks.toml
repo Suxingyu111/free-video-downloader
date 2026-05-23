@@ -1,0 +1,18 @@
+title = "SaveAny Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow documented placeholder values and generated lock hashes."
+regexes = [
+  '''replace_with_[a-z0-9_]+''',
+  '''test_[a-z0-9_]*placeholder''',
+  '''price_[a-z0-9_]*placeholder''',
+  '''your-domain\.example''',
+]
+paths = [
+  '''frontend/package-lock\.json''',
+  '''skills-lock\.json''',
+  '''backend/skills-lock\.json''',
+]

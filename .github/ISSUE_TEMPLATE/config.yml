@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞报告
+    url: https://github.com/Suxingyu111/free-video-downloader/security/advisories/new
+    about: 请优先使用 GitHub Private Vulnerability Reporting；如果仓库暂未启用，请按 SECURITY.md 的私有渠道联系维护者。

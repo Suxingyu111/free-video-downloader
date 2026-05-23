@@ -55,8 +55,8 @@ def test_load_config_reads_env_file(monkeypatch, tmp_path):
         # Local Stripe test settings
         BILLING_MODE=stripe
         PUBLIC_APP_URL=http://127.0.0.1:5173/
-        STRIPE_SECRET_KEY=sk_test_file
-        STRIPE_WEBHOOK_SECRET=whsec_file
+        STRIPE_SECRET_KEY=stripe_secret_placeholder
+        STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
         STRIPE_PRO_MONTHLY_PRICE_ID=price_file
         """,
         encoding="utf-8",
@@ -67,8 +67,8 @@ def test_load_config_reads_env_file(monkeypatch, tmp_path):
 
     assert config.billing_mode == "stripe"
     assert config.public_app_url == "http://127.0.0.1:5173"
-    assert config.stripe_secret_key == "sk_test_file"
-    assert config.stripe_webhook_secret == "whsec_file"
+    assert config.stripe_secret_key == "stripe_secret_placeholder"
+    assert config.stripe_webhook_secret == "stripe_webhook_placeholder"
     assert config.stripe_pro_monthly_price_id == "price_file"
 
 
@@ -97,8 +97,8 @@ def test_load_config_reads_project_env_file(monkeypatch, tmp_path):
         SAVEANY_ALLOWED_ORIGINS=https://app.example.com/
         BILLING_MODE=stripe
         PUBLIC_APP_URL=https://app.example.com/
-        STRIPE_SECRET_KEY=sk_live_project_env
-        STRIPE_WEBHOOK_SECRET=whsec_project_env
+        STRIPE_SECRET_KEY=stripe_secret_placeholder
+        STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
         STRIPE_PRO_MONTHLY_PRICE_ID=price_project_env
         STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_summary_small_env
         STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_summary_large_env
@@ -114,8 +114,8 @@ def test_load_config_reads_project_env_file(monkeypatch, tmp_path):
 
     assert config.environment == "production"
     assert config.public_app_url == "https://app.example.com"
-    assert config.stripe_secret_key == "sk_live_project_env"
-    assert config.stripe_webhook_secret == "whsec_project_env"
+    assert config.stripe_secret_key == "stripe_secret_placeholder"
+    assert config.stripe_webhook_secret == "stripe_webhook_placeholder"
     assert config.stripe_pro_monthly_price_id == "price_project_env"
     assert config.stripe_summary_small_pack_price_id == "price_summary_small_env"
     assert config.stripe_summary_large_pack_price_id == "price_summary_large_env"
@@ -131,8 +131,8 @@ def test_load_config_env_overrides_env_file(monkeypatch, tmp_path):
         """
         BILLING_MODE=legacy-file-mode
         PUBLIC_APP_URL=http://file.example.test
-        STRIPE_SECRET_KEY=sk_test_file
-        STRIPE_WEBHOOK_SECRET=whsec_file
+        STRIPE_SECRET_KEY=stripe_secret_placeholder
+        STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
         STRIPE_PRO_MONTHLY_PRICE_ID=price_file
         """,
         encoding="utf-8",
@@ -140,16 +140,16 @@ def test_load_config_env_overrides_env_file(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_ENV_FILE", str(config_path))
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "http://env.example.test/")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_env")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_env")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_env")
 
     config = load_config()
 
     assert config.billing_mode == "stripe"
     assert config.public_app_url == "http://env.example.test"
-    assert config.stripe_secret_key == "sk_test_env"
-    assert config.stripe_webhook_secret == "whsec_env"
+    assert config.stripe_secret_key == "stripe_secret_placeholder"
+    assert config.stripe_webhook_secret == "stripe_webhook_placeholder"
     assert config.stripe_pro_monthly_price_id == "price_env"
 
 
@@ -173,9 +173,9 @@ def test_load_config_reads_complete_production_config_from_file(monkeypatch, tmp
         FREE_SUMMARY_DAILY_LIMIT=2
         BILLING_MODE=stripe
         PUBLIC_APP_URL=https://app.example.com/
-        STRIPE_SECRET_KEY=sk_live_file
-        STRIPE_WEBHOOK_SECRET=whsec_live_file
-        STRIPE_PRO_MONTHLY_PRICE_ID=price_live_file
+        STRIPE_SECRET_KEY=stripe_secret_placeholder
+        STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
+        STRIPE_PRO_MONTHLY_PRICE_ID=price_placeholder
         """,
         encoding="utf-8",
     )
@@ -198,9 +198,9 @@ def test_load_config_reads_complete_production_config_from_file(monkeypatch, tmp
     assert config.free_summary_daily_limit == 2
     assert config.billing_mode == "stripe"
     assert config.public_app_url == "https://app.example.com"
-    assert config.stripe_secret_key == "sk_live_file"
-    assert config.stripe_webhook_secret == "whsec_live_file"
-    assert config.stripe_pro_monthly_price_id == "price_live_file"
+    assert config.stripe_secret_key == "stripe_secret_placeholder"
+    assert config.stripe_webhook_secret == "stripe_webhook_placeholder"
+    assert config.stripe_pro_monthly_price_id == "price_placeholder"
 
 
 def test_app_config_loads_credit_pack_price_ids(monkeypatch, tmp_path):
@@ -240,9 +240,9 @@ def test_production_requires_secure_cookies(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "https://app.example.com")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://app.example.com")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
-    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
 
     with pytest.raises(ValueError, match="SAVEANY_SECURE_COOKIES"):
         load_config()
@@ -266,9 +266,9 @@ def test_production_rejects_dev_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "https://app.example.com")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://app.example.com")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
-    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
 
     with pytest.raises(ValueError, match="SAVEANY_DEV_MODE"):
         load_config()
@@ -282,9 +282,9 @@ def test_production_requires_https_public_app_url(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "http://app.example.com")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://app.example.com")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
-    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
 
     with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
         load_config()
@@ -297,9 +297,9 @@ def test_production_requires_explicit_allowed_origins_without_wildcard(monkeypat
     monkeypatch.setenv("SAVEANY_SECURE_COOKIES", "true")
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("PUBLIC_APP_URL", "https://app.example.com")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
-    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
 
     with pytest.raises(ValueError, match="SAVEANY_ALLOWED_ORIGINS"):
         load_config()
@@ -331,15 +331,15 @@ def test_production_requires_stripe_config_and_defaults_to_host_session_cookie(m
     with pytest.raises(ValueError, match="STRIPE_SECRET_KEY"):
         load_config()
 
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
     with pytest.raises(ValueError, match="STRIPE_WEBHOOK_SECRET"):
         load_config()
 
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     with pytest.raises(ValueError, match="STRIPE_PRO_MONTHLY_PRICE_ID"):
         load_config()
 
-    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
     config = load_config()
 
     assert config.session_cookie_name == "__Host-saveany_session"
@@ -379,9 +379,9 @@ def test_production_rejects_legacy_mock_billing_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("BILLING_MODE", "mock")
     monkeypatch.setenv("PUBLIC_APP_URL", "https://app.example.com")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://app.example.com")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live_test")
-    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_live_test")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
 
     with pytest.raises(ValueError, match="BILLING_MODE"):
         load_config()

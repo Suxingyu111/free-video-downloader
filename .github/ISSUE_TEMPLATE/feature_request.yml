@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an improvement that stays within the public-video boundary.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SaveAny 不接受 DRM 绕过、付费内容绕过、私密内容抓取、Cookie 托管、共享账号或验证码绕过类需求。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题或场景
+      description: 这个需求解决什么具体问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 你希望它如何工作？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 是否已经尝试过其他做法？
+    validations:
+      required: false

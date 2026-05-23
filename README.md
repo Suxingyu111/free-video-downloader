@@ -1407,8 +1407,8 @@ IndexNow：
 
 ```dotenv
 BILLING_MODE=stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_SECRET_KEY=stripe_secret_placeholder
+STRIPE_WEBHOOK_SECRET=stripe_webhook_placeholder
 STRIPE_PRO_MONTHLY_PRICE_ID=price_...
 STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_...
 STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_...
@@ -1423,7 +1423,7 @@ PUBLIC_APP_URL=http://127.0.0.1:5173
 stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook
 ```
 
-把输出的 `whsec_...` 写入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
+把输出的 `stripe_webhook_placeholder` 写入 `STRIPE_WEBHOOK_SECRET`，然后重启后端。
 
 ### 4. 本地验收
 
@@ -1626,6 +1626,14 @@ FastAPI 会在 `frontend/dist` 存在时服务构建后的前端：
 
 这类配置属于敏感登录凭据。只建议在个人本地环境使用，不应提交到仓库，也不应在公共服务中要求用户提供。
 
+### 开源治理
+
+- 项目使用 MIT License，许可证见 `LICENSE`。
+- 安全漏洞报告流程见 `SECURITY.md`，未修复漏洞不应通过公开 issue 披露。
+- 贡献流程见 `CONTRIBUTING.md`，PR 需要说明变更目的、影响范围和已执行验证。
+- GitHub Actions 覆盖前端测试/构建、后端测试、依赖审计、Gitleaks、CodeQL 和 OpenSSF Scorecard。
+- Dependabot 覆盖前端 npm、后端 pip 和 GitHub Actions 依赖更新。
+
 ## 已知限制
 
 - 下载任务状态保存在内存中，服务重启后历史任务不可恢复。
@@ -1660,6 +1668,8 @@ FastAPI 会在 `frontend/dist` 存在时服务构建后的前端：
 9. `docs/09-ai-configuration.md`：AI 与语音转写配置。
 10. `docs/10-seo-deployment-checklist.md`：SEO、站长验证和 IndexNow 部署。
 11. `docs/11-membership-stripe-setup.md`：会员、Stripe 和按量包配置。
+12. `docs/architecture/open-source-security-readiness-design.md`：开源安全与项目完善设计方案。
+13. `docs/status/open-source-readiness.md`：开源准备实施状态和验证结果。
 
 架构图：
 

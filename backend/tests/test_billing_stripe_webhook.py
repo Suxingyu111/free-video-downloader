@@ -95,7 +95,7 @@ def _stripe_env(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_monthly")
 
 
@@ -755,7 +755,7 @@ def test_webhook_reclaims_stale_processing_event(monkeypatch, tmp_path):
 def test_webhook_rejects_bad_signature(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
     client = TestClient(app)
@@ -772,7 +772,7 @@ def test_webhook_rejects_bad_signature(monkeypatch, tmp_path):
 def test_subscription_updated_webhook_is_idempotent(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("stripe@example.com", "stripe-password")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
@@ -835,7 +835,7 @@ def test_subscription_updated_webhook_is_idempotent(monkeypatch, tmp_path):
 def test_webhook_accepts_real_stripe_event_object(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("stripe-object@example.com", "stripe-password")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeObjectWebhook)
@@ -1082,7 +1082,7 @@ def test_invoice_payment_failed_webhook_marks_subscription_past_due(monkeypatch,
 def test_webhook_processing_failure_keeps_event_retryable(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     user = create_user("retry@example.com", "stripe-password")
     monkeypatch.setattr(billing_routes.stripe, "Webhook", FakeStripeWebhook)
@@ -1144,7 +1144,7 @@ def test_webhook_processing_failure_keeps_event_retryable(monkeypatch, tmp_path)
 def test_existing_subscription_cannot_be_reassigned_by_webhook_metadata(monkeypatch, tmp_path):
     monkeypatch.setenv("SAVEANY_DB_PATH", str(tmp_path / "saveany.db"))
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     database.initialize_database(tmp_path / "saveany.db")
     original_user = create_user("owner-a@example.com", "stripe-password")
     metadata_user = create_user("owner-b@example.com", "stripe-password")

@@ -1,7 +1,17 @@
 {
   "name": "free-video-downloader-frontend",
   "version": "0.1.0",
+  "description": "SaveAny frontend for public video download, AI summaries, transcripts, mind maps, and self-hosted SEO pages.",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Suxingyu111/free-video-downloader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Suxingyu111/free-video-downloader/issues"
+  },
+  "homepage": "https://github.com/Suxingyu111/free-video-downloader#readme",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",

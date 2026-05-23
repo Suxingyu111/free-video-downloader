@@ -380,10 +380,10 @@ Append to `backend/config/stripe.env.example`:
 
 ```dotenv
 # One-time credit pack Prices
-STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_your_summary_small_pack_price_id
-STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_your_summary_large_pack_price_id
-STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID=price_your_transcription_small_pack_price_id
-STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID=price_your_transcription_large_pack_price_id
+STRIPE_SUMMARY_SMALL_PACK_PRICE_ID=price_placeholder
+STRIPE_SUMMARY_LARGE_PACK_PRICE_ID=price_placeholder
+STRIPE_TRANSCRIPTION_SMALL_PACK_PRICE_ID=price_placeholder
+STRIPE_TRANSCRIPTION_LARGE_PACK_PRICE_ID=price_placeholder
 
 # Salt used to hash anonymous IPs for daily visitor quotas.
 SAVEANY_IP_HASH_SALT=replace_with_random_server_side_salt

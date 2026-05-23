@@ -95,8 +95,8 @@ def test_production_requires_secure_cookies(monkeypatch, tmp_path):
     monkeypatch.setenv("PUBLIC_APP_URL", "https://saveany.example")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://saveany.example")
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_x")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_x")
 
     try:
@@ -133,8 +133,8 @@ def test_production_requires_https_public_app_url(monkeypatch, tmp_path):
     monkeypatch.setenv("PUBLIC_APP_URL", "http://saveany.example")
     monkeypatch.setenv("SAVEANY_ALLOWED_ORIGINS", "https://saveany.example")
     monkeypatch.setenv("BILLING_MODE", "stripe")
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_x")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_placeholder")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_placeholder")
     monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_x")
 
     try:
